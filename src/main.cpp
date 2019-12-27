@@ -160,6 +160,10 @@ int main(int argc, char** argv) {
     }
     timer.start_timer(OverallTimeStats::CUT_TIME);
 
+    // Generate Gomory cuts
+    // > 0: apply cuts to solver; < 0: apply cuts to CutSolver only
+    // Option 1: GglGMI
+    // Option 2: custom generate intersection cuts, calculate Farkas certificate, do strengthening
     if (std::abs(params.get(GOMORY)) == 1) {
       OsiCuts currGMICs;
       CglGMI GMIGen;

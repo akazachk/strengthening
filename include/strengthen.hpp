@@ -10,6 +10,8 @@
 class OsiSolverInterface;
 class CoinPackedMatrix;
 
+class Disjunction;
+
 #ifdef USE_EIGEN
 #include <Eigen/Sparse>
 void insertRow(
@@ -47,6 +49,9 @@ void solveLinearSystem(
  */
 void getCertificate(std::vector<double>& v, const int num_elem, const int* const ind, 
     const double* const coeff, const OsiSolverInterface* const solver);
+
+void getCertificateTrivial(std::vector<double>& v, const int num_elem, const int* const ind, 
+    const double* const coeff, const OsiSolverInterface* const solver, const Disjunction* const disj);
 
 /**
  * @brief Return Farkas certificate for a given valid cut (in sparse form) and disjunction

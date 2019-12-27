@@ -5,6 +5,7 @@
  */
 #include "strengthen.hpp"
 
+#include "Disjunction.hpp"
 #include "Parameters.hpp" // includes SolverInterface
 #include "SolverHelper.hpp" // isBasicVar
 #include "utility.hpp"
@@ -310,6 +311,22 @@ void getCertificate(
 
   solver->disableFactorization();
 } /* getCertificate */
+
+/// Use Theorem B.5 of Kazachkov 2018 dissertation to get certificate with trivial normalization
+void getCertificateTrivial(
+    /// [out] Farkas multipliers
+    std::vector<double>& v, 
+    /// [in] number of nonzero cut coefficients
+    const int num_elem, 
+    /// [in] indices of nonzero cut coefficients
+    const int* const ind, 
+    /// [in] nonzero cut coefficients
+    const double* const coeff,
+    // [in] initial LP solver
+    const OsiSolverInterface* const solver,
+    // [in] disjunction
+    const Disjunction* const disj) {
+} /* getCertificateTrivial */
 
 void verifyCertificate(
     /// [out] calculated cut coefficients

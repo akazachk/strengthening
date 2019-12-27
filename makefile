@@ -68,6 +68,7 @@ DIR_LIST = $(SRC_DIR) $(SRC_DIR)/cut $(SRC_DIR)/utility
 SOURCES += \
 		cut/CglAdvCut.cpp \
 		cut/CutHelper.cpp \
+    cut/Disjunction.cpp \
     cut/gmic.cpp \
     cut/strengthen.cpp \
 		utility/SolverHelper.cpp \
