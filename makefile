@@ -171,7 +171,7 @@ VPC_OBJECTS = $(VPC_SOURCES:.cpp=.o)
 VPC_OUT_OBJECTS = $(addprefix $(VPC_OBJ_DIR)/,$(VPC_OBJECTS))
 
 # Set includes
-APPLINCLS = -Iinclude -Iinclude/test
+APPLINCLS = -Iinclude -Iinclude/common -Iinclude/test
 APPLINCLS += -Iinclude/vpc
 
 APPLLIB = -lm -lz -lbz2 -lreadline
