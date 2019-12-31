@@ -7,8 +7,8 @@
 
 #include <OsiRowCut.hpp>
 
-#include "Parameters.hpp" // SolverInterface
 #include "SolverHelper.hpp" // isBasicVar
+#include "SolverInterface.hpp"
 #include "utility.hpp"
 
 /** Adapted from CglLandP **/

@@ -11,6 +11,7 @@
 #include "CutHelper.hpp" // applyCuts
 #include "SolverHelper.hpp"
 #include "Parameters.hpp"
+using namespace StrengtheningParameters;
 
 // COIN-OR
 #include <CoinTime.hpp>

@@ -20,7 +20,7 @@ BUILD_CONFIG = debug
 
 ### Variables user should set ###
 PROJ_DIR=${PWD}
-COIN_VERSION = 2.10
+COIN_VERSION = 2.9
 COIN_OR = $(PROJ_DIR)/lib/Cbc-$(COIN_VERSION)
 EIG_LIB = $(PROJ_DIR)/lib
 ifeq ($(USER),otherperson)
@@ -68,11 +68,31 @@ DIR_LIST = $(SRC_DIR) $(SRC_DIR)/cut $(SRC_DIR)/utility
 SOURCES += \
 		cut/CglAdvCut.cpp \
 		cut/CutHelper.cpp \
+    cut/disjcuts.cpp \
     cut/Disjunction.cpp \
     cut/gmic.cpp \
     cut/strengthen.cpp \
 		utility/SolverHelper.cpp \
 		utility/utility.cpp
+
+# VPC directories
+VPC_SRC_DIR = vpc/src
+VPC_DIR_LIST = $(VPC_SRC_DIR) $(VPC_SRC_DIR)/branch $(VPC_SRC_DIR)/cut $(VPC_SRC_DIR)/disjunction $(VPC_SRC_DIR)/utility
+
+VPC_SOURCES += \
+		branch/CbcBranchStrongDecision.cpp \
+		branch/CbcCompareBFS.cpp \
+		branch/OsiChooseStrongCustom.cpp \
+    utility/nbspace.cpp \
+    utility/OsiProblemData.cpp \
+		utility/VPCSolverInterface.cpp \
+		branch/VPCEventHandler.cpp \
+		cut/CglVPC.cpp \
+    cut/PRLP.cpp \
+    disjunction/PartialBBDisjunction.cpp \
+    disjunction/SplitDisjunction.cpp \
+    disjunction/VPCDisjunction.cpp
+
 
 # For running tests (need not include these or main if releasing code to others)
 DIR_LIST += $(SRC_DIR)/test
@@ -82,6 +102,7 @@ SOURCES += test/analysis.cpp test/BBHelper.cpp
 ifeq ($(BUILD_CONFIG),debug)
   # "Debug" build - no optimization, include debugging symbols, and keep inline functions
 	SOURCES += utility/debug.cpp
+  VPC_SOURCES += utility/vpc_debug.cpp
   OUT_DIR = Debug
   DEBUG_FLAG = -g3
   OPT_FLAG = -O0
@@ -101,6 +122,9 @@ ifeq ($(BUILD_CONFIG),release)
   OPT_FLAG = -O3
   DEFS = 
   EXTRA_FLAGS = -fmessage-length=0 -ffast-math
+endif
+ifeq ($(USE_COIN),1)
+  DEFS += -DUSE_COIN
 endif
 ifeq ($(USE_CLP),1)
   DEFS += -DUSE_CLP
@@ -141,8 +165,14 @@ OUT_DIR_LIST = $(addprefix $(OUT_DIR)/,$(DIR_LIST))
 OBJECTS = $(SOURCES:.cpp=.o)
 OUT_OBJECTS = $(addprefix $(OBJ_DIR)/,$(OBJECTS))
 
+VPC_OBJ_DIR = $(OUT_DIR)/$(VPC_SRC_DIR)
+VPC_OUT_DIR_LIST = $(addprefix $(OUT_DIR)/,$(VPC_DIR_LIST))
+VPC_OBJECTS = $(VPC_SOURCES:.cpp=.o)
+VPC_OUT_OBJECTS = $(addprefix $(VPC_OBJ_DIR)/,$(VPC_OBJECTS))
+
 # Set includes
 APPLINCLS = -Iinclude -Iinclude/test
+APPLINCLS += -Iinclude/vpc
 
 APPLLIB = -lm -lz -lbz2 -lreadline
 
@@ -217,13 +247,19 @@ debug: FORCE
 release: FORCE
 	@$(MAKE) "BUILD_CONFIG=release"
 
-$(EXECUTABLE): $(OUT_OBJECTS)
+$(EXECUTABLE): $(OUT_OBJECTS) $(VPC_OUT_OBJECTS)
 		@echo ' '
 		@echo 'Building target: $@'
 		@echo 'Invoking' $(CC) 'linker'
 		$(CC) $(DEFS) $(CXXLINKFLAGS) $(APPLINCLS) -o $@ $^ $(APPLLIB)
 
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp
+		@echo ' '
+		@echo 'Building target: $@'
+		@echo 'Invoking' $(CC) 'compiler'
+		$(CC) $(CXXFLAGS) $(DEFS) $(APPLINCLS) -c $< -o $@ 
+		@echo 'Finished building: $@'
+$(VPC_OBJ_DIR)/%.o: $(VPC_SRC_DIR)/%.cpp
 		@echo ' '
 		@echo 'Building target: $@'
 		@echo 'Invoking' $(CC) 'compiler'
@@ -282,9 +318,11 @@ MKDIR_P = mkdir -p
 
 dir_%: FORCE
 	@$(MAKE) directories "BUILD_CONFIG=$*"
-directories: $(OUT_DIR_LIST)
+directories: $(OUT_DIR_LIST) $(VPC_OUT_DIR_LIST)
 $(OUT_DIR_LIST):
 	$(MKDIR_P) $(OUT_DIR_LIST)
+$(VPC_OUT_DIR_LIST):
+	$(MKDIR_P) $(VPC_OUT_DIR_LIST)
 
 dir_lib_%: FORCE
 	@$(MAKE) dir_lib "BUILD_CONFIG=$*"

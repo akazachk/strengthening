@@ -10,8 +10,6 @@
 #include <CoinPackedVector.hpp>
 #include <CoinPackedMatrix.hpp>
 
-#include "Parameters.hpp"
-
 /** Separate filename into the directory, instance name, and extension */
 void parseFilename(std::string& dir, std::string& instname, std::string& in_file_ext, const std::string& fullfilename, FILE* logfile) {
   // Get file name stub
@@ -48,13 +46,6 @@ void parseFilename(std::string& dir, std::string& instname, std::string& in_file
   dir = (slashindex != std::string::npos) ? filename.substr(0,slashindex) : ".";
   instname = (slashindex != std::string::npos) ? filename.substr(slashindex+1) : filename;
 } /* parseFilename (name and logfile given) */
-
-void parseFilename(std::string& dir, std::string& instname, std::string& in_file_ext, const Parameters& params) {
-  parseFilename(dir, instname, in_file_ext, params.get(stringParam::FILENAME), params.logfile);
-//  if (params.get(stringParam::OUTDIR).empty()) {
-//    params.set(stringParam::OUTDIR, dir);
-//  }
-} /* parseFilename (params) */
 
 /** We assume it is comma separated */
 double getObjValueFromFile(std::string opt_filename, std::string fullfilename, FILE* logfile) {

@@ -21,15 +21,19 @@
 // COIN-OR
 #include <OsiCuts.hpp>
 #include <CglGMI.hpp>
+#include <OsiSolverInterface.hpp>
 
 // Project files
 #include "analysis.hpp"
 #include "BBHelper.hpp"
 #include "CglAdvCut.hpp"
 #include "CutHelper.hpp"
+#include "disjcuts.hpp"
 #include "gmic.hpp"
 #include "Parameters.hpp"
+using namespace StrengtheningParameters;
 #include "SolverHelper.hpp"
+#include "SolverInterface.hpp"
 #include "strengthen.hpp"
 #include "utility.hpp"
 
@@ -324,10 +328,17 @@ int main(int argc, char** argv) {
         CglAdvCut::CutTimeStatsName[static_cast<int>(CglAdvCut::CutTimeStats::INIT_SOLVE_TIME)],
         timer.get_value(OverallTimeStats::INIT_SOLVE_TIME));
 
-    gen.generateCuts(*solver, mycuts_by_round[round_ind]); // solution may change slightly due to enable factorization called in getProblemData...
+    // Generate disjunctive cuts
+    Disjunction* disj = NULL;
+    genDisjCuts(solver, params.get(intParam::DISJ_TERMS), params.get(intParam::CUTLIMIT), &mycuts_by_round[round_ind], disj); // solution may change slightly due to enable factorization called in getProblemData...
+    boundInfo.num_mycuts += gen.num_cuts;
+
+    /*
+    gen.generateCuts(*solver, mycuts_by_round[round_ind]); 
     exitReason = gen.exitReason;
     updateCutInfo(cutInfoVec[round_ind], &gen);
     boundInfo.num_mycuts += gen.num_cuts;
+    */
     timer.end_timer(OverallTimeStats::CUT_TIME);
 
     timer.start_timer(OverallTimeStats::APPLY_TIME);
@@ -394,9 +405,9 @@ int main(int argc, char** argv) {
 #endif
 
   // Do analyses in preparation for printing
-  setCutInfo(cutInfo, num_rounds, cutInfoVec.data());
-  analyzeStrength(params, solver, cutInfoGMICs, cutInfo, &gmics, &mycuts,
-      boundInfo, cut_output);
+  //setCutInfo(cutInfo, num_rounds, cutInfoVec.data());
+  //analyzeStrength(params, solver, cutInfoGMICs, cutInfo, &gmics, &mycuts,
+      //boundInfo, cut_output);
   analyzeBB(params, info_nocuts, info_mycuts, info_allcuts, bb_output);
   return wrapUp(0);
 } /* main */
@@ -423,7 +434,7 @@ void startUp(int argc, char** argv) {
   // Get instance file
   printf("Instance file: %s\n", params.get(stringParam::FILENAME).c_str());
   
-  parseFilename(dir, instname, in_file_ext, params);
+  parseFilename(dir, instname, in_file_ext, params.get(stringParam::FILENAME), params.logfile);
   filename = dir + "/" + instname;
 
   // Prepare logfile
@@ -613,13 +624,14 @@ void processArgs(int argc, char** argv) {
   // has_arg: 0,1,2 for none, required, or optional
   // *flag: how results are returned; if NULL, getopt_long() returns val (e.g., can be the equivalent short option character), and o/w getopt_long() returns 0, and flag points to a var which is set to val if the option is found, but left unchanged if the option is not found
   // val: value to return, or to load into the variable pointed to by flag
-  const char* const short_opts = "b:B:c:f:g:hi:l:m:o:r:s:t:v:";
+  const char* const short_opts = "b:B:c:d:f:g:hi:l:m:o:r:s:t:v:";
   const struct option long_opts[] =
   {
       {"bb_runs",               required_argument, 0, 'b'},
       {"bb_mode",               required_argument, 0, 'b'*'2'},
       {"bb_strategy",           required_argument, 0, 'B'},
       {"cutlimit",              required_argument, 0, 'c'},
+      {"disj_terms",            required_argument, 0, 'd'},
       {"file",                  required_argument, 0, 'f'},
       {"gomory",                required_argument, 0, 'g'},
       {"help",                  no_argument,       0, 'h'},
@@ -671,6 +683,16 @@ void processArgs(int argc, char** argv) {
       case 'c': {
                   int val;
                   intParam param = intParam::CUTLIMIT;
+                  if (!parseInt(optarg, val)) {
+                    error_msg(errorstring, "Error reading %s. Given value: %s.\n", params.name(param).c_str(), optarg);
+                    exit(1);
+                  }
+                  params.set(param, val);
+                  break;
+                }
+      case 'd': {
+                  int val;
+                  intParam param = intParam::DISJ_TERMS;
                   if (!parseInt(optarg, val)) {
                     error_msg(errorstring, "Error reading %s. Given value: %s.\n", params.name(param).c_str(), optarg);
                     exit(1);
@@ -786,8 +808,9 @@ void processArgs(int argc, char** argv) {
                 helpstring += "-l logfile, --logfile=logfile\n\tWhere to print log messages.\n";
                 helpstring += "-o optfile, --optfile=optfile\n\tWhere to find integer optimum value information (a csv file formatted as \"instance_name,value\" on each row).\n";
                 helpstring += "-v level, --verbosity=level\n\tVerbosity level (0: print little, 1: let solver output be visible).\n";
-                helpstring += "\n# General VPC options #\n";
+                helpstring += "\n# General cut options #\n";
                 helpstring += "-c num cuts, --cutlimit=num cuts\n\tMaximum number of cuts to generate (0+ = as given, -k = k * # fractional variables at root).\n";
+                helpstring += "-d num terms, --disj_terms=num terms\n\tMaximum number of disjunctive terms or disjunctions to generate (depending on mode).\n";
                 helpstring += "-g -1/0/1, --gomory=-1/0/1\n\t0: do not use Gomory cuts before generating mycuts, +/-1: generate Gomory cuts before generating mycuts (-1: only gen, +1: also apply to LP).\n";
                 helpstring += "-m mode, --mode=mode\n\tDescription needs to be entered.\n";
                 helpstring += "-r num rounds, --rounds=num rounds\n\tNumber of rounds of cuts to apply.\n";

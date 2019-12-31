@@ -15,7 +15,9 @@
 
 // Project files
 #include "SolverHelper.hpp"
+#include "SolverInterface.hpp"
 #include "utility.hpp"
+using namespace StrengtheningParameters;
 
 #ifdef TRACE
 #include "debug.hpp"

@@ -12,7 +12,9 @@
 #include "BBHelper.hpp"
 #include "CutHelper.hpp" // applyCutsCustom
 #include "SolverHelper.hpp"
+#include "SolverInterface.hpp"
 #include "Parameters.hpp"
+using namespace StrengtheningParameters;
 #include "TimeStats.hpp"
 #include "utility.hpp"
 

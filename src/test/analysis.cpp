@@ -15,6 +15,7 @@
 #include "BBHelper.hpp"
 #include "SolverHelper.hpp"
 #include "Parameters.hpp"
+using namespace StrengtheningParameters;
 #include "utility.hpp" // isInfinity, stringValue
 
 const int countBoundInfoEntries = 11;
@@ -30,7 +31,7 @@ const int countFailInfoEntries = 1 + static_cast<int>(CglAdvCut::FailureType::NU
 const int countParamInfoEntries = intParam::NUM_INT_PARAMS + doubleParam::NUM_DOUBLE_PARAMS;
 int countTimeInfoEntries = 0; // set in printHeader
 
-void printHeader(const Parameters& params,
+void printHeader(const StrengtheningParameters::Parameters& params,
     const std::vector<std::string>& time_name,
     const char SEP) {
   FILE* logfile = params.logfile;
@@ -640,7 +641,7 @@ void printCutInfo(const SummaryCutInfo& cutInfoGMICs,
  * 2. Activity (after adding cuts)
  * 3. Density
  */
-void analyzeStrength(const Parameters& params, const OsiSolverInterface* solver,
+void analyzeStrength(const StrengtheningParameters::Parameters& params, const OsiSolverInterface* solver,
     SummaryCutInfo& cutInfoGMICs, SummaryCutInfo& cutInfo,
     const OsiCuts* const gmics, const OsiCuts* const mycuts,
     const SummaryBoundInfo& boundInfo, std::string& output) {
@@ -744,7 +745,7 @@ void analyzeStrength(const Parameters& params, const OsiSolverInterface* solver,
   }
 } /* analyzeStrength */
 
-void analyzeBB(const Parameters& params, SummaryBBInfo& info_nocuts,
+void analyzeBB(const StrengtheningParameters::Parameters& params, SummaryBBInfo& info_nocuts,
     SummaryBBInfo& info_mycuts, SummaryBBInfo& info_allcuts, std::string& output) {
   if (params.get(BB_RUNS) == 0) {
     return;
@@ -824,7 +825,7 @@ void analyzeBB(const Parameters& params, SummaryBBInfo& info_nocuts,
   } // gmics
 } /* analyzeBB */
 
-double getNumGomoryRounds(const Parameters& params,
+double getNumGomoryRounds(const StrengtheningParameters::Parameters& params,
     const OsiSolverInterface* const origSolver,
     const OsiSolverInterface* const postCutSolver) {
   // Get number rounds of SICs needed to meet bound from mycuts+SICs

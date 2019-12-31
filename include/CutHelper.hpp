@@ -1,7 +1,7 @@
-/** 
- * @name CutHelper.hpp
+/**
+ * @file CutHelper.hpp
  * @author A. M. Kazachkov
- * @date 2019-11-15
+ * @date 2019-02-20
  */
 #pragma once
 #include <limits>
@@ -12,8 +12,6 @@ class CoinPackedVectorBase;
 class OsiRowCut;
 class OsiCuts;
 class OsiSolverInterface;
-
-struct Parameters; // defined in Parameters.hpp
 
 void setOsiRowCut(OsiRowCut* const cut, const std::vector<int>& nonZeroColIndex,
     const int num_coeff, const double* coeff, const double rhs,
@@ -26,8 +24,15 @@ void setConstantObjectiveFromPackedVector(OsiSolverInterface* const solver,
     const double val = 0., const int numIndices = 0, const int* indices = 0);
 
 int cleanCut(OsiRowCut* const cut, const OsiSolverInterface* const solver,
-    const Parameters& params, const double min_abs_coeff,
-    const double max_abs_coeff, const double EPS, const double beta,
+    const double EPS_COEFF,
+    const double MAX_DYN,
+    const int MAX_SUP_ABS,
+    const double MAX_SUP_REL,
+    const double MIN_VIOL_ABS,
+    const double MIN_VIOL_REL,
+    const double MIN_ABS_COEFF, 
+    const double MAX_ABS_COEFF, 
+    const double EPS, 
     const bool checkViolation);
 
 /** Decide if two rows are the same */

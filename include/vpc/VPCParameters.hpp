@@ -1,16 +1,16 @@
-/**
- * @file Parameters.hpp
- * @author A. M. Kazachkov
- * @date 2019-11-14
- */
+// Name:     VPCParameters.hpp
+// Author:   A. M. Kazachkov
+// Date:     2019-Feb-20
+//-----------------------------------------------------------------------------
 #pragma once
 
 /********************************************************************************************************************
- * This file contains the parameters/constants that are used in the package
+ * This file contains the parameters/constants that are used in the CglVPC class
+ * (also in the PRLP and Disjunction classes)
  *
  * To add a new parameter/constant:
  * 1. Add it to the relevant enum (intParam, doubleParam, stringParam, intConst, doubleConst)
- * 2. In the struct Parameters, add the parameter using the name/default/min/max constructor of the parameter
+ * 2. In the struct VPCParameters, add the parameter using the name/default/min/max constructor of the parameter
  * 3. Optionally, add a way to set the parameter in the option handling part of the code (in the main file)
  ********************************************************************************************************************/
 
@@ -27,21 +27,36 @@
 
 #include "utility.hpp" // parseInt/Double, stringValue, lowerCaseString, and overloading << for vectors
 
-namespace StrengtheningParameters {
+namespace VPCParametersNamespace {
 /********** PARAMETERS **********/
 enum intParam {
   CUTLIMIT, // max number of cuts generated; 0 = none, -k = k * # fractional variables at root
-  DISJ_TERMS, // number of disjunctive terms 
-  GOMORY, // Gomory cut mode, 0: none, +/-1: use GMIC class to generate cuts (-1: do not add them to LP before generating s; 1: do add them)
-  MODE, // 
-  ROUNDS, // number of  rounds to do
+  DISJ_TERMS, // number of disjunctive terms or number of disjunctions, depending on MODE
+  GOMORY, // Gomory cut mode, 0: none, +/-1: use GMIC class to generate cuts (-1: do not add them to LP before generating VPCs; 1: do add them)
+  MODE, // 0: partial b&b tree, 1: splits, 2: crosses (not implemented), 3: custom
+  // PARTIAL_BB_STRATEGY:
+  // Total used to decide the choose:
+  // variable decision => hundreds digit: 0: default, 1: default+second criterion, 2: max min change+second (max max change), 3: second-best default, 4: second-best max-min change, -x: -1 * (1+x);
+  // branch decision => tens digit: 0: default, 1: dynamic, 2: strong, 3: none;
+  // node comparison decision => ones digit: 0: default: 1: bfs, 2: depth, 3: estimate, 4: objective
+  PARTIAL_BB_STRATEGY,
+  PARTIAL_BB_NUM_STRONG, // -1: num cols, -2: sqrt(num cols), >= 0: that many
+  PRLP_FLIP_BETA, // controls rhs in nb space, -1: do not cut away LP opt, 0: cut away LP opt, 1: both
+  ROUNDS, // number of VPC rounds to do
   STRENGTHEN, // 0: no, 1: yes, when possible, 2: same as 1 plus add GMICs to strengthen each disjunctive term
   TEMP, // useful for various temporary parameter changes; see corresponding enum
+  // Objective options
+  USE_ALL_ONES, // 0: do not use, 1: use
+  USE_DISJ_LB, // 0: do not use, 1: use
+  USE_ITER_BILINEAR, // 0: do not use, 1+: number of iterations to do
+  USE_TIGHT_POINTS, // 0: do not use, 1+: num points to try
+  USE_TIGHT_RAYS, // 0: do not use, 1+: num rays to try, -1: try the first sqrt(# rays) rays
+  USE_UNIT_VECTORS, // 0: do not use, 1+: num to try, <0: abs(val) * sqrt(n)
   // Other options
   VERBOSITY,
   // BB options
   RANDOM_SEED,
-  BB_RUNS, // number of times to run b&b (if negative, also test with s+GMICs if GMICs have been generated)
+  BB_RUNS, // number of times to run b&b (if negative, also test with VPCs+GMICs if GMICs have been generated)
   //  off = 0,
   //  cbc = 2,
   //  cplex = 4,
@@ -58,13 +73,15 @@ enum intParam {
   //  use_best_bound = 8192,
   //  strong_branching_on = 16384
   BB_STRATEGY, // bit vector; sum of above bits
-  BB_MODE, // 111: each bit represents whether to branch with gmics, mycuts, and no cuts (from largest to smallest bit)
+  BB_MODE, // 111: each bit represents whether to branch with gmics, vpcs, and no cuts (from largest to smallest bit)
   NUM_INT_PARAMS
 }; /* intParam */
 enum doubleParam {
   EPS,
   IP_OBJ, // way to give just the objective for this instance rather than reading it from a file
   MIN_ORTHOGONALITY, // minimum orthogonality between cuts added to the collection
+  PARTIAL_BB_TIMELIMIT,
+  PRLP_TIMELIMIT, // -1 = unlimited time for initial solve, and then half that time subsequently; -2 = unlimited time always
   TIMELIMIT,
   NUM_DOUBLE_PARAMS
 }; /* doubleParam */
@@ -81,7 +98,23 @@ enum class intConst {
   CHECK_DUPLICATES, // do not add duplicate cuts
   LUB, // value for var upper bound considered "large"
   MAX_SUPPORT_ABS,
-  //  objective-related constants
+  // VPC objective-related constants
+  // For each point, MODE_OBJ_PER_POINT says which objectives to try
+  // 0 = all of the rows that are not tight, and subtract as they get tight
+  // 1 = one point/ray at time
+  // 2 = keep trying even if the point/ray has become tight in the process?
+  // 0 is more expensive at each step and not clear that it would be better
+  // 0x: only rays
+  // 1x: points+rays
+  // 2x: points+rays+variables
+  // 0xx: small to large angle with obj (ascending)
+  // 1xx: large to small angle with obj (descending)
+  // 2xx: small to large slack (ascending)
+  // 3xx: large to small slack (descending)
+  MODE_OBJ_PER_POINT,
+  NUM_OBJ_PER_POINT, // # cuts to try to generate for the strong branching lb point (and others)
+  NB_SPACE, // whether to generate cuts in the nonbasic space (currently must be set to true)
+  PRLP_PRESOLVE, // 0: no presolve, 1: only initial solve, 2: both initial solve and resolve
   NUM_INT_CONST
 }; /* intConst */
 enum class doubleConst {
@@ -91,6 +124,7 @@ enum class doubleConst {
   RAYEPS, // value for which a ray coefficient will be treated as zero
   // Time limits
   BB_TIMELIMIT, // time limit for doing branch-and-bound
+  MIN_PRLP_TIMELIMIT, // minimum amount of time allotted for solving/resolving PRLP
   // Safety related constants:
   EPS_COEFF, // any cut coefficient smaller than this will be replaced by zero
   EPS_COEFF_LUB, // for variables with large upper bound, any cut coefficient smaller than this will be replaced by zero
@@ -104,7 +138,17 @@ enum class doubleConst {
 
 enum class TempOptions {
   NONE = 0,
-  CHECK_CUTS_AGAINST_BB_OPT = 1,
+  PREPROCESS = 1,
+  PREPROCESS_CUSTOM = 2,
+  CHECK_CUTS_AGAINST_BB_OPT = 3,
+  CALC_NUM_GOMORY_ROUNDS_TO_MATCH = 4,
+  // Options for generating tikz string
+  GEN_TIKZ_STRING_WITH_VPCS = 10,
+  GEN_TIKZ_STRING_WITH_GMICS = 11,
+  GEN_TIKZ_STRING_WITH_VPCS_AND_GMICS = 12,
+  GEN_TIKZ_STRING_NO_CUTS = 13,
+  GEN_TIKZ_STRING_AND_RETURN = 14,
+  GEN_TIKZ_STRING_AND_EXIT = 15,
 };
 
 /********** DEFINITIONS **********/
@@ -293,13 +337,13 @@ protected:
   stringParam param_id;
 }; /* StringParameter */
 
-/**********  PARAMETERS STRUCT **********/
-struct Parameters {
+/********** VPC PARAMETERS STRUCT **********/
+struct VPCParameters {
   FILE* logfile = NULL; // NB: right now this is a shallow copy if this struct gets copied
 
   /** unordered_map gets printed in reverse order; advantage over map is constant access time on average */
   std::unordered_map<intParam, IntParameter, EnumClassHash> intParamValues {
-    // BB_MODE: 010 = branch with mycuts only
+    // BB_MODE: 010 = branch with vpcs only
     {intParam::BB_MODE,
         IntParameter(intParam::BB_MODE, "BB_MODE",
             10, 0, 111)},
@@ -322,6 +366,24 @@ struct Parameters {
         IntParameter(intParam::VERBOSITY, "VERBOSITY",
             0, 0, 2)},
 #endif
+    {intParam::USE_UNIT_VECTORS,
+        IntParameter(intParam::USE_UNIT_VECTORS, "USE_UNIT_VECTORS",
+            0, std::numeric_limits<int>::min(), std::numeric_limits<int>::max())},
+    {intParam::USE_TIGHT_RAYS,
+        IntParameter(intParam::USE_TIGHT_RAYS, "USE_TIGHT_RAYS",
+            0, std::numeric_limits<int>::min(), std::numeric_limits<int>::max())},
+    {intParam::USE_TIGHT_POINTS,
+        IntParameter(intParam::USE_TIGHT_POINTS, "USE_TIGHT_POINTS",
+            0, std::numeric_limits<int>::min(), std::numeric_limits<int>::max())},
+    {intParam::USE_ITER_BILINEAR,
+        IntParameter(intParam::USE_ITER_BILINEAR, "USE_ITER_BILINEAR",
+            1, 0, std::numeric_limits<int>::max())},
+    {intParam::USE_DISJ_LB,
+        IntParameter(intParam::USE_DISJ_LB, "USE_DISJ_LB",
+            1, 0, 1)},
+    {intParam::USE_ALL_ONES,
+        IntParameter(intParam::USE_ALL_ONES, "USE_ALL_ONES",
+            1, 0, 1)},
     {intParam::TEMP,
         IntParameter(intParam::TEMP, "TEMP",
             0, std::numeric_limits<int>::min(), std::numeric_limits<int>::max())},
@@ -331,12 +393,22 @@ struct Parameters {
     {intParam::ROUNDS,
         IntParameter(intParam::ROUNDS, "ROUNDS",
             1, 0, std::numeric_limits<int>::max())},
+    {intParam::PRLP_FLIP_BETA,
+        IntParameter(intParam::PRLP_FLIP_BETA, "PRLP_FLIP_BETA",
+            0, -1, 1)},
+    {intParam::PARTIAL_BB_NUM_STRONG,
+        IntParameter(intParam::PARTIAL_BB_NUM_STRONG, "PARTIAL_BB_NUM_STRONG",
+            5, std::numeric_limits<int>::min(), std::numeric_limits<int>::max())},
+    // PARTIAL_BB_STRATEGY: 004 => default variable decision, default branch decision, objective-based node comparison
+    {intParam::PARTIAL_BB_STRATEGY,
+        IntParameter(intParam::PARTIAL_BB_STRATEGY, "PARTIAL_BB_STRATEGY",
+            4, std::numeric_limits<int>::min(), std::numeric_limits<int>::max())},
     {intParam::MODE,
         IntParameter(intParam::MODE, "MODE",
             0, {0, 1, 3})},
     {intParam::GOMORY,
         IntParameter(intParam::GOMORY, "GOMORY",
-            0, -2, 2)},
+            0, -1, 1)},
     {intParam::DISJ_TERMS,
         IntParameter(intParam::DISJ_TERMS, "DISJ_TERMS",
             0, std::numeric_limits<int>::min(), std::numeric_limits<int>::max())},
@@ -348,6 +420,12 @@ struct Parameters {
     {doubleParam::TIMELIMIT,
       DoubleParameter(doubleParam::TIMELIMIT, "TIMELIMIT",
           60, 0., std::numeric_limits<double>::max())},
+    {doubleParam::PRLP_TIMELIMIT,
+        DoubleParameter(doubleParam::PRLP_TIMELIMIT, "PRLP_TIMELIMIT",
+            -1, -1., std::numeric_limits<double>::max())},
+    {doubleParam::PARTIAL_BB_TIMELIMIT,
+        DoubleParameter(doubleParam::PARTIAL_BB_TIMELIMIT, "PARTIAL_BB_TIMELIMIT",
+            3600, 0., std::numeric_limits<double>::max())},
     {doubleParam::MIN_ORTHOGONALITY,
         DoubleParameter(doubleParam::MIN_ORTHOGONALITY, "MIN_ORTHOGONALITY",
             0., 0., 1.)},
@@ -370,6 +448,10 @@ struct Parameters {
 
   // Constants
   std::unordered_map<intConst, IntParameter, EnumClassHash> intConstValues {
+    {intConst::PRLP_PRESOLVE, IntParameter("PRLP_PRESOLVE", 2, 2, 2)}, // use presolve when solving PRLP (either initial or resolve)
+    {intConst::NB_SPACE, IntParameter("NB_SPACE", 1, 1, 1)}, // currently only works with true
+    {intConst::NUM_OBJ_PER_POINT, IntParameter("NUM_OBJ_PER_POINT", -2, -2, -2)}, // sqrt(n)
+    {intConst::MODE_OBJ_PER_POINT, IntParameter("MODE_OBJ_PER_POINT", 121, 121, 121)}, // one ray at a time, points+rays+variables, large to small angle (descending)
     {intConst::MAX_SUPPORT_ABS, IntParameter("MAX_SUPPORT_ABS", std::numeric_limits<int>::max(), std::numeric_limits<int>::max(), std::numeric_limits<int>::max())},
     {intConst::LUB, IntParameter("LUB", 1e3, 1e3, 1e3)},
     {intConst::CHECK_DUPLICATES, IntParameter("CHECK_DUPLICATES", 1, 1, 1)},
@@ -382,6 +464,7 @@ struct Parameters {
     {doubleConst::MIN_VIOL_ABS, DoubleParameter("MIN_VIOL_ABS", 1e-7, 1e-7, 1e-7)},
     {doubleConst::EPS_COEFF_LUB, DoubleParameter("EPS_COEFF_LUB", 1e-13, 1e-13, 1e-13)},
     {doubleConst::EPS_COEFF, DoubleParameter("EPS_COEFF", 1e-5, 1e-5, 1e-5)},
+    {doubleConst::MIN_PRLP_TIMELIMIT, DoubleParameter("MIN_PRLP_TIMELIMIT", 5., 5., 5.)},
     {doubleConst::BB_TIMELIMIT, DoubleParameter("BB_TIMELIMIT", 3600., 3600., 3600.)},
     {doubleConst::RAYEPS, DoubleParameter("RAYEPS", 1e-7, 1e-7, 1e-7)},
     {doubleConst::INF, DoubleParameter("INF", std::numeric_limits<double>::max(), std::numeric_limits<double>::max(), std::numeric_limits<double>::max())},
@@ -390,8 +473,8 @@ struct Parameters {
   }; /* doubleConstValues */
 
   // Constructors
-  Parameters() { }
-  Parameters(const Parameters& source) {
+  VPCParameters() { }
+  VPCParameters(const VPCParameters& source) {
     this->logfile = source.logfile;
     this->intParamValues = source.intParamValues;
     this->doubleParamValues = source.doubleParamValues;
@@ -465,12 +548,12 @@ struct Parameters {
     }
     return false;
   } /* set parameters by name */
-}; /* struct Parameters */
+}; /* struct VPCParameters */
 
 /**
  * Print parameters and constants
  */
-inline void readParams(Parameters& params, std::string infilename) {
+inline void readParams(VPCParameters& params, std::string infilename) {
   std::ifstream infile(infilename.c_str());
   if (infile.is_open()) {
     std::string line;
@@ -523,7 +606,7 @@ inline void readParams(Parameters& params, std::string infilename) {
  *  11 = only const names (comma-separated)
  *  12 = only const values (comma-separated)
  */
-inline void printParams(const Parameters& params, FILE* logfile = stdout, const int amountToPrint = 0) {
+inline void printParams(const VPCParameters& params, FILE* logfile = stdout, const int amountToPrint = 0) {
   if (!logfile)
     return;
 
@@ -581,4 +664,4 @@ inline void printParams(const Parameters& params, FILE* logfile = stdout, const 
   }
   fflush(logfile);
 } /* printParams */
-} // StrengtheningParameters
+} // namespace VPCParameters

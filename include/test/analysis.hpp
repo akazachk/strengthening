@@ -13,7 +13,9 @@ class OsiSolverInterface;
 class OsiCuts;
 
 #include "CglAdvCut.hpp" // CutType, ObjectiveType
-struct Parameters;
+namespace StrengtheningParameters {
+  struct Parameters;
+}
 
 struct SummaryBBInfo; // BBHelper.hpp
 struct SummaryBoundInfo {
@@ -46,7 +48,7 @@ struct SummaryCutInfo {
   std::vector<int> numFails;
 }; /* SummaryCutInfo */
 
-void printHeader(const Parameters& params,
+void printHeader(const StrengtheningParameters::Parameters& params,
     const std::vector<std::string>& time_name,
     const char SEP = ',');
 void printBoundAndGapInfo(const SummaryBoundInfo& boundInfo, FILE* logfile,
@@ -63,13 +65,13 @@ void printPostCutProbInfo(const OsiSolverInterface* const solver,
 void printCutInfo(const SummaryCutInfo& cutInfoGMICs,
     const SummaryCutInfo& cutInfo, FILE* logfile, const char SEP = ',');
 
-void analyzeStrength(const Parameters& params, const OsiSolverInterface* solver,
+void analyzeStrength(const StrengtheningParameters::Parameters& params, const OsiSolverInterface* solver,
     SummaryCutInfo& cutInfoGMICs, SummaryCutInfo& cutInfo, 
     const OsiCuts* const gmics, const OsiCuts* const mycuts,
     const SummaryBoundInfo& boundInfo, std::string& output);
-void analyzeBB(const Parameters& params, SummaryBBInfo& info_nocuts,
+void analyzeBB(const StrengtheningParameters::Parameters& params, SummaryBBInfo& info_nocuts,
     SummaryBBInfo& info_mycuts, SummaryBBInfo& info_allcuts, std::string& output);
-double getNumGomoryRounds(const Parameters& params,
+double getNumGomoryRounds(const StrengtheningParameters::Parameters& params,
     const OsiSolverInterface* const origSolver,
     const OsiSolverInterface* const postCutSolver);
 

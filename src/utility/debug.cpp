@@ -2,13 +2,13 @@
  * @file debug.cpp
  *
  * @author A. M. Kazachkov
- * @date 2019-11-15
+ * @date 2018-12-25
  */
 #include "debug.hpp"
 
 #include "utility.hpp"
-#include "SolverHelper.hpp"
 
+#include <CoinPackedMatrix.hpp>
 #include <CoinPackedVectorBase.hpp>
 #include <CoinPackedVector.hpp>
 #include <CoinShallowPackedVector.hpp>

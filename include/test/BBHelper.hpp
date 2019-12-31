@@ -1,16 +1,18 @@
-//============================================================================
-// Name        : BBHelper.hpp
-// Author      : akazachk
-// Version     : 2018.11.19
-// Description : Helper functions for branch-and-bound
-//============================================================================
+/**
+ * @file BBHelper.hpp
+ * @author A. M. Kazachkov
+ * @date 2018-11-19
+ * @brief Helper functions for branch-and-bound
+ */
 #pragma once
 
 #include <vector>
 #include <string>
 
 class PartialBBDisjunction;
-struct Parameters;
+namespace StrengtheningParameters {
+  struct Parameters;
+}
 class OsiSolverInterface;
 class TimeStats;
 class OsiCuts;
@@ -82,7 +84,7 @@ struct SummaryBBInfo {
   std::vector<BBInfo> vec_bb_info;
 };
 
-void runBBTests(const Parameters& base_params, SummaryBBInfo* const info_nocuts,
+void runBBTests(const StrengtheningParameters::Parameters& base_params, SummaryBBInfo* const info_nocuts,
     SummaryBBInfo* const info_mycuts, SummaryBBInfo* const info_allcuts,
     const std::string fullfilename, OsiSolverInterface* const solver,
     const double best_bound, const OsiCuts* mycuts, const OsiCuts* const gmics = NULL);
@@ -109,13 +111,13 @@ void createStringFromBBInfoVec(const std::vector<BBInfo>& vec_info,
  * Creates temporary file (in /tmp) so that it can be read by a different solver
  * It does not delete the file
  */
-void createTmpFileCopy(const Parameters& params,
+void createTmpFileCopy(const StrengtheningParameters::Parameters& params,
     const OsiSolverInterface* const solver, std::string& f_name);
 
 // COIN-OR
 #ifdef USE_CBC
-void doBranchAndBoundNoCuts(const Parameters& params, const OsiSolverInterface* const solver, BBInfo& info);
-void doBranchAndBoundYesCuts(const Parameters& params, const OsiSolverInterface* const solver,
+void doBranchAndBoundNoCuts(const StrengtheningParameters::Parameters& params, const OsiSolverInterface* const solver, BBInfo& info);
+void doBranchAndBoundYesCuts(const StrengtheningParameters::Parameters& params, const OsiSolverInterface* const solver,
     BBInfo& info, const OsiCuts& structCuts, const bool doCutSelection,
     const int numCutsToAddPerRound, const int maxRounds,
     const std::string logstring);

@@ -12,27 +12,29 @@ class OsiSolverInterface;
 class OsiCuts;
 
 struct BBInfo;
-struct Parameters;
+namespace StrengtheningParameters {
+  struct Parameters;
+}
 
 #ifdef USE_GUROBI
 // Gurobi stuff
-void presolveModelWithGurobi(const Parameters& params, int strategy,
+void presolveModelWithGurobi(const StrengtheningParameters::Parameters& params, int strategy,
     const char* f_name, double& presolved_opt, std::string& presolved_name,
     const double best_bound);
-void presolveModelWithGurobi(const Parameters& params, int strategy,
+void presolveModelWithGurobi(const StrengtheningParameters::Parameters& params, int strategy,
     const OsiSolverInterface* const solver, double& presolved_opt,
     std::string& presolved_name);
-void doBranchAndBoundWithGurobi(const Parameters& params, int strategy, const char* f_name, BBInfo& info,
+void doBranchAndBoundWithGurobi(const StrengtheningParameters::Parameters& params, int strategy, const char* f_name, BBInfo& info,
     const double best_bound = std::numeric_limits<double>::max(),
     std::vector<double>* const solution = NULL);
-void doBranchAndBoundWithGurobi(const Parameters& params, int strategy,
+void doBranchAndBoundWithGurobi(const StrengtheningParameters::Parameters& params, int strategy,
     const OsiSolverInterface* const solver, BBInfo& info,
     const double best_bound = std::numeric_limits<double>::max(),
     std::vector<double>* const solution = NULL);
-void doBranchAndBoundWithUserCutsGurobi(const Parameters& params, int strategy,
+void doBranchAndBoundWithUserCutsGurobi(const StrengtheningParameters::Parameters& params, int strategy,
     const char* f_name, const OsiCuts* cuts, BBInfo& info,
     const double best_bound, const bool addAsLazy = false);
-void doBranchAndBoundWithUserCutsGurobi(const Parameters& params, int strategy,
+void doBranchAndBoundWithUserCutsGurobi(const StrengtheningParameters::Parameters& params, int strategy,
     const OsiSolverInterface* const solver, const OsiCuts* cuts, BBInfo& info,
     const double best_bound, const bool addAsLazy = false);
 #endif /* USE_GUROBI */
