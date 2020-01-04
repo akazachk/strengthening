@@ -17,23 +17,36 @@
 #include "SolverHelper.hpp"
 #include "SolverInterface.hpp"
 #include "utility.hpp"
+
+// VPC files
+#include "CglVPC.hpp"
+
 using namespace StrengtheningParameters;
 
 #ifdef TRACE
 #include "debug.hpp"
 #endif
 
+const std::vector<std::string> CglAdvCut::ExitReasonName {
+  "SUCCESS",
+  "CUT_LIMIT",
+  "FAIL_LIMIT",
+  "TIME_LIMIT",
+  "NO_CUTS_LIKELY",
+  "UNKNOWN"
+}; /* ExitReasonName */
 const std::vector<std::string> CglAdvCut::CutTimeStatsName {
   "TOTAL_TIME",
   "INIT_SOLVE_TIME",
   "GEN_CUTS_TIME"
 }; /* CutTimeStatsName */
 const std::vector<std::string> CglAdvCut::CutTypeName {
-  "ONE_SIDED_CUT", "OPTIMALITY_CUT",
+  "ONE_SIDED_CUT", "OPTIMALITY_CUT", "OTHER_CUT"
 }; /* CutTypeName */
 const std::vector<std::string> CglAdvCut::ObjectiveTypeName {
   "DUMMY_OBJ",
-  "ONE_SIDED"
+  "ONE_SIDED",
+  "OTHER"
 }; /* ObjectiveTypeName */
 const std::vector<std::string> CglAdvCut::FailureTypeName {
   "ABANDONED",
@@ -42,9 +55,11 @@ const std::vector<std::string> CglAdvCut::FailureTypeName {
   "BAD_VIOLATION",
   "CUT_LIMIT",
   "DUAL_INFEASIBLE",
-  "DUPLICATE",
+  "DUPLICATE_SIC",
+  "DUPLICATE_OTHER",
   "ITERATION_LIMIT",
-  "ORTHOGONALITY",
+  "ORTHOGONALITY_SIC",
+  "ORTHOGONALITY_OTHER",
   "PRIMAL_INFEASIBLE",
   "TIME_LIMIT",
   "NUMERICAL_ISSUES_WARNING",
@@ -122,9 +137,9 @@ void CglAdvCut::setParams(const Parameters& param) {
  * @brief Generate VPCs from a disjunction (e.g., arising from a partial branch-and-bound tree)
  */
 void CglAdvCut::generateCuts(const OsiSolverInterface& si, OsiCuts& cuts, const CglTreeInfo info) {
-  ExitReason status = ExitReason::UNKNOWN;
+  CglAdvCut::ExitReason status = CglAdvCut::ExitReason::UNKNOWN;
   if (reachedTimeLimit(CutTimeStats::TOTAL_TIME, params.get(TIMELIMIT))) {
-    status = ExitReason::TIME_LIMIT_EXIT;
+    status = CglAdvCut::ExitReason::TIME_LIMIT_EXIT;
     finish(status);
     return;
   }
@@ -157,7 +172,7 @@ void CglAdvCut::generateCuts(const OsiSolverInterface& si, OsiCuts& cuts, const 
       CglAdvCut::getCutLimit(params.get(CUTLIMIT),
           si.getFractionalIndices().size()));
   if (reachedCutLimit()) {
-    status = ExitReason::CUT_LIMIT_EXIT;
+    status = CglAdvCut::ExitReason::CUT_LIMIT_EXIT;
     finish(status);
     return;
   }
@@ -182,6 +197,84 @@ void CglAdvCut::generateCuts(const OsiSolverInterface& si, OsiCuts& cuts, const 
 
   // Make a copy of the solver to allow for fixing variables and changed bounds at root
   SolverInterface* mysolver = dynamic_cast<SolverInterface*>(si.clone());
+
+  //==================================================//
+  // Set up VPC generation
+  VPCParametersNamespace::VPCParameters vpc_params;
+  vpc_params.set(VPCParametersNamespace::DISJ_TERMS, this->params.get(StrengtheningParameters::DISJ_TERMS));
+  vpc_params.set(VPCParametersNamespace::CUTLIMIT, this->params.get(StrengtheningParameters::CUTLIMIT));
+
+  this->gen.setParams(vpc_params);
+
+  OsiCuts tmpcuts = cuts;
+  this->gen.generateCuts(*mysolver, tmpcuts);
+
+  // Save stats
+  this->timer = this->gen.timer;
+  this->num_obj_tried = this->gen.num_obj_tried;
+  this->num_failures = this->gen.num_failures;
+
+  // Save cut type // TODO check this works with rounds
+  for (int cut_ind = 0; cut_ind < tmpcuts.sizeCuts(); cut_ind++) {
+    CglVPC::CutType vpcCutType = this->gen.cutType[cut_ind];
+    CglAdvCut::CutType currCutType;
+    if (vpcCutType == CglVPC::CutType::ONE_SIDED_CUT) {
+      currCutType = CglAdvCut::CutType::ONE_SIDED_CUT;
+    }
+    else if (vpcCutType == CglVPC::CutType::OPTIMALITY_CUT) {
+      currCutType = CglAdvCut::CutType::OPTIMALITY_CUT;
+    }
+    else {
+      currCutType = CglAdvCut::CutType::OTHER_CUT;
+    }
+
+    CglVPC::ObjectiveType vpcObjType = this->gen.objType[cut_ind];
+    CglAdvCut::ObjectiveType currObjType;
+    if (vpcObjType == CglVPC::ObjectiveType::DUMMY_OBJ) {
+      currObjType = CglAdvCut::ObjectiveType::DUMMY_OBJ;
+    }
+    else if (vpcObjType == CglVPC::ObjectiveType::ONE_SIDED) {
+      currObjType = CglAdvCut::ObjectiveType::ONE_SIDED;
+    }
+    else {
+      currObjType = CglAdvCut::ObjectiveType::OTHER;
+    }
+
+    // Set cutType, numCutsOfType, objType, numCutsFromHeur, num_cuts
+    this->addCut(tmpcuts.rowCut(cut_ind), cuts, currCutType, currObjType);
+
+  } // iterate over cuts
+
+  // Set numFails (if all failure types match, then we can use same counting; otherwise we need to be more careful but for now we will just lump everything together)
+  if (static_cast<int>(CglAdvCut::FailureType::NUM_FAILURE_TYPES) == static_cast<int>(CglVPC::FailureType::NUM_FAILURE_TYPES)) {
+    this->numFails = this->gen.numFails;
+  } else {
+    this->numFails[static_cast<int>(CglAdvCut::FailureType::UNKNOWN)] = this->num_failures;
+  }
+
+  // Similarly for setting numObjFromHeur, numFailsFromHeur
+  if (static_cast<int>(CglAdvCut::ObjectiveType::NUM_OBJECTIVE_TYPES) == static_cast<int>(CglVPC::ObjectiveType::NUM_OBJECTIVE_TYPES)) {
+    this->numObjFromHeur = this->gen.numObjFromHeur;
+    this->numFailsFromHeur = this->gen.numFailsFromHeur;
+  } else {
+    this->numObjFromHeur[static_cast<int>(CglAdvCut::ObjectiveType::OTHER)] = this->num_obj_tried;
+    this->numFailsFromHeur[static_cast<int>(CglAdvCut::ObjectiveType::OTHER)] = this->num_failures;
+  }
+
+  // Save exit reason
+  CglVPC::ExitReason vpcExitReason = this->gen.exitReason;
+  if (vpcExitReason == CglVPC::ExitReason::SUCCESS_EXIT)
+    this->exitReason = CglAdvCut::ExitReason::SUCCESS_EXIT;
+  else if (vpcExitReason == CglVPC::ExitReason::CUT_LIMIT_EXIT)
+    this->exitReason = CglAdvCut::ExitReason::CUT_LIMIT_EXIT;
+  else if (vpcExitReason == CglVPC::ExitReason::FAIL_LIMIT_EXIT)
+    this->exitReason = CglAdvCut::ExitReason::FAIL_LIMIT_EXIT;
+  else if (vpcExitReason == CglVPC::ExitReason::TIME_LIMIT_EXIT)
+    this->exitReason = CglAdvCut::ExitReason::TIME_LIMIT_EXIT;
+  else if (vpcExitReason == CglVPC::ExitReason::NO_CUTS_LIKELY_EXIT)
+    this->exitReason = CglAdvCut::ExitReason::NO_CUTS_LIKELY_EXIT;
+  else
+    this->exitReason = CglAdvCut::ExitReason::UNKNOWN;
   
   if (mysolver) { delete mysolver; }
   finish(status);
@@ -208,7 +301,7 @@ void CglAdvCut::addCut(const OsiRowCut& cut, OsiCuts& cuts, const CutType& type,
  * The latter two should not be changed and need to correspond to the cuts passed into generateCuts
  */
 void CglAdvCut::setupAsNew() {
-  this->exitReason = ExitReason::UNKNOWN;
+  this->exitReason = CglAdvCut::ExitReason::UNKNOWN;
   this->numCutsOfType.clear();
   this->numCutsOfType.resize(static_cast<int>(CutType::NUM_CUT_TYPES), 0);
   this->numCutsFromHeur.clear();
@@ -513,7 +606,7 @@ bool CglAdvCut::reachedFailureLimit(const int num_cuts, const int num_fails, //c
     reached_limit = true;
   }
 //  if (reached_limit) {
-//    this->exitReason = ExitReason::FAIL_LIMIT_EXIT;
+//    this->exitReason = CglAdvCut::ExitReason::FAIL_LIMIT_EXIT;
 //  }
   return reached_limit;
 } /* reachedFailureLimit */

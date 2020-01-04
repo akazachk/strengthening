@@ -5,8 +5,6 @@
  */
 #include "disjcuts.hpp"
 
-//namespace VPC {
-
 // COIN-OR includes
 #include <OsiSolverInterface.hpp>
 #include <OsiCuts.hpp>
@@ -52,5 +50,4 @@ void genDisjCuts(
    if (solver->disj)
      disj = solver->disj->clone();
 } /* genDisjCuts */
-//} /* namespace VPC */
 

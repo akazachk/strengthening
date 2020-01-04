@@ -60,7 +60,7 @@ OsiSolverInterface* GMICSolver = NULL;
 OsiSolverInterface* CutSolver = NULL;
 OsiCuts gmics, mycuts;
 std::string dir = "", filename = "", instname = "", in_file_ext = "";
-ExitReason exitReason;
+CglAdvCut::ExitReason exitReason;
 TimeStats timer;
 std::time_t start_time_t, end_time_t;
 char start_time_string[25];
@@ -330,15 +330,14 @@ int main(int argc, char** argv) {
 
     // Generate disjunctive cuts
     Disjunction* disj = NULL;
-    genDisjCuts(solver, params.get(intParam::DISJ_TERMS), params.get(intParam::CUTLIMIT), &mycuts_by_round[round_ind], disj); // solution may change slightly due to enable factorization called in getProblemData...
-    boundInfo.num_mycuts += gen.num_cuts;
+    //genDisjCuts(solver, params.get(intParam::DISJ_TERMS), params.get(intParam::CUTLIMIT), &mycuts_by_round[round_ind], disj); // solution may change slightly due to enable factorization called in getProblemData...
+    //boundInfo.num_mycuts += gen.num_cuts;
 
-    /*
     gen.generateCuts(*solver, mycuts_by_round[round_ind]); 
+    disj = gen.gen.disj();
     exitReason = gen.exitReason;
     updateCutInfo(cutInfoVec[round_ind], &gen);
     boundInfo.num_mycuts += gen.num_cuts;
-    */
     timer.end_timer(OverallTimeStats::CUT_TIME);
 
     timer.start_timer(OverallTimeStats::APPLY_TIME);
@@ -365,7 +364,7 @@ int main(int argc, char** argv) {
     printf(
         "\n## Round %d/%d: Completed round of cut generation (exit reason: %s). # cuts generated = %d.\n",
         round_ind + 1, params.get(ROUNDS),
-        ExitReasonName[static_cast<int>(exitReason)].c_str(),
+        CglAdvCut::ExitReasonName[static_cast<int>(exitReason)].c_str(),
         mycuts_by_round[round_ind].sizeCuts());
     fflush(stdout);
     printf("Initial obj value: %1.6f. New obj value: %s. Disj lb: %s. ##\n",
@@ -405,9 +404,9 @@ int main(int argc, char** argv) {
 #endif
 
   // Do analyses in preparation for printing
-  //setCutInfo(cutInfo, num_rounds, cutInfoVec.data());
-  //analyzeStrength(params, solver, cutInfoGMICs, cutInfo, &gmics, &mycuts,
-      //boundInfo, cut_output);
+  setCutInfo(cutInfo, num_rounds, cutInfoVec.data());
+  analyzeStrength(params, solver, cutInfoGMICs, cutInfo, &gmics, &mycuts,
+      boundInfo, cut_output);
   analyzeBB(params, info_nocuts, info_mycuts, info_allcuts, bb_output);
   return wrapUp(0);
 } /* main */
@@ -501,7 +500,7 @@ int wrapUp(int retCode /*= 0*/) {
       // Print time info
       timer.print(params.logfile, 2); // only values
       // Print exit reason and finish
-      fprintf(logfile, "%s,", ExitReasonName[exitReasonInt].c_str());
+      fprintf(logfile, "%s,", CglAdvCut::ExitReasonName[exitReasonInt].c_str());
     }
 
     fprintf(logfile, "%s,", end_time_string);
@@ -537,7 +536,7 @@ int wrapUp(int retCode /*= 0*/) {
   // Print branch-and-bound results
   printf("%s", bb_output.c_str());
 
-  printf("\n## Exiting cut generation with reason %s. ##\n", ExitReasonName[exitReasonInt].c_str());
+  printf("\n## Exiting cut generation with reason %s. ##\n", CglAdvCut::ExitReasonName[exitReasonInt].c_str());
   printf("Instance: %s\n", instname.c_str());
   printf("Start time: %s\n", start_time_string);
   printf("End time: %s\n", end_time_string);

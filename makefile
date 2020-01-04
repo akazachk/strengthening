@@ -172,7 +172,8 @@ VPC_OUT_OBJECTS = $(addprefix $(VPC_OBJ_DIR)/,$(VPC_OBJECTS))
 
 # Set includes
 APPLINCLS = -Iinclude -Iinclude/common -Iinclude/test
-APPLINCLS += -Iinclude/vpc
+## TEMPORARY CHANGE TO PARENT VPC (NO WIFI)
+APPLINCLS += -I../vpc/include
 
 APPLLIB = -lm -lz -lbz2 -lreadline
 
