@@ -231,7 +231,7 @@ int main(int argc, char** argv) {
         // we need to explicitly add the constraint(s) defining the disjunctive term
         const CoinPackedVector lhs = intCut.row();
 
-        std::vector<std::vector<double> > v; // this will be of dimension rows + cols
+        std::vector<std::vector<double> > v(2); // [term][val] for each term, this will be of dimension rows + cols
         { // Check first side of the split
           // Calculate the certificate
           OsiSolverInterface* solver0 = solver->clone();
