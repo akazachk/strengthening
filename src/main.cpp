@@ -29,6 +29,7 @@
 #include "CglAdvCut.hpp"
 #include "CutHelper.hpp"
 #include "Disjunction.hpp" // DisjunctiveTerm, Disjunction, getSolverForTerm
+#include "SplitDisjunction.hpp"
 //#include "disjcuts.hpp"
 #include "gmic.hpp"
 #include "Parameters.hpp"
@@ -230,14 +231,14 @@ int main(int argc, char** argv) {
         // we need to explicitly add the constraint(s) defining the disjunctive term
         const CoinPackedVector lhs = intCut.row();
 
-        std::vector<double> v0, v1; // this will be of dimension rows + cols
+        std::vector<std::vector<double> > v; // this will be of dimension rows + cols
         { // Check first side of the split
           // Calculate the certificate
           OsiSolverInterface* solver0 = solver->clone();
           const double el = -1.;
           solver0->addRow(1, &var, &el, -1. * std::floor(val), solver->getInfinity());
 
-          getCertificate(v0, lhs.getNumElements(), lhs.getIndices(), lhs.getElements(), solver0);
+          getCertificate(v[0], lhs.getNumElements(), lhs.getIndices(), lhs.getElements(), solver0);
 
           if (solver0) delete solver0;
         } // check first side of the split
@@ -248,7 +249,7 @@ int main(int argc, char** argv) {
           const double el = 1.;
           solver1->addRow(1, &var, &el, std::ceil(val), solver->getInfinity());
 
-          getCertificate(v1, lhs.getNumElements(), lhs.getIndices(), lhs.getElements(), solver1);
+          getCertificate(v[1], lhs.getNumElements(), lhs.getIndices(), lhs.getElements(), solver1);
 
           if (solver1) delete solver1;
         } // check second side of the split
@@ -256,16 +257,25 @@ int main(int argc, char** argv) {
         // Double check that calculated value of Farkas certificate matches theoretical value
         const double delta0 = val - std::floor(val);
         const double delta1 = std::ceil(val) - val;
-        if (!isVal(v0[solver->getNumRows()], 1.0 / delta0)) {
-          error_msg(errorstring, "Value of disjunctive term multiplier does not match theory. u0: %.6g. theory: %.6g.\n", v0[solver->getNumRows()], 1.0 / delta0);
+        if (!isVal(v[0][solver->getNumRows()], 1.0 / delta0)) {
+          error_msg(errorstring, "Value of disjunctive term multiplier does not match theory. u0: %.6g. theory: %.6g.\n", v[0][solver->getNumRows()], 1.0 / delta0);
           writeErrorToLog(errorstring, params.logfile);
           exit(1);
         }
-        if (!isVal(v1[solver->getNumRows()], 1.0 / delta1)) {
-          error_msg(errorstring, "Value of disjunctive term multiplier does not match theory. v0: %.6g. theory: %.6g.\n", v1[solver->getNumRows()], 1.0 / delta1);
+        if (!isVal(v[1][solver->getNumRows()], 1.0 / delta1)) {
+          error_msg(errorstring, "Value of disjunctive term multiplier does not match theory. v0: %.6g. theory: %.6g.\n", v[1][solver->getNumRows()], 1.0 / delta1);
           writeErrorToLog(errorstring, params.logfile);
           exit(1);
         }
+
+        // Do strengthening; for this we first need to setup a split disjunction
+        SplitDisjunction disj;
+        disj.var = var;
+        disj.prepareDisjunction(solver);
+        const double rhs = intCut.rhs();
+        std::vector<double> str_coeff;
+        double str_rhs;
+        strengthenCut(str_coeff, str_rhs, lhs.getNumElements(), lhs.getIndices(), lhs.getElements(), rhs, &disj, v, solver);
       } // iterate over cols, generating GMICs
       gmics.insert(currGMICs);
 
@@ -297,8 +307,12 @@ int main(int argc, char** argv) {
     updateCutInfo(cutInfoVec[round_ind], &gen);
     boundInfo.num_mycuts += gen.num_cuts;
 
-    // Get Farkas certificate
+    // Get Farkas certificate and do strengthening
     if (disj && mycuts_by_round[round_ind].sizeCuts() > 0) {
+      std::vector<std::vector<std::vector<double> > > v(mycuts_by_round[round_ind].sizeCuts()); // [cut][term][Farkas multiplier] in the end, per term, this will be of dimension rows + cols
+      for (int cut_ind = 0; cut_ind < mycuts_by_round[round_ind].sizeCuts(); cut_ind++) {
+        v[cut_ind].resize(disj->num_terms);
+      }
       for (int term_ind = 0; term_ind < disj->num_terms; term_ind++) {
         OsiSolverInterface* termSolver;
         disj->getSolverForTerm(termSolver, term_ind, solver, params.get(StrengtheningParameters::doubleConst::DIFFEPS), params.logfile);
@@ -320,11 +334,20 @@ int main(int argc, char** argv) {
             cut_coeff[lhs.getIndices()[i]] = lhs.getElements()[i];
           }
 
-          std::vector<double> v; // this will be of dimension rows + cols
-          getCertificate(v, lhs.getNumElements(), lhs.getIndices(), lhs.getElements(), termSolver);
+          getCertificate(v[cut_ind][term_ind], lhs.getNumElements(), lhs.getIndices(), lhs.getElements(), termSolver);
         } // loop over cuts
         if (termSolver) { delete termSolver; }
       } // loop over disjunctive terms
+
+      // Do strengthening
+      for (int cut_ind = 0; cut_ind < mycuts_by_round[round_ind].sizeCuts(); cut_ind++) {
+        OsiRowCut* disjCut = mycuts_by_round[round_ind].rowCutPtr(cut_ind);
+        const CoinPackedVector lhs = disjCut->row();
+        const double rhs = disjCut->rhs();
+        std::vector<double> str_coeff;
+        double str_rhs;
+        strengthenCut(str_coeff, str_rhs, lhs.getNumElements(), lhs.getIndices(), lhs.getElements(), rhs, disj, v[cut_ind], solver);
+      }
     } // check that disj exists and cuts were generated
 
     timer.end_timer(OverallTimeStats::CUT_TIME);

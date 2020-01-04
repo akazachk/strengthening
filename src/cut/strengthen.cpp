@@ -7,9 +7,10 @@
 
 #include <OsiRowCut.hpp> // for setting a disjunctive term
 
+#include "CutHelper.hpp" // for setObjective and addToObjective
 #include "Disjunction.hpp"
-#include "Parameters.hpp" // includes SolverInterface
-#include "SolverHelper.hpp" // isBasicVar
+//#include "Parameters.hpp"
+#include "SolverHelper.hpp" // isBasicVar, checkSolverOptimality
 #include "utility.hpp"
 
 #ifdef USE_EIGEN
@@ -77,7 +78,7 @@ void createEigenMatrix(
   assert(!mat->isColOrdered());
 #endif
 
-  const bool doAll = rows.size() + cols.size() == 0;
+  const bool doAll = (rows.size() + cols.size()) == 0;
   const int num_cols = mat->getNumCols();
   const int num_selected_rows = doAll ? mat->getNumRows() + mat->getNumCols() : rows.size() + cols.size();
   int num_elem_removed = 0, num_rows_removed = 0;
@@ -190,7 +191,7 @@ void solveLinearSystem(
 /// If A is not invertible, then we need only consider the relaxed corner polyhedron
 /// That is, we only need the basis inverse applied to the matrix
 void getCertificate(
-    /// [out] Farkas multipliers
+    /// [out] Farkas multipliers (vector of length m + n)
     std::vector<double>& v, 
     /// [in] number of nonzero cut coefficients
     const int num_elem, 
@@ -450,12 +451,14 @@ void getCertificateTrivial(
     const int* const ind, 
     /// [in] nonzero cut coefficients
     const double* const coeff,
-    // [in] initial LP solver
-    const OsiSolverInterface* const solver,
     // [in] disjunction
-    const Disjunction* const disj) {
+    const Disjunction* const disj,
+    // [in] initial LP solver
+    const OsiSolverInterface* const solver) {
+  // TODO
 } /* getCertificateTrivial */
 
+/// First m rows of v correspond to A; the next n are bounds on the variables
 void verifyCertificate(
     /// [out] calculated cut coefficients
     std::vector<double>& alpha, 
@@ -494,3 +497,147 @@ void verifyCertificate(
     }
   }*/ // DEBUG
 } /* verifyCertificate */
+
+/**
+ * @brief Attempt to strengthen coefficients of given cut
+ *
+ * Required:
+ * (1) original cut
+ * (2) disjunction for which the cut is valid
+ * (3) Farkas certificate for the cut for this disjunction, 
+ *      where the first m rows correspond to the original constraint matrix, 
+ *      the next m_t rows correspond to the multipliers on the disjunctive term inequalities
+ *      the last n rows are bounds on the variables, 
+ * (4) globally valid lower bounds on the disjunctive term inequalties
+ *
+ * With those, the strengthening requires finding values m_1,...,m_T
+ *  str_coeff[k] = coeff[k] + max_t { -u^t_k + u^t_0 (D^t_0 - \ell^t) m_t }
+ */
+void strengthenCut(
+    /// [out] strengthened cut coefficients
+    std::vector<double>& str_coeff,
+    /// [out] strengthened cut rhs
+    double& str_rhs,
+    /// [in] number of nonzero cut coefficients
+    const int num_elem, 
+    /// [in] indices of nonzero cut coefficients
+    const int* const ind, 
+    /// [in] nonzero cut coefficients
+    const double* const coeff,
+    /// [in] original cut rhs
+    const double rhs,
+    /// [in] disjunction
+    const Disjunction* const disj,
+    /// [in] Farkas multipliers for each of the terms of the disjunction (each is a vector of length m + n)
+    const std::vector<std::vector<double> >& v, 
+    /// [in] original solver (used to get globally-valid lower bounds for the disjunctive terms)
+    const OsiSolverInterface* const solver) {
+  str_coeff.clear();
+  str_coeff.resize(solver->getNumCols());
+  if (!disj) return;
+
+  // Set up original cut coeff and rhs
+  str_rhs = rhs;
+  for (int i = 0; i < num_elem; i++) {
+    str_coeff[ind[i]] = coeff[i];
+  }
+
+  // Get globally lower bound for each of the disjunctive terms
+  // and use this to set up term-by-term coefficients for strengthening
+  // TODO get this to work with generic inequality description of disjunction, not just the bound changes version
+  std::vector<std::vector<double> > disj_lb_diff(disj->num_terms);
+  std::vector<double> lb_term(disj->num_terms, 0.0); // u^t_0 (D^t_0 - \ell^t)
+  for (int term_ind = 0; term_ind < disj->num_terms; term_ind++) {
+    const DisjunctiveTerm& term = disj->terms[term_ind];
+    const int num_disj_ineqs = (int) term.changed_var.size();
+    // Resize current term vector
+    disj_lb_diff[term_ind].resize(num_disj_ineqs, 0.0);
+
+    for (int bound_ind = 0; bound_ind < num_disj_ineqs; bound_ind++) {
+      const int var = term.changed_var[bound_ind];
+      const double mult = (term.changed_bound[bound_ind] <= 0) ? 1.0 : -1.0;
+      const double bd = (term.changed_bound[bound_ind] <= 0) ? solver->getColLower()[var] : solver->getColUpper()[var];
+      double lb = mult * bd;
+      if (isInfinity(std::abs(lb))) {
+        {
+          // No bound readily available; try to optimize to find one
+          OsiSolverInterface* tmpSolver = solver->clone();
+          addToObjectiveFromPackedVector(tmpSolver, NULL, true);
+          setConstantObjectiveFromPackedVector(tmpSolver, mult, 1, &var);
+          tmpSolver->resolve();
+          checkSolverOptimality(tmpSolver, false);
+          if (tmpSolver->isProvenOptimal()) {
+            lb = tmpSolver->getObjValue();
+          }
+
+          if (tmpSolver) { delete tmpSolver; }
+        }
+        if (isInfinity(std::abs(lb))) {
+          fprintf(stderr,
+              "*** ERROR: Cannot strengthen cut using this disjunction because variable %d is missing its %s bound.\n",
+              var, term.changed_bound[bound_ind] <= 0 ? "lower" : "upper");
+          exit(1);
+        }
+      } // check if lb is infinite
+
+      disj_lb_diff[term_ind][bound_ind] = mult * term.changed_value[bound_ind] - lb;
+#ifdef TRACE
+      assert(disj_lb_diff[term_ind][bound_ind] > -1e-3);
+#endif
+      lb_term[term_ind] += v[term_ind][solver->getNumRows() + bound_ind] * disj_lb_diff[term_ind][bound_ind];
+    } // loop over bounds
+  } // loop over terms
+
+  // Now try to strengthen the coefficients on the integer-restricted variables
+  for (int col = 0; col < solver->getNumCols(); col++) {
+    if (!solver->isInteger(col)) continue;
+    str_coeff[col] = strengthenCutCoefficient(col, coeff[col], disj, lb_term, v, solver);
+  }
+} /* strengthenCut */
+
+/// Returns new cut coefficient (we need to minimize over monoids m)
+double strengthenCutCoefficient(
+    /// [in] variable for which the coefficient is being changed
+    const int var,
+    /// [in] original coeff
+    const double coeff,
+    /// [in] disjunction
+    const Disjunction* const disj,
+    /// [in] u^t_0 (D^t_0 - \ell^t) for all t
+    const std::vector<double>& lb_term,
+    /// [in] Farkas multipliers for each of the terms of the disjunction (each is a vector of length m + n)
+    const std::vector<std::vector<double> >& v, 
+    /// [in] original solver
+    const OsiSolverInterface* const solver) {
+  double str_coeff = coeff;
+
+  const int num_terms = disj->num_terms;
+  std::vector<int> m1(num_terms, 0.0);
+  std::vector<int> m2(num_terms, 0.0);
+  std::vector<int> m3(num_terms, 0.0);
+  if (num_terms == 2) {
+    m2[0] = 1.0;
+    m2[1] = -1.0;
+    m3[0] = -1.0;
+    m3[1] = 1.0;
+  }
+  std::vector<std::vector<int> > m_options = { m1, m2, m3 };
+  double min_max_term_val = std::numeric_limits<double>::max();
+  for (const auto& m : m_options) {
+    double max_term_val = std::numeric_limits<double>::lowest(); 
+    for (int term_ind = 0; term_ind < num_terms; term_ind++) {
+      const DisjunctiveTerm& term = disj->terms[term_ind];
+      const int num_disj_ineqs = (int) term.changed_var.size();
+      const double utk = v[term_ind][solver->getNumRows() + num_disj_ineqs + var];
+      const double curr_val = -utk + lb_term[term_ind] * m[term_ind];
+      if (curr_val > max_term_val) {
+        max_term_val = curr_val;
+      }
+    }
+    if (max_term_val < min_max_term_val) {
+      min_max_term_val = max_term_val;
+    }
+  } // loop over monoid options
+  str_coeff += min_max_term_val;
+  return str_coeff;
+} /* strengthenCutCoefficient */

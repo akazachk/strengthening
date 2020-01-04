@@ -75,3 +75,28 @@ void getCertificateForDisjunction();
  */
 void verifyCertificate(std::vector<double>& alpha, const std::vector<double>& v, 
     const OsiSolverInterface* const solver);
+
+/**
+ * @brief Attempt to strengthen coefficients of given cut
+ */
+void strengthenCut(
+    std::vector<double>& str_coeff,
+    double& str_rhs,
+    const int num_elem, 
+    const int* const ind, 
+    const double* const coeff,
+    const double rhs,
+    const Disjunction* const disj,
+    const std::vector<std::vector<double> >& v, 
+    const OsiSolverInterface* const solver);
+
+/**
+ * @brief Returns new cut coefficient
+ */
+double strengthenCutCoefficient(
+    const int var,
+    const double coeff,
+    const Disjunction* const disj,
+    const std::vector<double>& lb_term,
+    const std::vector<std::vector<double> >& v, 
+    const OsiSolverInterface* const solver);
