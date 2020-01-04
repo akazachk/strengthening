@@ -335,6 +335,7 @@ void getCertificate(
     }
   }
   if (num_errors > 0) printf("Number of differences between true and calculated cuts: %d. Total difference: %g.\n", num_errors, total_diff);
+  //else printf("No errors found.\n");
 #endif
 
   solver->disableFactorization();

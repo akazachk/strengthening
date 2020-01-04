@@ -28,7 +28,7 @@
 #include "BBHelper.hpp"
 #include "CglAdvCut.hpp"
 #include "CutHelper.hpp"
-#include "Disjunction.hpp" // DisjunctiveTerm, Disjunction
+#include "Disjunction.hpp" // DisjunctiveTerm, Disjunction, getSolverForTerm
 //#include "disjcuts.hpp"
 #include "gmic.hpp"
 #include "Parameters.hpp"
@@ -300,7 +300,8 @@ int main(int argc, char** argv) {
     // Get Farkas certificate
     if (disj && mycuts_by_round[round_ind].sizeCuts() > 0) {
       for (int term_ind = 0; term_ind < disj->num_terms; term_ind++) {
-        OsiSolverInterface* termSolver = disj->getSolverForTerm(term_ind, solver, params.get(StrengtheningParameters::doubleConst::DIFFEPS), params.logfile);
+        OsiSolverInterface* termSolver;
+        disj->getSolverForTerm(termSolver, term_ind, solver, params.get(StrengtheningParameters::doubleConst::DIFFEPS), params.logfile);
         if (!termSolver) {
           printf("Disjunctive term %d/%d not created successfully.\n", term_ind+1, disj->num_terms);
           continue;

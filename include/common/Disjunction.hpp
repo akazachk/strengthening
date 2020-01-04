@@ -113,13 +113,14 @@ public:
 
   /** Retrieve disjunction */
 #ifdef USE_COIN
-  virtual OsiSolverInterface* getSolverForTerm(
+  void getSolverForTerm(
+    OsiSolverInterface*& termSolver,
     const int term_ind,
     const OsiSolverInterface* const solver,
     const double DIFFEPS,
     FILE* logfile) const;
 #else
-  virtual void getSolverForTerm(const int term_ind) const;
+  void getSolverForTerm(const int term_ind) const;
 #endif
 
   /** Set/update name of cut generating set (disjunction) */

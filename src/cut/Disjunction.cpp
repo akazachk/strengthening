@@ -125,7 +125,9 @@ void Disjunction::setupAsNew() {
 
 #ifdef USE_COIN
 /// Retrieve solver set up for disjunctive term (user responsibility to free this solver)
-OsiSolverInterface* Disjunction::getSolverForTerm(
+void Disjunction::getSolverForTerm(
+    /// [out] solver that is created by this method, corresponding to the specified disjunctive term
+    OsiSolverInterface*& termSolver,
     /// [in] term index
     const int term_ind,
     /// [in] original solver
@@ -134,7 +136,7 @@ OsiSolverInterface* Disjunction::getSolverForTerm(
     const double DIFFEPS,
     /// [in] logfile for error printing
     FILE* logfile) const {
-  OsiSolverInterface* termSolver = solver->clone();
+  termSolver = solver->clone();
   const DisjunctiveTerm* const term = &(this->terms[term_ind]);
 
   const int curr_num_changed_bounds = term->changed_var.size();
@@ -179,7 +181,7 @@ OsiSolverInterface* Disjunction::getSolverForTerm(
   if (!calcAndFeasTerm) {
     printf("\n## Term %d/%d is not proven optimal. Exiting from this term. ##\n", term_ind+1, this->num_terms);
     delete termSolver;;
-    return NULL;
+    return;
   }
 
   // Sometimes we run into a few issues getting the ``right'' value
@@ -212,8 +214,6 @@ OsiSolverInterface* Disjunction::getSolverForTerm(
     printf("Bounds changed: %s.\n", commonName.c_str());
 #endif
   } // check that objective value matches
-
-  return termSolver;
 } /* getSolverForTerm */
 #else
 void Disjunction::getSolverForTerm(
@@ -221,7 +221,7 @@ void Disjunction::getSolverForTerm(
     const int term_ind) const {
   // This function left intentionally blank for now
 } /* getSolverForTerm */
-#endif
+#endif // USE_COIN
 
 void Disjunction::setCgsName(std::string& cgsName,
     const std::string& disjTermName) {
