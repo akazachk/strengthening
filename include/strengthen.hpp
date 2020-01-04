@@ -6,11 +6,13 @@
 #pragma once
 
 #include <vector>
+#include <cstdio>
 
 class OsiSolverInterface;
 class CoinPackedMatrix;
 
 class Disjunction;
+class DisjunctiveTerm;
 
 #ifdef USE_EIGEN
 #include <Eigen/Sparse>
@@ -48,7 +50,17 @@ void solveLinearSystem(
  * and a linear program describing the feasible region of a polyhedron
  */
 void getCertificate(std::vector<double>& v, const int num_elem, const int* const ind, 
-    const double* const coeff, const OsiSolverInterface* const solver);
+    const double* const coeff, OsiSolverInterface* const solver);
+
+void getCertificateForTerm(
+    std::vector<double>& v, 
+    const int num_elem, 
+    const int* const ind, 
+    const double* const coeff,
+    const OsiSolverInterface* const si,
+    const DisjunctiveTerm* const term,
+    const double DIFFEPS,
+    FILE* logfile);
 
 void getCertificateTrivial(std::vector<double>& v, const int num_elem, const int* const ind, 
     const double* const coeff, const OsiSolverInterface* const solver, const Disjunction* const disj);

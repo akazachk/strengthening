@@ -5,6 +5,8 @@
  */
 #include "strengthen.hpp"
 
+#include <OsiRowCut.hpp> // for setting a disjunctive term
+
 #include "Disjunction.hpp"
 #include "Parameters.hpp" // includes SolverInterface
 #include "SolverHelper.hpp" // isBasicVar
@@ -197,9 +199,17 @@ void getCertificate(
     /// [in] nonzero cut coefficients
     const double* const coeff,
     // [in] LP solver corresponding to disjunctive term
-    const OsiSolverInterface* const solver) {
+    OsiSolverInterface* const solver) {
   v.clear();
   v.resize(solver->getNumCols() + solver->getNumRows(), 0.0);
+
+  // Get dense cut coefficients so that we can set the objective vector
+  std::vector<double> cut_coeff(solver->getNumCols(), 0.0);
+  for (int i = 0; i < num_elem; i++) {
+    cut_coeff[ind[i]] = coeff[i];
+  }
+  solver->setObjective(cut_coeff.data());
+  solver->resolve();
 
   if (!solver->isProvenOptimal()) {
     return;
@@ -309,8 +319,125 @@ void getCertificate(
   }*/ // DEBUG
 #endif // USE_EIGEN
 
+#ifdef TRACE
+  // Obtain the cut that the certificate yields (should be the same as the original cut)
+  std::vector<double> new_coeff(solver->getNumCols());
+  verifyCertificate(new_coeff, v, solver);
+
+  int num_errors = 0;
+  double total_diff = 0.;
+  for (int i = 0; i < solver->getNumCols(); i++) {
+    const double diff = cut_coeff[i] - new_coeff[i];
+    if (greaterThanVal(std::abs(diff), 0.0)) {
+      fprintf(stderr, "%d: cut: %.6f\tcalc: %.6f\tdiff: %g\n", i, cut_coeff[i], new_coeff[i], diff);
+      num_errors++;
+      total_diff += std::abs(diff);
+    }
+  }
+  if (num_errors > 0) printf("Number of differences between true and calculated cuts: %d. Total difference: %g.\n", num_errors, total_diff);
+#endif
+
   solver->disableFactorization();
 } /* getCertificate */
+
+void getCertificateForTerm(
+    /// [out] Farkas multipliers
+    std::vector<double>& v, 
+    /// [in] number of nonzero cut coefficients
+    const int num_elem, 
+    /// [in] indices of nonzero cut coefficients
+    const int* const ind, 
+    /// [in] nonzero cut coefficients
+    const double* const coeff,
+    /// [in] original solver
+    const OsiSolverInterface* const solver,
+    /// [in] disjunctive term specification
+    const DisjunctiveTerm* const term,
+    /// [in] tolerance for reconstructing disjunctive term solution
+    const double DIFFEPS,
+    /// [in] logfile for error printing
+    FILE* logfile) {
+  OsiSolverInterface* termSolver = solver->clone();
+  const int curr_num_changed_bounds = term->changed_var.size();
+  std::vector < std::vector<int> > commonTermIndices(curr_num_changed_bounds);
+  std::vector < std::vector<double> > commonTermCoeff(curr_num_changed_bounds);
+  std::vector<double> commonTermRHS(curr_num_changed_bounds);
+  for (int i = 0; i < curr_num_changed_bounds; i++) {
+    const int col = term->changed_var[i];
+    const double coeff = (term->changed_bound[i] <= 0) ? 1. : -1.;
+    const double val = term->changed_value[i];
+    commonTermIndices[i].resize(1, col);
+    commonTermCoeff[i].resize(1, coeff);
+    commonTermRHS[i] = coeff * val;
+    if (term->changed_bound[i] <= 0) {
+      termSolver->setColLower(col, val);
+    } else {
+      termSolver->setColUpper(col, val);
+    }
+  }
+
+  const int curr_num_added_ineqs = term->ineqs.size();
+  for (int i = 0; i < curr_num_added_ineqs; i++) {
+    const OsiRowCut* currCut = &term->ineqs[i];
+    termSolver->applyRowCuts(1, currCut); // hopefully this works
+  }
+
+  // Set the warm start
+  if (term->basis && !(termSolver->setWarmStart(term->basis))) {
+    error_msg(errorstring,
+        "Warm start information not accepted for term.\n");
+    writeErrorToLog(errorstring, logfile);
+    exit(1);
+  }
+
+  // Resolve and check the objective matches
+#ifdef TRACE
+  printf("\n## Solving for term ##\n");
+#endif
+  termSolver->resolve();
+  const bool calcAndFeasTerm = checkSolverOptimality(termSolver, true);
+
+  // If something went wrong
+  if (!calcAndFeasTerm) {
+    printf("\n## Term is not proven optimal. Exiting from this term. ##\n");
+    delete termSolver;
+    return;
+  }
+
+  // Sometimes we run into a few issues getting the ``right'' value
+  if (!isVal(termSolver->getObjValue(), term->obj, DIFFEPS)) {
+    termSolver->resolve();
+  }
+  if (!isVal(termSolver->getObjValue(), term->obj, DIFFEPS)) {
+    double ratio = termSolver->getObjValue() / term->obj;
+    if (ratio < 1.) {
+      ratio = 1. / ratio;
+    }
+    // Allow it to be up to 3% off without causing an error
+    if (greaterThanVal(ratio, 1.03)) {
+      error_msg(errorstring,
+          "Objective at disjunctive term is incorrect. Before, it was %s, now it is %s.\n",
+          stringValue(term->obj, "%1.3f").c_str(),
+          stringValue(termSolver->getObjValue(), "%1.3f").c_str());
+      writeErrorToLog(errorstring, logfile);
+      exit(1);
+    } else {
+      warning_msg(warnstring,
+          "Objective at disjunctive term is incorrect. Before, it was %s, now it is %s.\n",
+          stringValue(term->obj, "%1.3f").c_str(),
+          stringValue(termSolver->getObjValue(), "%1.3f").c_str());
+    }
+#ifdef TRACE
+    std::string commonName;
+    Disjunction::setCgsName(commonName, curr_num_changed_bounds, commonTermIndices,
+        commonTermCoeff, commonTermRHS, false);
+    printf("Bounds changed: %s.\n", commonName.c_str());
+#endif
+  } // check that objective value matches
+
+  getCertificate(v, num_elem, ind, coeff, termSolver);
+  if (termSolver) { delete termSolver; }
+} /* getCertificateForTerm */
 
 /// Use Theorem B.5 of Kazachkov 2018 dissertation to get certificate with trivial normalization
 void getCertificateTrivial(

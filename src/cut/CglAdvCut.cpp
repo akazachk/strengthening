@@ -264,17 +264,17 @@ void CglAdvCut::generateCuts(const OsiSolverInterface& si, OsiCuts& cuts, const 
   // Save exit reason
   CglVPC::ExitReason vpcExitReason = this->gen.exitReason;
   if (vpcExitReason == CglVPC::ExitReason::SUCCESS_EXIT)
-    this->exitReason = CglAdvCut::ExitReason::SUCCESS_EXIT;
+    status = CglAdvCut::ExitReason::SUCCESS_EXIT;
   else if (vpcExitReason == CglVPC::ExitReason::CUT_LIMIT_EXIT)
-    this->exitReason = CglAdvCut::ExitReason::CUT_LIMIT_EXIT;
+    status = CglAdvCut::ExitReason::CUT_LIMIT_EXIT;
   else if (vpcExitReason == CglVPC::ExitReason::FAIL_LIMIT_EXIT)
-    this->exitReason = CglAdvCut::ExitReason::FAIL_LIMIT_EXIT;
+    status = CglAdvCut::ExitReason::FAIL_LIMIT_EXIT;
   else if (vpcExitReason == CglVPC::ExitReason::TIME_LIMIT_EXIT)
-    this->exitReason = CglAdvCut::ExitReason::TIME_LIMIT_EXIT;
+    status = CglAdvCut::ExitReason::TIME_LIMIT_EXIT;
   else if (vpcExitReason == CglVPC::ExitReason::NO_CUTS_LIKELY_EXIT)
-    this->exitReason = CglAdvCut::ExitReason::NO_CUTS_LIKELY_EXIT;
+    status = CglAdvCut::ExitReason::NO_CUTS_LIKELY_EXIT;
   else
-    this->exitReason = CglAdvCut::ExitReason::UNKNOWN;
+    status = CglAdvCut::ExitReason::UNKNOWN;
   
   if (mysolver) { delete mysolver; }
   finish(status);

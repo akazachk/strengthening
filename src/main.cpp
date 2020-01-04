@@ -28,7 +28,8 @@
 #include "BBHelper.hpp"
 #include "CglAdvCut.hpp"
 #include "CutHelper.hpp"
-#include "disjcuts.hpp"
+#include "Disjunction.hpp" // DisjunctiveTerm, Disjunction
+//#include "disjcuts.hpp"
 #include "gmic.hpp"
 #include "Parameters.hpp"
 using namespace StrengtheningParameters;
@@ -228,40 +229,15 @@ int main(int argc, char** argv) {
         // For each term of the disjunction, 
         // we need to explicitly add the constraint(s) defining the disjunctive term
         const CoinPackedVector lhs = intCut.row();
-        //const double rhs = intCut.lb();
-
-        // Get dense cut coefficients so that we can set the objective vector
-        std::vector<double> cut_coeff(solver->getNumCols(), 0.0);
-        const int num_el = lhs.getNumElements();
-        for (int i = 0; i < num_el; i++) {
-          cut_coeff[lhs.getIndices()[i]] = lhs.getElements()[i];
-        }
 
         std::vector<double> v0, v1; // this will be of dimension rows + cols
         { // Check first side of the split
           // Calculate the certificate
           OsiSolverInterface* solver0 = solver->clone();
-          solver0->setObjective(cut_coeff.data());
           const double el = -1.;
           solver0->addRow(1, &var, &el, -1. * std::floor(val), solver->getInfinity());
-          solver0->resolve();
+
           getCertificate(v0, lhs.getNumElements(), lhs.getIndices(), lhs.getElements(), solver0);
-
-          // Obtain the cut that the certificate yields (should be the same as the original cut)
-          std::vector<double> coeff(solver0->getNumCols());
-          verifyCertificate(coeff, v0, solver0);
-
-#ifdef TRACE
-          int num_errors = 0;
-          for (int i = 0; i < solver->getNumCols(); i++) {
-            const double diff = cut_coeff[i] - coeff[i];
-            if (greaterThanVal(std::abs(diff), 0.0)) {
-              fprintf(stdout, "%d: cut: %.6f\tcalc: %.6f\n", i, cut_coeff[i], coeff[i]);
-              num_errors++;
-            }
-          }
-          if (num_errors > 0) printf("Number of differences between true and calculated cuts: %d.\n", num_errors);
-#endif
 
           if (solver0) delete solver0;
         } // check first side of the split
@@ -269,27 +245,10 @@ int main(int argc, char** argv) {
         { // Check second side of the split
           // Calculate the certificate
           OsiSolverInterface* solver1 = solver->clone();
-          solver1->setObjective(cut_coeff.data());
           const double el = 1.;
           solver1->addRow(1, &var, &el, std::ceil(val), solver->getInfinity());
-          solver1->resolve();
+
           getCertificate(v1, lhs.getNumElements(), lhs.getIndices(), lhs.getElements(), solver1);
-
-          // Obtain the cut that the certificate yields (should be the same as the original cut)
-          std::vector<double> coeff(solver1->getNumCols());
-          verifyCertificate(coeff, v1, solver1);
-
-#ifdef TRACE
-          int num_errors = 0;
-          for (int i = 0; i < solver->getNumCols(); i++) {
-            const double diff = cut_coeff[i] - coeff[i];
-            if (greaterThanVal(std::abs(diff), 0.0)) {
-              fprintf(stdout, "%d: cut: %.6f\tcalc: %.6f\n", i, cut_coeff[i], coeff[i]);
-              num_errors++;
-            }
-          }
-          if (num_errors > 0) printf("Number of differences between true and calculated cuts: %d.\n", num_errors);
-#endif
 
           if (solver1) delete solver1;
         } // check second side of the split
@@ -321,6 +280,9 @@ int main(int argc, char** argv) {
       }
     } // generate GMICs via gmic.hpp
 
+    //==================================================//
+    // Now for more general cuts
+    // User can replace generateCuts method in CglAdvCut with whatever method is desired
     CglAdvCut gen(params);
 
     // Store the initial solve time in order to set a baseline for the PRLP resolve time
@@ -329,15 +291,41 @@ int main(int argc, char** argv) {
         timer.get_value(OverallTimeStats::INIT_SOLVE_TIME));
 
     // Generate disjunctive cuts
-    Disjunction* disj = NULL;
-    //genDisjCuts(solver, params.get(intParam::DISJ_TERMS), params.get(intParam::CUTLIMIT), &mycuts_by_round[round_ind], disj); // solution may change slightly due to enable factorization called in getProblemData...
-    //boundInfo.num_mycuts += gen.num_cuts;
-
     gen.generateCuts(*solver, mycuts_by_round[round_ind]); 
-    disj = gen.gen.disj();
+    Disjunction* disj = gen.gen.disj();
     exitReason = gen.exitReason;
     updateCutInfo(cutInfoVec[round_ind], &gen);
     boundInfo.num_mycuts += gen.num_cuts;
+
+    // Get Farkas certificate
+    if (disj && mycuts_by_round[round_ind].sizeCuts() > 0) {
+      for (int term_ind = 0; term_ind < disj->num_terms; term_ind++) {
+        OsiSolverInterface* termSolver = disj->getSolverForTerm(term_ind, solver, params.get(StrengtheningParameters::doubleConst::DIFFEPS), params.logfile);
+        if (!termSolver) {
+          printf("Disjunctive term %d/%d not created successfully.\n", term_ind+1, disj->num_terms);
+          continue;
+        }
+        for (int cut_ind = 0; cut_ind < mycuts_by_round[round_ind].sizeCuts(); cut_ind++) {
+          OsiRowCut* disjCut = mycuts_by_round[round_ind].rowCutPtr(cut_ind);
+
+          // For each term of the disjunction,
+          // we need to explicitly add the constraint(s) defining the disjunctive term
+          const CoinPackedVector lhs = disjCut->row();
+
+          // Get dense cut coefficients so that we can set the objective vector
+          std::vector<double> cut_coeff(solver->getNumCols(), 0.0);
+          const int num_el = lhs.getNumElements();
+          for (int i = 0; i < num_el; i++) {
+            cut_coeff[lhs.getIndices()[i]] = lhs.getElements()[i];
+          }
+
+          std::vector<double> v; // this will be of dimension rows + cols
+          getCertificate(v, lhs.getNumElements(), lhs.getIndices(), lhs.getElements(), termSolver);
+        } // loop over cuts
+        if (termSolver) { delete termSolver; }
+      } // loop over disjunctive terms
+    } // check that disj exists and cuts were generated
+
     timer.end_timer(OverallTimeStats::CUT_TIME);
 
     timer.start_timer(OverallTimeStats::APPLY_TIME);
