@@ -336,7 +336,7 @@ struct Parameters {
             0, {0, 1, 3})},
     {intParam::GOMORY,
         IntParameter(intParam::GOMORY, "GOMORY",
-            0, -2, 2)},
+            0, -3, 3)},
     {intParam::DISJ_TERMS,
         IntParameter(intParam::DISJ_TERMS, "DISJ_TERMS",
             0, std::numeric_limits<int>::min(), std::numeric_limits<int>::max())},
