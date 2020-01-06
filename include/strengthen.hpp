@@ -91,9 +91,11 @@ void strengthenCut(
     const OsiSolverInterface* const solver);
 
 /**
- * @brief Returns new cut coefficient
+ * @brief Calculate new cut coefficient
  */
-double strengthenCutCoefficient(
+void strengthenCutCoefficient(
+    double& str_coeff,
+    double& str_rhs,
     const int var,
     const double coeff,
     const Disjunction* const disj,

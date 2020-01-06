@@ -250,22 +250,6 @@ int main(int argc, char** argv) {
           if (solver1) delete solver1;
         } // check second side of the split
 
-        /*
-        // Double check that calculated value of Farkas certificate matches theoretical value
-        const double delta0 = val - std::floor(val);
-        const double delta1 = std::ceil(val) - val;
-        if (!isVal(v[0][solver->getNumRows()], 1.0 / delta0)) {
-          error_msg(errorstring, "Value of disjunctive term multiplier does not match theory. u0: %.6g. theory: %.6g.\n", v[0][solver->getNumRows()], 1.0 / delta0);
-          writeErrorToLog(errorstring, params.logfile);
-          exit(1);
-        }
-        if (!isVal(v[1][solver->getNumRows()], 1.0 / delta1)) {
-          error_msg(errorstring, "Value of disjunctive term multiplier does not match theory. v0: %.6g. theory: %.6g.\n", v[1][solver->getNumRows()], 1.0 / delta1);
-          writeErrorToLog(errorstring, params.logfile);
-          exit(1);
-        }
-        */
-
         // Do strengthening; for this we first need to setup a split disjunction
         SplitDisjunction disj;
         disj.var = var;
@@ -362,10 +346,6 @@ int main(int argc, char** argv) {
         OsiRowCut intCut;
         createMIG(intCut, solver, var, splitVarRowIndex, false);
 
-        // For each term of the disjunction, 
-        // we need to explicitly add the constraint(s) defining the disjunctive term
-        const CoinPackedVector lhs = intCut.row();
-
         std::vector<std::vector<double> > v(2); // [term][val] for each term, this will be of dimension rows + cols
         v[0].resize(solver->getNumRows() + 1 + solver->getNumCols(), 0.0);
         v[1].resize(solver->getNumRows() + 1 + solver->getNumCols(), 0.0);
@@ -411,6 +391,33 @@ int main(int argc, char** argv) {
             vti *= scale;
           }
         }
+
+        const CoinPackedVector lhs = intCut.row();
+#ifdef TRACE
+        for (int t = 0; t < 2; t++) {
+          std::vector<double> new_coeff(solver->getNumCols());
+          verifyCertificate(new_coeff, v[t], solver);
+
+          std::vector<double> cut_coeff(solver->getNumCols(), 0.0);
+
+          const int num_el = lhs.getNumElements();
+          for (int i = 0; i < num_el; i++) {
+            cut_coeff[lhs.getIndices()[i]] = lhs.getElements()[i];
+          }
+
+          int num_errors = 0;
+          double total_diff = 0.;
+          for (int i = 0; i < solver->getNumCols(); i++) {
+            const double diff = cut_coeff[i] - new_coeff[i];
+            if (greaterThanVal(std::abs(diff), 0.0)) {
+              fprintf(stderr, "%d: cut: %.6f\tcalc: %.6f\tdiff: %g\n", i, cut_coeff[i], new_coeff[i], diff);
+              num_errors++;
+              total_diff += std::abs(diff);
+            }
+          }
+          if (num_errors > 0) printf("Number of differences between true and calculated cuts: %d. Total difference: %g.\n", num_errors, total_diff);
+        }
+#endif
 
         // Do strengthening; for this we first need to setup a split disjunction
         SplitDisjunction disj;
@@ -488,12 +495,12 @@ int main(int argc, char** argv) {
           // we need to explicitly add the constraint(s) defining the disjunctive term
           const CoinPackedVector lhs = disjCut->row();
 
-          // Get dense cut coefficients so that we can set the objective vector
+          /*// Get dense cut coefficients so that we can set the objective vector
           std::vector<double> cut_coeff(solver->getNumCols(), 0.0);
           const int num_el = lhs.getNumElements();
           for (int i = 0; i < num_el; i++) {
             cut_coeff[lhs.getIndices()[i]] = lhs.getElements()[i];
-          }
+          }*/
 
           getCertificate(v[cut_ind][term_ind], lhs.getNumElements(), lhs.getIndices(), lhs.getElements(), termSolver);
         } // loop over cuts

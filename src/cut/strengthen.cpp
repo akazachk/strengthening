@@ -10,7 +10,7 @@
 #include "CutHelper.hpp" // for setObjective and addToObjective
 #include "Disjunction.hpp"
 //#include "Parameters.hpp"
-#include "SolverHelper.hpp" // isBasicVar, checkSolverOptimality
+#include "SolverHelper.hpp" // isBasicVar, checkSolverOptimality, isNonBasicUBVar
 #include "utility.hpp"
 
 #ifdef USE_EIGEN
@@ -104,6 +104,9 @@ void createEigenMatrix(
     }
   }
   // Add explicit column lower bound rows
+  // We *do not* ``complement'' the upper bounded variables because we would then have to
+  // also complement ``alpha'' when we use it for the right-hand side;
+  // these two negations cancel each other out
   for (const int& col : cols) {
     const double val = 1.0; // isNonBasicUBVar(solver, col) ? -1.0 : 1.0;
     if (batchInsert) tripletList.push_back(Eigen::Triplet<double>(tmp_ind, col, val));
@@ -219,7 +222,7 @@ void getCertificate(
   solver->enableFactorization();
 
   // Collect nonbasic variables
-  // TODO Can we do this with getBInv calls instead?
+  // TODO Can / should we do this with getBInv calls instead?
   std::vector<int> rows, cols;
   //std::vector<int> NBVarIndex;
   //NBVarIndex.reserve(solver->getNumCols());
@@ -286,11 +289,13 @@ void getCertificate(
 
   int tmp_ind = 0;
   for (const int& row : rows) {
-    v[row] = x(tmp_ind);
+    const double mult = isNonBasicUBSlack(solver, row) ? -1. : 1.;
+    v[row] = mult * x(tmp_ind);
     tmp_ind++;
   }
   for (const int& col : cols) {
-    v[solver->getNumRows() + col] = x(tmp_ind);
+    const double mult = isNonBasicUBVar(solver, col) ? -1. : 1.;
+    v[solver->getNumRows() + col] = mult * x(tmp_ind);
     tmp_ind++;
   }
 
@@ -458,7 +463,7 @@ void getCertificateTrivial(
   // TODO
 } /* getCertificateTrivial */
 
-/// First m rows of v correspond to A; the next n are bounds on the variables
+/// First m+m_t rows of v correspond to A;D^t; the next n are bounds on the variables
 void verifyCertificate(
     /// [out] calculated cut coefficients
     std::vector<double>& alpha, 
@@ -471,31 +476,29 @@ void verifyCertificate(
 
   const CoinPackedMatrix* mat = solver->getMatrixByCol();
 
+  std::vector<double> new_v(v.begin(), v.end());
+  for (double& val : new_v) {
+    val = std::abs(val);
+  }
   for (int col = 0; col < solver->getNumCols(); col++) {
     const int start = mat->getVectorFirst(col);
     alpha[col] += dotProduct(mat->getVectorSize(col), 
         mat->getIndices() + start, mat->getElements() + start, v.data());
-    //const double mult = isNonBasicUBVar(solver, col) ? -1.0 : 1.0;
     alpha[col] += v[solver->getNumRows() + col];
   }
 
-  /*{ // DEBUG
-    Eigen::SparseMatrix<double,Eigen::RowMajor> fullA;
-    createEigenMatrix(fullA, solver, std::vector<int>(), std::vector<int>());
-
-    Eigen::VectorXd fullv(solver->getNumCols() + solver->getNumRows());
-    for (int i = 0; i < (int) v.size(); i++) {
-      fullv(i) = v[i];
+  /*
+  for (int col = 0; col < solver->getNumCols(); col++) {
+    const int start = mat->getVectorFirst(col);
+    for (int el_ind = 0; el_ind < mat->getVectorSize(col); el_ind++) {
+      const int row = mat->getIndices()[start + el_ind];
+      const double mult = isNonBasicUBSlack(solver, row) ? -1.0 : 1.0;
+      alpha[col] += mult * v[row];
     }
-
-    Eigen::VectorXd tmp;
-    tmp = fullA.transpose() * fullv;
-
-    printf("Calc\tAlpha\n");
-    for (int col = 0; col < solver->getNumCols(); col++) {
-      printf("%g\t%g\n", tmp(col), alpha[col]);
-    }
-  }*/ // DEBUG
+    const double mult = isNonBasicUBVar(solver, col) ? -1.0 : 1.0;
+    alpha[col] += mult * v[solver->getNumRows() + col];
+  }
+  */
 } /* verifyCertificate */
 
 /**
@@ -512,6 +515,8 @@ void verifyCertificate(
  *
  * With those, the strengthening requires finding values m_1,...,m_T
  *  str_coeff[k] = coeff[k] + max_t { -u^t_k + u^t_0 (D^t_0 - \ell^t) m_t }
+ *
+ * TODO If k is nonbasic at a nonzero bound or is at its upper bound, what do we do?
  */
 void strengthenCut(
     /// [out] strengthened cut coefficients
@@ -533,7 +538,7 @@ void strengthenCut(
     /// [in] original solver (used to get globally-valid lower bounds for the disjunctive terms)
     const OsiSolverInterface* const solver) {
   str_coeff.clear();
-  str_coeff.resize(solver->getNumCols());
+  str_coeff.resize(solver->getNumCols(), 0.0);
   if (!disj) return;
 
   // Set up original cut coeff and rhs
@@ -591,12 +596,16 @@ void strengthenCut(
   // Now try to strengthen the coefficients on the integer-restricted variables
   for (int col = 0; col < solver->getNumCols(); col++) {
     if (!solver->isInteger(col)) continue;
-    str_coeff[col] = strengthenCutCoefficient(col, coeff[col], disj, lb_term, v, solver);
+    strengthenCutCoefficient(str_coeff[col], str_rhs, col, coeff[col], disj, lb_term, v, solver);
   }
 } /* strengthenCut */
 
 /// Returns new cut coefficient (we need to minimize over monoids m)
-double strengthenCutCoefficient(
+void strengthenCutCoefficient(
+    /// [out] strengthened cut coeff
+    double& str_coeff,
+    /// [out] strengthened cut rhs
+    double& str_rhs,
     /// [in] variable for which the coefficient is being changed
     const int var,
     /// [in] original coeff
@@ -609,9 +618,22 @@ double strengthenCutCoefficient(
     const std::vector<std::vector<double> >& v, 
     /// [in] original solver
     const OsiSolverInterface* const solver) {
-  double str_coeff = coeff;
-
   const int num_terms = disj->num_terms;
+  if (num_terms > 2) {
+    fprintf(stderr, "Currently strengthening is limited to 2-term disjunctions.\n");
+    exit(1);
+  }
+
+  // Check if complementing is necessary
+  double mult = 1.;
+  if (v[0][solver->getNumRows() + disj->terms[0].changed_var.size() + var] < 0) {
+    mult = -1;
+  }
+  if (v[1][solver->getNumRows() + disj->terms[1].changed_var.size() + var] < 0) {
+    mult = -1;
+  }
+  str_coeff = mult * coeff;
+
   std::vector<int> m1(num_terms, 0.0);
   std::vector<int> m2(num_terms, 0.0);
   std::vector<int> m3(num_terms, 0.0);
@@ -639,5 +661,9 @@ double strengthenCutCoefficient(
     }
   } // loop over monoid options
   str_coeff += min_max_term_val;
-  return str_coeff;
+
+  if (mult < 0) {
+    str_coeff *= -1;
+    str_rhs = str_rhs + (str_coeff - coeff) * solver->getColUpper()[var];
+  }
 } /* strengthenCutCoefficient */
