@@ -363,20 +363,27 @@ int main(int argc, char** argv) {
         // and (d^1, d^1_0) = (e_k, std::ceil(val))
         double v_rhs = 1;
         for (int ray_ind = 0; ray_ind < (int) NBVarIndex.size(); ray_ind++) {
+          const int NBVar = NBVarIndex[ray_ind];
+          const int tmp_row = NBVar - solver->getNumCols();
+          double mult = 1.;
+          if (NBVar < solver->getNumCols()) {
+            mult = isNonBasicUBVar(solver, NBVar) ? -1. : 1.;
+          } else {
+            mult = (solver->getRowSense()[tmp_row] == 'L') ? -1. : 1.;
+          }
           const double lambda0 = -currRay[ray_ind][splitVarRowIndex] / delta0;
           const double lambda1 = currRay[ray_ind][splitVarRowIndex] / delta1;
           const double lambda[2] = { lambda0, lambda1 };
           const int t_i = (lambda0 > lambda1) ? 0 : 1;
-          const int NBVar = NBVarIndex[ray_ind];
-          const int v_row = (NBVar < solver->getNumCols()) ? (solver->getNumRows() + 1 + NBVar) : (NBVar - solver->getNumCols());
-          v[0][v_row] = inv_delta_sum * (lambda[t_i] - lambda[0]);
-          v[1][v_row] = inv_delta_sum * (lambda[t_i] - lambda[1]);
+          const int v_row = (NBVar < solver->getNumCols()) ? (solver->getNumRows() + 1 + NBVar) : tmp_row;
+          for (int t = 0; t < 2; t++) {
+            v[t][v_row] = mult * inv_delta_sum * (lambda[t_i] - lambda[t]);
+          }
 
           double curr_rhs = 0.;;
           if (NBVar < solver->getNumCols()) {
-            //curr_rhs = isNonBasicUBVar(solver,NBVar) ? solver->getColUpper()[NBVar] : solver->getColLower()[NBVar];
+            curr_rhs = (mult < 0) ? -1. * solver->getColUpper()[NBVar] : solver->getColLower()[NBVar];
           } else {
-            const int tmp_row = NBVar - solver->getNumCols();
             curr_rhs = solver->getRightHandSide()[tmp_row];
           }
           v_rhs += lambda[t_i] * curr_rhs;

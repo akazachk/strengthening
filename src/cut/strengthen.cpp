@@ -108,14 +108,14 @@ void createEigenMatrix(
   // also complement ``alpha'' when we use it for the right-hand side;
   // these two negations cancel each other out
   for (const int& col : cols) {
-    const double val = 1.0; // isNonBasicUBVar(solver, col) ? -1.0 : 1.0;
+    const double val = 1.0;
     if (batchInsert) tripletList.push_back(Eigen::Triplet<double>(tmp_ind, col, val));
     else M.insert(tmp_ind, col) = val;
     tmp_ind++;
   }
   if (doAll) {
     for (int col = 0; col < solver->getNumCols(); col++) {
-      const double val = 1.0; // isNonBasicUBVar(solver, col) ? -1.0 : 1.0;
+      const double val = 1.0;
       if (batchInsert) tripletList.push_back(Eigen::Triplet<double>(tmp_ind, col, val));
       else M.insert(tmp_ind, col) = val;
       tmp_ind++;
@@ -289,7 +289,7 @@ void getCertificate(
 
   int tmp_ind = 0;
   for (const int& row : rows) {
-    const double mult = isNonBasicUBSlack(solver, row) ? -1. : 1.;
+    const double mult = (solver->getRowSense()[row] == 'L') ? -1. : 1.;
     v[row] = mult * x(tmp_ind);
     tmp_ind++;
   }
@@ -492,7 +492,7 @@ void verifyCertificate(
     const int start = mat->getVectorFirst(col);
     for (int el_ind = 0; el_ind < mat->getVectorSize(col); el_ind++) {
       const int row = mat->getIndices()[start + el_ind];
-      const double mult = isNonBasicUBSlack(solver, row) ? -1.0 : 1.0;
+      const double mult = (solver->getRowSense()[row] == 'L') ? -1. : 1.; //isNonBasicUBSlack(solver, row) ? -1.0 : 1.0;
       alpha[col] += mult * v[row];
     }
     const double mult = isNonBasicUBVar(solver, col) ? -1.0 : 1.0;
@@ -650,7 +650,7 @@ void strengthenCutCoefficient(
     for (int term_ind = 0; term_ind < num_terms; term_ind++) {
       const DisjunctiveTerm& term = disj->terms[term_ind];
       const int num_disj_ineqs = (int) term.changed_var.size();
-      const double utk = v[term_ind][solver->getNumRows() + num_disj_ineqs + var];
+      const double utk = std::abs(v[term_ind][solver->getNumRows() + num_disj_ineqs + var]);
       const double curr_val = -utk + lb_term[term_ind] * m[term_ind];
       if (curr_val > max_term_val) {
         max_term_val = curr_val;
@@ -664,6 +664,6 @@ void strengthenCutCoefficient(
 
   if (mult < 0) {
     str_coeff *= -1;
-    str_rhs = str_rhs + (str_coeff - coeff) * solver->getColUpper()[var];
+    str_rhs += (str_coeff - coeff) * solver->getColUpper()[var];
   }
 } /* strengthenCutCoefficient */
