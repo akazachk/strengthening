@@ -73,7 +73,8 @@ void getCertificateForDisjunction();
 /**
  * @brief Take dot product with optimal basis and find resulting cut coefficients
  */
-void verifyCertificate(std::vector<double>& alpha, const std::vector<double>& v, 
+void getCutFromCertificate(std::vector<double>& alpha, 
+    const std::vector<double>& v, 
     const OsiSolverInterface* const solver);
 
 /**

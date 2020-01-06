@@ -384,7 +384,7 @@ int main(int argc, char** argv) {
           if (NBVar < solver->getNumCols()) {
             curr_rhs = (mult < 0) ? -1. * solver->getColUpper()[NBVar] : solver->getColLower()[NBVar];
           } else {
-            curr_rhs = solver->getRightHandSide()[tmp_row];
+            curr_rhs = mult * solver->getRightHandSide()[tmp_row];
           }
           v_rhs += lambda[t_i] * curr_rhs;
         }
@@ -402,8 +402,14 @@ int main(int argc, char** argv) {
         const CoinPackedVector lhs = intCut.row();
 #ifdef TRACE
         for (int t = 0; t < 2; t++) {
+          SplitDisjunction disj;
+          disj.var = var;
+          disj.prepareDisjunction(solver);
+
+          OsiSolverInterface* termSolver;
+          disj.getSolverForTerm(termSolver, t, solver, false, params.get(StrengtheningParameters::doubleConst::DIFFEPS), params.logfile);
           std::vector<double> new_coeff(solver->getNumCols());
-          verifyCertificate(new_coeff, v[t], solver);
+          getCutFromCertificate(new_coeff, v[t], termSolver);
 
           std::vector<double> cut_coeff(solver->getNumCols(), 0.0);
 
@@ -423,6 +429,8 @@ int main(int argc, char** argv) {
             }
           }
           if (num_errors > 0) printf("Number of differences between true and calculated cuts: %d. Total difference: %g.\n", num_errors, total_diff);
+
+          if (termSolver) { delete termSolver; }
         }
 #endif
 
@@ -490,7 +498,7 @@ int main(int argc, char** argv) {
       }
       for (int term_ind = 0; term_ind < disj->num_terms; term_ind++) {
         OsiSolverInterface* termSolver;
-        disj->getSolverForTerm(termSolver, term_ind, solver, params.get(StrengtheningParameters::doubleConst::DIFFEPS), params.logfile);
+        disj->getSolverForTerm(termSolver, term_ind, solver, false, params.get(StrengtheningParameters::doubleConst::DIFFEPS), params.logfile);
         if (!termSolver) {
           printf("Disjunctive term %d/%d not created successfully.\n", term_ind+1, disj->num_terms);
           continue;
@@ -502,15 +510,9 @@ int main(int argc, char** argv) {
           // we need to explicitly add the constraint(s) defining the disjunctive term
           const CoinPackedVector lhs = disjCut->row();
 
-          /*// Get dense cut coefficients so that we can set the objective vector
-          std::vector<double> cut_coeff(solver->getNumCols(), 0.0);
-          const int num_el = lhs.getNumElements();
-          for (int i = 0; i < num_el; i++) {
-            cut_coeff[lhs.getIndices()[i]] = lhs.getElements()[i];
-          }*/
-
           getCertificate(v[cut_ind][term_ind], lhs.getNumElements(), lhs.getIndices(), lhs.getElements(), termSolver);
         } // loop over cuts
+
         if (termSolver) { delete termSolver; }
       } // loop over disjunctive terms
 

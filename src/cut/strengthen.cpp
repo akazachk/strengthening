@@ -328,7 +328,7 @@ void getCertificate(
 #ifdef TRACE
   // Obtain the cut that the certificate yields (should be the same as the original cut)
   std::vector<double> new_coeff(solver->getNumCols());
-  verifyCertificate(new_coeff, v, solver);
+  getCutFromCertificate(new_coeff, v, solver);
 
   int num_errors = 0;
   double total_diff = 0.;
@@ -464,7 +464,7 @@ void getCertificateTrivial(
 } /* getCertificateTrivial */
 
 /// First m+m_t rows of v correspond to A;D^t; the next n are bounds on the variables
-void verifyCertificate(
+void getCutFromCertificate(
     /// [out] calculated cut coefficients
     std::vector<double>& alpha, 
     /// [in] Farkas multipliers
@@ -477,7 +477,8 @@ void verifyCertificate(
   const CoinPackedMatrix* mat = solver->getMatrixByCol();
 
   std::vector<double> new_v(v.begin(), v.end());
-  for (double& val : new_v) {
+  for (int col = 0; col < solver->getNumCols(); col++) {
+    double& val = new_v[solver->getNumRows() + col];
     val = std::abs(val);
   }
   for (int col = 0; col < solver->getNumCols(); col++) {
@@ -499,7 +500,7 @@ void verifyCertificate(
     alpha[col] += mult * v[solver->getNumRows() + col];
   }
   */
-} /* verifyCertificate */
+} /* getCutFromCertificate */
 
 /**
  * @brief Attempt to strengthen coefficients of given cut
