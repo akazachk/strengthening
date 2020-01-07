@@ -499,7 +499,7 @@ int main(int argc, char** argv) {
 
     //====================================================================================================//
     // Get Farkas certificate and do strengthening
-    if (disj && mycuts_by_round[round_ind].sizeCuts() > 0) {
+    if (params.get(STRENGTHEN) == 1 && disj && mycuts_by_round[round_ind].sizeCuts() > 0) {
       std::vector<std::vector<std::vector<double> > > v(mycuts_by_round[round_ind].sizeCuts()); // [cut][term][Farkas multiplier] in the end, per term, this will be of dimension rows + cols
       for (int cut_ind = 0; cut_ind < mycuts_by_round[round_ind].sizeCuts(); cut_ind++) {
         v[cut_ind].resize(disj->num_terms);
@@ -524,7 +524,9 @@ int main(int argc, char** argv) {
         if (termSolver) { delete termSolver; }
       } // loop over disjunctive terms
 
+      //====================================================================================================//
       // Do strengthening
+      printf("\n## Strengthening disjunctive cuts: (# cuts = %d). ##\n", (int) mycuts_by_round[round_ind].sizeCuts());
       for (int cut_ind = 0; cut_ind < mycuts_by_round[round_ind].sizeCuts(); cut_ind++) {
         OsiRowCut* disjCut = mycuts_by_round[round_ind].rowCutPtr(cut_ind);
         const CoinPackedVector lhs = disjCut->row();
@@ -532,6 +534,11 @@ int main(int argc, char** argv) {
         std::vector<double> str_coeff;
         double str_rhs;
         strengthenCut(str_coeff, str_rhs, lhs.getNumElements(), lhs.getIndices(), lhs.getElements(), rhs, disj, v[cut_ind], solver);
+
+        // Replace row
+        CoinPackedVector strCutCoeff(str_coeff.size(), str_coeff.data());
+        disjCut->setRow(strCutCoeff);
+        disjCut->setLb(str_rhs);
       }
     } // check that disj exists and cuts were generated
 
@@ -539,6 +546,7 @@ int main(int argc, char** argv) {
 
     //====================================================================================================//
     // Apply cuts
+    printf("\n## Applying disjunctive cuts (# cuts = %d). ##\n", (int) mycuts_by_round[round_ind].sizeCuts());
     timer.start_timer(OverallTimeStats::APPLY_TIME);
     applyCutsCustom(solver, mycuts_by_round[round_ind]);
     if (params.get(GOMORY) > 0) {

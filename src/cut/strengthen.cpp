@@ -340,7 +340,12 @@ void getCertificate(
       total_diff += std::abs(diff);
     }
   }
-  if (num_errors > 0) printf("Number of differences between true and calculated cuts: %d. Total difference: %g.\n", num_errors, total_diff);
+  if (num_errors > 0) {
+    fprintf(stderr, 
+        "*** ERROR: Number of differences between true and calculated cuts: %d. Total difference: %g. Exiting.\n",
+        num_errors, total_diff);
+    exit(1);
+  }
   //else printf("No errors found.\n");
 #endif
 
