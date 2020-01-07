@@ -57,6 +57,7 @@ public:
   /// @brief Types of objectives used to generate the cuts
   enum class ObjectiveType {
     DUMMY_OBJ,
+    OBJ_CUT,
     ONE_SIDED,
     OTHER,
     NUM_OBJECTIVE_TYPES

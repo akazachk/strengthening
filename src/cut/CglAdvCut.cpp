@@ -45,6 +45,7 @@ const std::vector<std::string> CglAdvCut::CutTypeName {
 }; /* CutTypeName */
 const std::vector<std::string> CglAdvCut::ObjectiveTypeName {
   "DUMMY_OBJ",
+  "OBJ_CUT",
   "ONE_SIDED",
   "OTHER"
 }; /* ObjectiveTypeName */
