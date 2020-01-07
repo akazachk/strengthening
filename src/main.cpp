@@ -100,15 +100,18 @@ int main(int argc, char** argv) {
   std::signal(SIGABRT, signal_handler_with_error_msg);
   std::signal(SIGSEGV, signal_handler_with_error_msg);
 
+  //====================================================================================================//
   // Set up timing
   for (int t = 0; t < OverallTimeStats::NUM_TIME_STATS; t++) {
     timer.register_name(OverallTimeStatsName[t]);
   }
 
+  //====================================================================================================//
   // Print welcome message, set up logfile
   timer.start_timer(OverallTimeStats::TOTAL_TIME);
   startUp(argc, argv);
 
+  //====================================================================================================//
   // Set up solver and get initial solution
   initializeSolver(solver);
   timer.start_timer(OverallTimeStats::INIT_SOLVE_TIME);
@@ -137,6 +140,7 @@ int main(int argc, char** argv) {
     exit(1);
   } **/
 
+  //====================================================================================================//
   // Save original solver in case we wish to come back to it later
   origSolver = solver->clone();
   if (!origSolver->isProvenOptimal()) {
@@ -154,6 +158,7 @@ int main(int argc, char** argv) {
     CutSolver = solver->clone();
   }
 
+  //====================================================================================================//
   // Now do rounds of cuts, until a limit is reached (e.g., time, number failures, number cuts, or all rounds are exhausted)
   boundInfo.num_mycuts = 0, boundInfo.num_gmic = 0;
   int num_rounds = params.get(ROUNDS);
@@ -166,10 +171,12 @@ int main(int argc, char** argv) {
     }
     timer.start_timer(OverallTimeStats::CUT_TIME);
 
+    //====================================================================================================//
     // Generate Gomory cuts
     // > 0: apply cuts to solver; < 0: apply cuts to CutSolver only
     // Option 1: GglGMI
     // Option 2: custom generate intersection cuts, calculate Farkas certificate, do strengthening
+    // Option 3: custom generate intersection cuts, calculate Farkas certificate, do strengthening
     if (std::abs(params.get(GOMORY)) == 1) {
       OsiCuts currGMICs;
       CglGMI GMIGen;
@@ -473,7 +480,7 @@ int main(int argc, char** argv) {
     fprintf(stdout, "Finished printing GMICs.\n\n");
 #endif
 
-    //==================================================//
+    //====================================================================================================//
     // Now for more general cuts
     // User can replace generateCuts method in CglAdvCut with whatever method is desired
     CglAdvCut gen(params);
@@ -490,6 +497,7 @@ int main(int argc, char** argv) {
     updateCutInfo(cutInfoVec[round_ind], &gen);
     boundInfo.num_mycuts += gen.num_cuts;
 
+    //====================================================================================================//
     // Get Farkas certificate and do strengthening
     if (disj && mycuts_by_round[round_ind].sizeCuts() > 0) {
       std::vector<std::vector<std::vector<double> > > v(mycuts_by_round[round_ind].sizeCuts()); // [cut][term][Farkas multiplier] in the end, per term, this will be of dimension rows + cols
@@ -529,6 +537,8 @@ int main(int argc, char** argv) {
 
     timer.end_timer(OverallTimeStats::CUT_TIME);
 
+    //====================================================================================================//
+    // Apply cuts
     timer.start_timer(OverallTimeStats::APPLY_TIME);
     applyCutsCustom(solver, mycuts_by_round[round_ind]);
     if (params.get(GOMORY) > 0) {
@@ -568,6 +578,7 @@ int main(int argc, char** argv) {
   if (round_ind < num_rounds)
     num_rounds = round_ind+1;
 
+  //====================================================================================================//
   // Do branch-and-bound experiments (if requested)
   if (params.get(BB_RUNS) != 0) {
     // Collect cuts from all rounds
@@ -592,11 +603,15 @@ int main(int argc, char** argv) {
   }
 #endif
 
+  //====================================================================================================//
   // Do analyses in preparation for printing
   setCutInfo(cutInfo, num_rounds, cutInfoVec.data());
   analyzeStrength(params, solver, cutInfoGMICs, cutInfo, &gmics, &mycuts,
       boundInfo, cut_output);
   analyzeBB(params, info_nocuts, info_mycuts, info_allcuts, bb_output);
+
+  //====================================================================================================//
+  // Finish up
   return wrapUp(0);
 } /* main */
 
