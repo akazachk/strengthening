@@ -511,7 +511,7 @@ int main(int argc, char** argv) {
 
     //====================================================================================================//
     // Get Farkas certificate and do strengthening
-    if (params.get(STRENGTHEN) == 1 && disj && currCuts.sizeCuts() > 0) {
+    if (params.get(STRENGTHEN) == 1 && disj && disj->terms.size() > 0 && currCuts.sizeCuts() > 0) {
       std::vector<std::vector<std::vector<double> > > v(currCuts.sizeCuts()); // [cut][term][Farkas multiplier] in the end, per term, this will be of dimension rows + cols
       for (int cut_ind = 0; cut_ind < currCuts.sizeCuts(); cut_ind++) {
         v[cut_ind].resize(disj->num_terms);
@@ -539,19 +539,21 @@ int main(int argc, char** argv) {
       //====================================================================================================//
       // Do strengthening
       printf("\n## Strengthening disjunctive cuts: (# cuts = %d). ##\n", (int) currCuts.sizeCuts());
+      int num_cuts_strengthened = 0;
       for (int cut_ind = 0; cut_ind < currCuts.sizeCuts(); cut_ind++) {
         OsiRowCut* disjCut = currCuts.rowCutPtr(cut_ind);
         const CoinPackedVector lhs = disjCut->row();
         const double rhs = disjCut->rhs();
         std::vector<double> str_coeff;
         double str_rhs;
-        strengthenCut(str_coeff, str_rhs, lhs.getNumElements(), lhs.getIndices(), lhs.getElements(), rhs, disj, v[cut_ind], solver);
+        num_cuts_strengthened += strengthenCut(str_coeff, str_rhs, lhs.getNumElements(), lhs.getIndices(), lhs.getElements(), rhs, disj, v[cut_ind], solver);
 
         // Replace row
         CoinPackedVector strCutCoeff(str_coeff.size(), str_coeff.data());
         disjCut->setRow(strCutCoeff);
         disjCut->setLb(str_rhs);
       }
+      fprintf(stdout, "\nFinished strengthening (%d cuts affected).\n", num_cuts_strengthened);
 #if 1
       fprintf(stdout, "\n## Printing strengthened custom cuts ##\n");
       for (int cut_ind = 0; cut_ind < currCuts.sizeCuts(); cut_ind++) {

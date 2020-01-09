@@ -535,9 +535,11 @@ void getCutFromCertificate(
  * With those, the strengthening requires finding values m_1,...,m_T
  *  str_coeff[k] = coeff[k] + max_t { -u^t_k + u^t_0 (D^t_0 - \ell^t) m_t }
  *
+ * @return Whether any coefficients changed
+ *
  * TODO If k is nonbasic at a nonzero bound or is at its upper bound, what do we do?
  */
-void strengthenCut(
+bool strengthenCut(
     /// [out] strengthened cut coefficients
     std::vector<double>& str_coeff,
     /// [out] strengthened cut rhs
@@ -558,7 +560,7 @@ void strengthenCut(
     const OsiSolverInterface* const solver) {
   str_coeff.clear();
   str_coeff.resize(solver->getNumCols(), 0.0);
-  if (!disj) return;
+  if (!disj) { return false; }
 
   // Set up original cut coeff and rhs
   str_rhs = rhs;
@@ -613,14 +615,17 @@ void strengthenCut(
   } // loop over terms
 
   // Now try to strengthen the coefficients on the integer-restricted variables
+  bool thingsChanged = false;
   for (int col = 0; col < solver->getNumCols(); col++) {
     if (!solver->isInteger(col)) continue;
-    strengthenCutCoefficient(str_coeff[col], str_rhs, col, str_coeff[col], disj, lb_term, v, solver);
+    thingsChanged = thingsChanged || strengthenCutCoefficient(str_coeff[col], str_rhs, col, str_coeff[col], disj, lb_term, v, solver);
   }
+  return thingsChanged;
 } /* strengthenCut */
 
-/// Returns new cut coefficient (we need to minimize over monoids m)
-void strengthenCutCoefficient(
+/// Calculate new cut coefficient (we need to minimize over monoids m)
+/// \return Whether the coefficient has changed
+bool strengthenCutCoefficient(
     /// [out] strengthened cut coeff
     double& str_coeff,
     /// [out] strengthened cut rhs
@@ -685,4 +690,6 @@ void strengthenCutCoefficient(
     str_coeff *= -1;
     str_rhs += (str_coeff - coeff) * solver->getColUpper()[var];
   }
+
+  return !isZero(min_max_term_val);
 } /* strengthenCutCoefficient */
