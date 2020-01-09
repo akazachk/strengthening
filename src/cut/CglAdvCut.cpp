@@ -173,7 +173,11 @@ void CglAdvCut::generateCuts(const OsiSolverInterface& si, OsiCuts& cuts, const 
       CglAdvCut::getCutLimit(params.get(CUTLIMIT),
           si.getFractionalIndices().size()));
   if (reachedCutLimit()) {
-    status = CglAdvCut::ExitReason::CUT_LIMIT_EXIT;
+    if (si.getFractionalIndices().size() > 0) {
+      status = CglAdvCut::ExitReason::CUT_LIMIT_EXIT;
+    } else {
+      status = CglAdvCut::ExitReason::NO_CUTS_LIKELY_EXIT;
+    }
     finish(status);
     return;
   }
