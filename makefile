@@ -76,7 +76,8 @@ SOURCES += \
 		utility/utility.cpp
 
 # VPC directories
-VPC_SRC_DIR = vpc/src
+VPC_HOME = ${PROJ_DIR}/../vpc
+VPC_SRC_DIR = ${VPC_HOME}/src
 VPC_DIR_LIST = $(VPC_SRC_DIR) $(VPC_SRC_DIR)/branch $(VPC_SRC_DIR)/cut $(VPC_SRC_DIR)/disjunction $(VPC_SRC_DIR)/utility
 
 VPC_SOURCES += \
@@ -173,7 +174,7 @@ VPC_OUT_OBJECTS = $(addprefix $(VPC_OBJ_DIR)/,$(VPC_OBJECTS))
 # Set includes
 APPLINCLS = -Iinclude -Iinclude/common -Iinclude/test
 ## TEMPORARY CHANGE TO PARENT VPC (NO WIFI)
-APPLINCLS += -I../vpc/include
+APPLINCLS += -I${VPC_HOME}/include
 
 APPLLIB = -lm -lz -lbz2 -lreadline
 

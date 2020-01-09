@@ -246,6 +246,7 @@ void getCertificate(
 
   // Now set up right-hand side for solver (should be equal to alpha)
   Eigen::VectorXd b(solver->getNumCols());
+  b.setZero();
   for (int tmp_ind = 0; tmp_ind < num_elem; tmp_ind++) {
     b(ind[tmp_ind]) = coeff[tmp_ind];
   }
@@ -289,7 +290,7 @@ void getCertificate(
 
   int tmp_ind = 0;
   for (const int& row : rows) {
-    const double mult = (solver->getRowSense()[row] == 'L') ? -1. : 1.;
+    const double mult = 1.; //(solver->getRowSense()[row] == 'L') ? -1. : 1.;
     v[row] = mult * x(tmp_ind);
     tmp_ind++;
   }
@@ -344,6 +345,18 @@ void getCertificate(
     fprintf(stderr, 
         "*** ERROR: Number of differences between true and calculated cuts: %d. Total difference: %g. Exiting.\n",
         num_errors, total_diff);
+    fprintf(stderr, "x:\n");
+    for (int i = 0; i < solver->getNumCols(); i++) {
+      fprintf(stderr, "x[%d] = %f\n", i, x(i));
+    }
+    fprintf(stderr, "b:\n");
+    for (int i = 0; i < solver->getNumCols(); i++) {
+      fprintf(stderr, "b[%d] = %f\n", i, b(i));
+    }
+    fprintf(stderr, "v:\n");
+    for (int i = 0; i < (int) v.size(); i++) {
+      fprintf(stderr, "v[%d] = %f\n", i, v[i]);
+    }
     exit(1);
   }
   //else printf("No errors found.\n");
@@ -602,7 +615,7 @@ void strengthenCut(
   // Now try to strengthen the coefficients on the integer-restricted variables
   for (int col = 0; col < solver->getNumCols(); col++) {
     if (!solver->isInteger(col)) continue;
-    strengthenCutCoefficient(str_coeff[col], str_rhs, col, coeff[col], disj, lb_term, v, solver);
+    strengthenCutCoefficient(str_coeff[col], str_rhs, col, str_coeff[col], disj, lb_term, v, solver);
   }
 } /* strengthenCut */
 

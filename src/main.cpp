@@ -470,7 +470,7 @@ int main(int argc, char** argv) {
       }
     } // test closed-form strengthening for GMICs
 
-#ifdef TRACE
+#if 0
     fprintf(stdout, "\n## Printing GMICs ##\n");
     for (int cut_ind = 0; cut_ind < gmics.sizeCuts(); cut_ind++) {
       printf("## Cut %d ##\n", cut_ind);
@@ -482,6 +482,8 @@ int main(int argc, char** argv) {
 
     //====================================================================================================//
     // Now for more general cuts
+    OsiCuts& currCuts = mycuts_by_round[round_ind];
+
     // User can replace generateCuts method in CglAdvCut with whatever method is desired
     CglAdvCut gen(params);
 
@@ -491,17 +493,27 @@ int main(int argc, char** argv) {
         timer.get_value(OverallTimeStats::INIT_SOLVE_TIME));
 
     // Generate disjunctive cuts
-    gen.generateCuts(*solver, mycuts_by_round[round_ind]); 
+    gen.generateCuts(*solver, currCuts);
     Disjunction* disj = gen.gen.disj();
     exitReason = gen.exitReason;
     updateCutInfo(cutInfoVec[round_ind], &gen);
     boundInfo.num_mycuts += gen.num_cuts;
 
+#if 1
+    fprintf(stdout, "\n## Printing custom cuts ##\n");
+    for (int cut_ind = 0; cut_ind < currCuts.sizeCuts(); cut_ind++) {
+      printf("## Cut %d ##\n", cut_ind);
+      const OsiRowCut* const cut = currCuts.rowCutPtr(cut_ind);
+      cut->print();
+    }
+    fprintf(stdout, "Finished printing custom cuts.\n\n");
+#endif
+
     //====================================================================================================//
     // Get Farkas certificate and do strengthening
-    if (params.get(STRENGTHEN) == 1 && disj && mycuts_by_round[round_ind].sizeCuts() > 0) {
-      std::vector<std::vector<std::vector<double> > > v(mycuts_by_round[round_ind].sizeCuts()); // [cut][term][Farkas multiplier] in the end, per term, this will be of dimension rows + cols
-      for (int cut_ind = 0; cut_ind < mycuts_by_round[round_ind].sizeCuts(); cut_ind++) {
+    if (params.get(STRENGTHEN) == 1 && disj && currCuts.sizeCuts() > 0) {
+      std::vector<std::vector<std::vector<double> > > v(currCuts.sizeCuts()); // [cut][term][Farkas multiplier] in the end, per term, this will be of dimension rows + cols
+      for (int cut_ind = 0; cut_ind < currCuts.sizeCuts(); cut_ind++) {
         v[cut_ind].resize(disj->num_terms);
       }
       for (int term_ind = 0; term_ind < disj->num_terms; term_ind++) {
@@ -511,8 +523,8 @@ int main(int argc, char** argv) {
           printf("Disjunctive term %d/%d not created successfully.\n", term_ind+1, disj->num_terms);
           continue;
         }
-        for (int cut_ind = 0; cut_ind < mycuts_by_round[round_ind].sizeCuts(); cut_ind++) {
-          OsiRowCut* disjCut = mycuts_by_round[round_ind].rowCutPtr(cut_ind);
+        for (int cut_ind = 0; cut_ind < currCuts.sizeCuts(); cut_ind++) {
+          OsiRowCut* disjCut = currCuts.rowCutPtr(cut_ind);
 
           // For each term of the disjunction,
           // we need to explicitly add the constraint(s) defining the disjunctive term
@@ -526,9 +538,9 @@ int main(int argc, char** argv) {
 
       //====================================================================================================//
       // Do strengthening
-      printf("\n## Strengthening disjunctive cuts: (# cuts = %d). ##\n", (int) mycuts_by_round[round_ind].sizeCuts());
-      for (int cut_ind = 0; cut_ind < mycuts_by_round[round_ind].sizeCuts(); cut_ind++) {
-        OsiRowCut* disjCut = mycuts_by_round[round_ind].rowCutPtr(cut_ind);
+      printf("\n## Strengthening disjunctive cuts: (# cuts = %d). ##\n", (int) currCuts.sizeCuts());
+      for (int cut_ind = 0; cut_ind < currCuts.sizeCuts(); cut_ind++) {
+        OsiRowCut* disjCut = currCuts.rowCutPtr(cut_ind);
         const CoinPackedVector lhs = disjCut->row();
         const double rhs = disjCut->rhs();
         std::vector<double> str_coeff;
@@ -540,24 +552,33 @@ int main(int argc, char** argv) {
         disjCut->setRow(strCutCoeff);
         disjCut->setLb(str_rhs);
       }
+#if 1
+      fprintf(stdout, "\n## Printing strengthened custom cuts ##\n");
+      for (int cut_ind = 0; cut_ind < currCuts.sizeCuts(); cut_ind++) {
+        printf("## Cut %d ##\n", cut_ind);
+        const OsiRowCut* const cut = currCuts.rowCutPtr(cut_ind);
+        cut->print();
+      }
+      fprintf(stdout, "Finished printing strengthened custom cuts.\n\n");
+#endif
     } // check that disj exists and cuts were generated
 
     timer.end_timer(OverallTimeStats::CUT_TIME);
 
     //====================================================================================================//
     // Apply cuts
-    printf("\n## Applying disjunctive cuts (# cuts = %d). ##\n", (int) mycuts_by_round[round_ind].sizeCuts());
+    printf("\n## Applying disjunctive cuts (# cuts = %d). ##\n", (int) currCuts.sizeCuts());
     timer.start_timer(OverallTimeStats::APPLY_TIME);
-    applyCutsCustom(solver, mycuts_by_round[round_ind]);
+    applyCutsCustom(solver, currCuts);
     if (params.get(GOMORY) > 0) {
       boundInfo.gmic_mycuts_obj = solver->getObjValue();
-      applyCutsCustom(CutSolver, mycuts_by_round[round_ind]);
+      applyCutsCustom(CutSolver, currCuts);
       boundInfo.mycuts_obj = CutSolver->getObjValue();
       boundInfo.all_cuts_obj = boundInfo.gmic_mycuts_obj;
     }
     else if (params.get(GOMORY) < 0) {
       boundInfo.mycuts_obj = solver->getObjValue();
-      applyCutsCustom(CutSolver, mycuts_by_round[round_ind]);
+      applyCutsCustom(CutSolver, currCuts);
       boundInfo.gmic_mycuts_obj = CutSolver->getObjValue();
       boundInfo.all_cuts_obj = boundInfo.gmic_mycuts_obj;
     } else {
@@ -566,13 +587,13 @@ int main(int argc, char** argv) {
     }
     timer.end_timer(OverallTimeStats::APPLY_TIME);
 
-    mycuts.insert(mycuts_by_round[round_ind]);
+    mycuts.insert(currCuts);
 
     printf(
         "\n## Round %d/%d: Completed round of cut generation (exit reason: %s). # cuts generated = %d.\n",
         round_ind + 1, params.get(ROUNDS),
         CglAdvCut::ExitReasonName[static_cast<int>(exitReason)].c_str(),
-        mycuts_by_round[round_ind].sizeCuts());
+        currCuts.sizeCuts());
     fflush(stdout);
     printf("Initial obj value: %1.6f. New obj value: %s. Disj lb: %s. ##\n",
         boundInfo.lp_obj, stringValue(solver->getObjValue(), "%1.6f").c_str(),
