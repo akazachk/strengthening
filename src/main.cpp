@@ -499,7 +499,7 @@ int main(int argc, char** argv) {
     updateCutInfo(cutInfoVec[round_ind], &gen);
     boundInfo.num_mycuts += gen.num_cuts;
 
-#if 1
+#if 0
     fprintf(stdout, "\n## Printing custom cuts ##\n");
     for (int cut_ind = 0; cut_ind < currCuts.sizeCuts(); cut_ind++) {
       printf("## Cut %d ##\n", cut_ind);
@@ -554,7 +554,7 @@ int main(int argc, char** argv) {
         disjCut->setLb(str_rhs);
       }
       fprintf(stdout, "\nFinished strengthening (%d cuts affected).\n", num_cuts_strengthened);
-#if 1
+#if 0
       fprintf(stdout, "\n## Printing strengthened custom cuts ##\n");
       for (int cut_ind = 0; cut_ind < currCuts.sizeCuts(); cut_ind++) {
         printf("## Cut %d ##\n", cut_ind);
