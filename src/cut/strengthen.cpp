@@ -166,6 +166,15 @@ void solveLinearSystem(
     error_msg(errorstring, "solveLinearSystem: solving failed.\n");
     exit(1);
   }
+
+#ifdef TRACE
+  VectorXd tmp = A * x;
+  for (int i = 0; i < b.size(); i++) {
+    if (!isVal(tmp(i), b(i))) {
+      fprintf(stderr, "Calculated A_i . x = %f instead of correct value of b_i = %f.\n", tmp(i), b(i));
+    }
+  }
+#endif
 } /* solveLinearSystem */
 #endif // USE_EIGEN
 
@@ -194,7 +203,7 @@ void solveLinearSystem(
 /// If A is not invertible, then we need only consider the relaxed corner polyhedron
 /// That is, we only need the basis inverse applied to the matrix
 void getCertificate(
-    /// [out] Farkas multipliers (vector of length m + n)
+    /// [out] Farkas multipliers (vector of length m + m_t + n)
     std::vector<double>& v, 
     /// [in] number of nonzero cut coefficients
     const int num_elem, 
@@ -295,7 +304,7 @@ void getCertificate(
     tmp_ind++;
   }
   for (const int& col : cols) {
-    const double mult = isNonBasicUBVar(solver, col) ? -1. : 1.;
+    const double mult = 1.; //isNonBasicUBVar(solver, col) ? -1. : 1.;
     v[solver->getNumRows() + col] = mult * x(tmp_ind);
     tmp_ind++;
   }
@@ -495,10 +504,10 @@ void getCutFromCertificate(
   const CoinPackedMatrix* mat = solver->getMatrixByCol();
 
   std::vector<double> new_v(v.begin(), v.end());
-  for (int col = 0; col < solver->getNumCols(); col++) {
+  /*for (int col = 0; col < solver->getNumCols(); col++) {
     double& val = new_v[solver->getNumRows() + col];
     val = std::abs(val);
-  }
+  }*/
   for (int col = 0; col < solver->getNumCols(); col++) {
     const int start = mat->getVectorFirst(col);
     alpha[col] += dotProduct(mat->getVectorSize(col), 
