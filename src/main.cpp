@@ -183,10 +183,10 @@ int main(int argc, char** argv) {
       boundInfo.num_gmic += currGMICs.sizeCuts();
       applyCutsCustom(GMICSolver, currGMICs);
       boundInfo.gmic_obj = GMICSolver->getObjValue();
-      if (std::abs(gomory_option) > 0) {
+      if (gomory_option > 0) {
         applyCutsCustom(solver, currGMICs);
       }
-      if (std::abs(gomory_option) < 0) {
+      else if (gomory_option < 0) {
         applyCutsCustom(CutSolver, currGMICs);
       }
     }
