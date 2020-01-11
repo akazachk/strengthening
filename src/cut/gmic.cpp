@@ -5,18 +5,325 @@
  */
 #include "gmic.hpp"
 
+#include <CglGMI.hpp>
 #include <OsiRowCut.hpp>
+#include <OsiCuts.hpp>
 
+#include "SplitDisjunction.hpp"
 #include "SolverHelper.hpp" // isBasicVar
 #include "SolverInterface.hpp"
+#include "strengthen.hpp"
 #include "utility.hpp"
+
+/** 
+ * @brief Generate Gomory cuts based on mode 
+ *
+ * Option 1: GglGMI
+ * Option 2: custom generate intersection cuts, calculate Farkas certificate, do strengthening
+ * Option 3: custom generate intersection cuts, calculate Farkas certificate, do closed-form strengthening
+ */
+void generateGomoryCuts(
+    // [out] Gomory cuts that we generate
+    OsiCuts& currGMICs,
+    /// [in/out] solver from which we generate cuts; assumed optimal; non-const because we need to enable factorization
+    OsiSolverInterface* const solver,
+    /// [in] which GMIC generation method to use
+    const int option,
+    /// [in] how to strengthen the cut
+    const int strengthen_option,
+    /// [in] epsilon for deciding whether a value is fractional
+    const double AWAY,
+    /// [in] tolerance for reconstructing disjunctive term solution
+    const double DIFFEPS,
+    FILE* logfile) {
+  // Use CglGMI
+  if (std::abs(option) == 1) {
+    CglGMI GMIGen;
+    GMIGen.getParam().setMAX_SUPPORT(solver->getNumCols());
+    GMIGen.getParam().setMAX_SUPPORT_REL(0.5);
+    GMIGen.generateCuts(*solver, currGMICs);
+  } // generate GMICs via CglGMI
+  // Generate GMICs via gmic.hpp and strengthen via strengthen.hpp
+  else if (std::abs(option) == 2) {
+    solver->enableFactorization();
+
+    // Get variables basic in which row
+    std::vector<int> varBasicInRow(solver->getNumRows(), -1);
+    solver->getBasics(&varBasicInRow[0]);
+    solver->disableFactorization();
+
+    // Loop over variables and generate cuts for any that are integer-restricted but take a fractional value
+    for (int var = 0; var < solver->getNumCols(); var++) {
+      if (!solver->isInteger(var)) {
+        continue;
+      }
+
+      const double val = solver->getColSolution()[var];
+      if (isVal(val, std::floor(val)) || isVal(val, std::ceil(val))) {
+        continue;
+      }
+
+      // Find row in which this variable is basic
+      int splitVarRowIndex = -1;
+      for (int row = 0; row < solver->getNumRows(); row++) {
+        if (varBasicInRow[row] == var) {
+          splitVarRowIndex = row;
+          break;
+        }
+      }
+      if (splitVarRowIndex == -1) {
+        error_msg(errorstring, "Unable to find fractional variable %d in basis.\n", var);
+        writeErrorToLog(errorstring, logfile);
+        exit(1);
+      }
+
+      // Now we generate the unstrengthened intersection cut and see if we can strengthen it
+      // The actual Farkas certificate for this cut can be derived in closed form from the basis
+      OsiRowCut intCut;
+      createMIG(intCut, solver, var, splitVarRowIndex, false);
+
+      if (strengthen_option > 0) {
+        // For each term of the disjunction, 
+        // we need to explicitly add the constraint(s) defining the disjunctive term
+        const CoinPackedVector lhs = intCut.row();
+
+        std::vector<std::vector<double> > v(2); // [term][val] for each term, this will be of dimension rows + cols
+        { // Check first side of the split
+          // Calculate the certificate
+          OsiSolverInterface* solver0 = solver->clone();
+          const double el = -1.;
+          solver0->addRow(1, &var, &el, -1. * std::floor(val), solver->getInfinity());
+
+          getCertificate(v[0], lhs.getNumElements(), lhs.getIndices(), lhs.getElements(), solver0);
+
+          if (solver0) delete solver0;
+        } // check first side of the split
+
+        { // Check second side of the split
+          // Calculate the certificate
+          OsiSolverInterface* solver1 = solver->clone();
+          const double el = 1.;
+          solver1->addRow(1, &var, &el, std::ceil(val), solver->getInfinity());
+
+          getCertificate(v[1], lhs.getNumElements(), lhs.getIndices(), lhs.getElements(), solver1);
+
+          if (solver1) delete solver1;
+        } // check second side of the split
+
+        // Do strengthening; for this we first need to setup a split disjunction
+        SplitDisjunction disj;
+        disj.var = var;
+        disj.prepareDisjunction(solver);
+        const double rhs = intCut.rhs();
+        std::vector<double> str_coeff;
+        double str_rhs;
+        strengthenCut(str_coeff, str_rhs, lhs.getNumElements(), lhs.getIndices(), lhs.getElements(), rhs, &disj, v, solver);
+
+        // Replace row
+        CoinPackedVector strCutCoeff(str_coeff.size(), str_coeff.data());
+        intCut.setRow(strCutCoeff);
+        intCut.setLb(str_rhs);
+
+        // We generate the strengthened intersection cut (to compare against)
+        //OsiRowCut strIntCut;
+        //createMIG(strIntCut, solver, var, splitVarRowIndex, true);
+      } // do strengthening
+
+      // Insert new cut into currGMICs
+      currGMICs.insert(intCut);
+    } // iterate over cols, generating GMICs
+  } // generate GMICs via gmic.hpp and strengthen via strengthen.hpp
+  // Test closed-form strengthening for GMICs
+  else if (std::abs(option) == 3) {
+    solver->enableFactorization();
+
+    // Get variables basic in which row
+    std::vector<int> varBasicInRow(solver->getNumRows(), -1);
+    solver->getBasics(&varBasicInRow[0]);
+
+    // Get nonbasic variables
+    std::vector<int> NBVarIndex;
+    NBVarIndex.reserve(solver->getNumCols());
+    for (int var = 0; var < solver->getNumCols() + solver->getNumRows(); var++) {
+      if (isRayVar(solver, var)) {
+        NBVarIndex.push_back(var);
+      }
+    } // loop over vars, collecting which are nb
+
+    // Collect basis inverse
+    std::vector<std::vector<double> > currRay(NBVarIndex.size());
+    for (int ray_ind = 0; ray_ind < (int) NBVarIndex.size(); ray_ind++) {
+      const int NBVar = NBVarIndex[ray_ind];
+      currRay[ray_ind].resize(solver->getNumRows());
+      solver->getBInvACol(NBVar, &(currRay[ray_ind][0]));
+      if (isNonBasicLBVar(solver, NBVar)) {
+        for (int row = 0; row < solver->getNumRows(); row++) {
+          currRay[ray_ind][row] *= -1;
+        }
+      }
+    }
+    solver->disableFactorization();
+
+    for (int var = 0; var < solver->getNumCols(); var++) {
+      if (!solver->isInteger(var)) {
+        continue;
+      }
+
+      const double val = solver->getColSolution()[var];
+      if (isVal(val, std::floor(val)) || isVal(val, std::ceil(val))) {
+        continue;
+      }
+
+      // Find row in which this variable is basic
+      int splitVarRowIndex = -1;
+      for (int row = 0; row < solver->getNumRows(); row++) {
+        if (varBasicInRow[row] == var) {
+          splitVarRowIndex = row;
+          break;
+        }
+      }
+      if (splitVarRowIndex == -1) {
+        error_msg(errorstring, "Unable to find fractional variable %d in basis.\n", var);
+        writeErrorToLog(errorstring, logfile);
+        exit(1);
+      }
+
+      // Now we generate the unstrengthened intersection cut and see if we can strengthen it
+      // The actual Farkas certificate for this cut can be derived in closed form from the basis
+      OsiRowCut intCut;
+      createMIG(intCut, solver, var, splitVarRowIndex, false);
+
+      if (strengthen_option > 0) {
+        std::vector<std::vector<double> > v(2); // [term][val] for each term, this will be of dimension rows + cols
+        v[0].resize(solver->getNumRows() + 1 + solver->getNumCols(), 0.0);
+        v[1].resize(solver->getNumRows() + 1 + solver->getNumCols(), 0.0);
+
+        // Set values using closed-form formula
+        const double delta0 = val - std::floor(val); // f0
+        const double delta1 = std::ceil(val) - val; // 1-f0
+        const double inv_delta_sum = 1 / ((1/delta0) + (1/delta1)); // f0 (1-f0) in split case
+        v[0][solver->getNumRows()] = inv_delta_sum / delta0;
+        v[1][solver->getNumRows()] = inv_delta_sum / delta1;
+
+        // Compute lambda^t_i = (d^t A_N^-1)_i / delta_t and lambda_i = max_t lambda^t_i
+        // where the disjunction is (d^0 x >= d^0_0) \vee (d^1 x \ge d^1_0)
+        // and here (d^0, d^0_0) = (-e_k, -std::floor(val))
+        // and (d^1, d^1_0) = (e_k, std::ceil(val))
+        double v_rhs = 1;
+        for (int ray_ind = 0; ray_ind < (int) NBVarIndex.size(); ray_ind++) {
+          const int NBVar = NBVarIndex[ray_ind];
+          const int tmp_row = NBVar - solver->getNumCols();
+          double mult = 1.;
+          if (NBVar < solver->getNumCols()) {
+            mult = isNonBasicUBVar(solver, NBVar) ? -1. : 1.;
+          } else {
+            mult = (solver->getRowSense()[tmp_row] == 'L') ? -1. : 1.;
+          }
+          const double lambda0 = -currRay[ray_ind][splitVarRowIndex] / delta0;
+          const double lambda1 = currRay[ray_ind][splitVarRowIndex] / delta1;
+          const double lambda[2] = { lambda0, lambda1 };
+          const int t_i = (lambda0 > lambda1) ? 0 : 1;
+          const int v_row = (NBVar < solver->getNumCols()) ? (solver->getNumRows() + 1 + NBVar) : tmp_row;
+          for (int t = 0; t < 2; t++) {
+            v[t][v_row] = mult * inv_delta_sum * (lambda[t_i] - lambda[t]);
+          }
+
+          double curr_rhs = 0.;;
+          if (NBVar < solver->getNumCols()) {
+            curr_rhs = (mult < 0) ? -1. * solver->getColUpper()[NBVar] : solver->getColLower()[NBVar];
+          } else {
+            curr_rhs = mult * solver->getRightHandSide()[tmp_row];
+          }
+          v_rhs += lambda[t_i] * curr_rhs;
+        }
+
+        v_rhs *= inv_delta_sum;
+
+        // Scale v as appropriate based on intCut rhs vs calculated rhs
+        const double scale = std::abs(intCut.rhs() / v_rhs);
+        for (int t = 0; t < 2; t++) {
+          for (auto& vti : v[t]) {
+            vti *= scale;
+          }
+        }
+
+        const CoinPackedVector lhs = intCut.row();
+#ifdef TRACE
+        for (int t = 0; t < 2; t++) {
+          SplitDisjunction disj;
+          disj.var = var;
+          disj.prepareDisjunction(solver);
+
+          OsiSolverInterface* termSolver;
+          disj.getSolverForTerm(termSolver, t, solver, false, DIFFEPS, logfile);
+          std::vector<double> new_coeff(solver->getNumCols());
+          getCutFromCertificate(new_coeff, v[t], termSolver);
+
+          std::vector<double> cut_coeff(solver->getNumCols(), 0.0);
+
+          const int num_el = lhs.getNumElements();
+          for (int i = 0; i < num_el; i++) {
+            cut_coeff[lhs.getIndices()[i]] = lhs.getElements()[i];
+          }
+
+          int num_errors = 0;
+          double total_diff = 0.;
+          for (int i = 0; i < solver->getNumCols(); i++) {
+            const double diff = cut_coeff[i] - new_coeff[i];
+            if (greaterThanVal(std::abs(diff), 0.0)) {
+              fprintf(stderr, "%d: cut: %.6f\tcalc: %.6f\tdiff: %g\n", i, cut_coeff[i], new_coeff[i], diff);
+              num_errors++;
+              total_diff += std::abs(diff);
+            }
+          }
+          if (num_errors > 0) printf("Number of differences between true and calculated cuts: %d. Total difference: %g.\n", num_errors, total_diff);
+
+          if (termSolver) { delete termSolver; }
+        }
+#endif
+
+        // Do strengthening; for this we first need to setup a split disjunction
+        SplitDisjunction disj;
+        disj.var = var;
+        disj.prepareDisjunction(solver);
+        const double rhs = intCut.rhs();
+        std::vector<double> str_coeff;
+        double str_rhs;
+        strengthenCut(str_coeff, str_rhs, lhs.getNumElements(), lhs.getIndices(), lhs.getElements(), rhs, &disj, v, solver);
+
+        // Replace row
+        CoinPackedVector strCutCoeff(str_coeff.size(), str_coeff.data());
+        intCut.setRow(strCutCoeff);
+        intCut.setLb(str_rhs);
+      } // do strengthening
+
+      // Insert new cut into currGMICs
+      currGMICs.insert(intCut);
+    } // iterate over cols, generating GMICs
+  } // test closed-form strengthening for GMICs
+
+#if 0
+  fprintf(stdout, "\n## Printing GMICs ##\n");
+  for (int cut_ind = 0; cut_ind < gmics.sizeCuts(); cut_ind++) {
+    printf("## Cut %d ##\n", cut_ind);
+    const OsiRowCut* const cut = gmics.rowCutPtr(cut_ind);
+    cut->print();
+  }
+  fprintf(stdout, "Finished printing GMICs.\n\n");
+#endif
+} /* generateGomoryCuts */
 
 /** Adapted from CglLandP **/
 void createMIG(
+    /// [out]
     OsiRowCut &cut, 
+    /// [in]
     const OsiSolverInterface* const solver,
+    /// [in]
     const int splitVarIndex,
+    /// [in]
     const int splitVarRowIndex,
+    /// [in]
     const bool strengthen) {
   const int numcols = solver->getNumCols();
   const int numrows = solver->getNumRows();

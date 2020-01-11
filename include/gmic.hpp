@@ -7,8 +7,18 @@
 
 #include <vector>
 
+class OsiCuts;
 class OsiRowCut;
 class OsiSolverInterface;
+
+void generateGomoryCuts(
+    OsiCuts& currGMICs,
+    OsiSolverInterface* const solver,
+    const int option,
+    const int strengthen_option,
+    const double AWAY,
+    const double DIFFEPS,
+    FILE* logfile);
 
 void createMIG(OsiRowCut &cut, const OsiSolverInterface* const solver,
     const int splitVarIndex, const int splitVarRowIndex, const bool strengthen = true);
