@@ -619,7 +619,12 @@ int strengthenCut(
 #ifdef TRACE
       assert(disj_lb_diff[term_ind][bound_ind] > -1e-3);
 #endif
-      lb_term[term_ind] += v[term_ind][solver->getNumRows() + bound_ind] * disj_lb_diff[term_ind][bound_ind];
+      if (!isZero(v[term_ind][solver->getNumRows() + bound_ind]) && !isZero(disj_lb_diff[term_ind][bound_ind])) {
+        lb_term[term_ind] += v[term_ind][solver->getNumRows() + bound_ind] * disj_lb_diff[term_ind][bound_ind];
+        if (isZero(lb_term[term_ind])) {
+          lb_term[term_ind] = 0.;
+        }
+      }
     } // loop over bounds
   } // loop over terms
 
@@ -659,10 +664,10 @@ bool strengthenCutCoefficient(
 
   // Check if complementing is necessary
   double mult = 1.;
-  if (v[0][solver->getNumRows() + disj->terms[0].changed_var.size() + var] < 0) {
+  if (lessThanVal(v[0][solver->getNumRows() + disj->terms[0].changed_var.size() + var], 0)) {
     mult = -1;
   }
-  if (v[1][solver->getNumRows() + disj->terms[1].changed_var.size() + var] < 0) {
+  if (lessThanVal(v[1][solver->getNumRows() + disj->terms[1].changed_var.size() + var], 0)) {
     mult = -1;
   }
   str_coeff = mult * coeff;
@@ -693,7 +698,9 @@ bool strengthenCutCoefficient(
       min_max_term_val = max_term_val;
     }
   } // loop over monoid options
-  str_coeff += min_max_term_val;
+  if (!isZero(min_max_term_val)) {
+    str_coeff += min_max_term_val;
+  }
 
   if (mult < 0) {
     str_coeff *= -1;

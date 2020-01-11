@@ -352,10 +352,24 @@ void generateGomoryCuts(
   fprintf(stdout, "--------------------------------------------------\n");
 #if 0
   fprintf(stdout, "\n## Printing GMICs ##\n");
-  for (int cut_ind = 0; cut_ind < gmics.sizeCuts(); cut_ind++) {
+  for (int cut_ind = 0; cut_ind < currGMICs.sizeCuts(); cut_ind++) {
     printf("## Cut %d ##\n", cut_ind);
-    const OsiRowCut* const cut = gmics.rowCutPtr(cut_ind);
-    cut->print();
+    const OsiRowCut* const cut = currGMICs.rowCutPtr(cut_ind);
+    //cut->print();
+    const double rhs_mult = (isInfinity(std::abs(cut->lb()))) ? -1. : 1.;
+    double mult = rhs_mult;
+    if (!isZero(cut->rhs())) {
+      mult /= std::abs(cut->rhs());
+    }
+    const CoinPackedVector row = cut->row();
+    const int num_elem = row.getNumElements();
+    const int* ind = row.getIndices();
+    const double* coeff = row.getElements();
+    for (int i = 0; i < num_elem; i++) {
+      fprintf(stdout, "(%d, %.6g)\n", ind[i], mult * coeff[i]);
+    }
+    fprintf(stdout, "(unnormalized) rhs: %g\n\n", rhs_mult * cut->rhs());
+    //if (cut_ind > -1) exit(1);
   }
   fprintf(stdout, "Finished printing GMICs.\n\n");
 #endif
