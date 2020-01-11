@@ -548,7 +548,7 @@ void getCutFromCertificate(
  *
  * TODO If k is nonbasic at a nonzero bound or is at its upper bound, what do we do?
  */
-bool strengthenCut(
+int strengthenCut(
     /// [out] strengthened cut coefficients
     std::vector<double>& str_coeff,
     /// [out] strengthened cut rhs
@@ -569,7 +569,7 @@ bool strengthenCut(
     const OsiSolverInterface* const solver) {
   str_coeff.clear();
   str_coeff.resize(solver->getNumCols(), 0.0);
-  if (!disj) { return false; }
+  if (!disj) { return 0; }
 
   // Set up original cut coeff and rhs
   str_rhs = rhs;
@@ -624,12 +624,12 @@ bool strengthenCut(
   } // loop over terms
 
   // Now try to strengthen the coefficients on the integer-restricted variables
-  bool thingsChanged = false;
+  int num_coeffs_changed = 0;
   for (int col = 0; col < solver->getNumCols(); col++) {
     if (!solver->isInteger(col)) continue;
-    thingsChanged = thingsChanged || strengthenCutCoefficient(str_coeff[col], str_rhs, col, str_coeff[col], disj, lb_term, v, solver);
+    num_coeffs_changed += strengthenCutCoefficient(str_coeff[col], str_rhs, col, str_coeff[col], disj, lb_term, v, solver);
   }
-  return thingsChanged;
+  return num_coeffs_changed;
 } /* strengthenCut */
 
 /// Calculate new cut coefficient (we need to minimize over monoids m)

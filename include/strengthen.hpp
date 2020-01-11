@@ -80,7 +80,7 @@ void getCutFromCertificate(std::vector<double>& alpha,
 /**
  * @brief Attempt to strengthen coefficients of given cut
  */
-bool strengthenCut(
+int strengthenCut(
     std::vector<double>& str_coeff,
     double& str_rhs,
     const int num_elem, 

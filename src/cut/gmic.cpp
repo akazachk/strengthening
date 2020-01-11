@@ -36,6 +36,11 @@ void generateGomoryCuts(
     /// [in] tolerance for reconstructing disjunctive term solution
     const double DIFFEPS,
     FILE* logfile) {
+  int num_cuts_strengthened = 0;
+  enum class Stat { total = 0, avg, stddev, min, max, num_stats } ;
+  std::vector<double> num_coeffs_strengthened((int) Stat::num_stats, 0); // total,avg,stddev,min,max
+  num_coeffs_strengthened[(int) Stat::min] = std::numeric_limits<int>::max();
+
   // Use CglGMI
   if (std::abs(option) == 1) {
     CglGMI GMIGen;
@@ -43,6 +48,7 @@ void generateGomoryCuts(
     GMIGen.getParam().setMAX_SUPPORT_REL(0.5);
     GMIGen.generateCuts(*solver, currGMICs);
   } // generate GMICs via CglGMI
+
   // Generate GMICs via gmic.hpp and strengthen via strengthen.hpp
   else if (std::abs(option) == 2) {
     solver->enableFactorization();
@@ -117,8 +123,20 @@ void generateGomoryCuts(
         const double rhs = intCut.rhs();
         std::vector<double> str_coeff;
         double str_rhs;
-        strengthenCut(str_coeff, str_rhs, lhs.getNumElements(), lhs.getIndices(), lhs.getElements(), rhs, &disj, v, solver);
+        const int curr_num_coeffs_str = strengthenCut(str_coeff, str_rhs, lhs.getNumElements(), lhs.getIndices(), lhs.getElements(), rhs, &disj, v, solver);
 
+        // Update stats
+        num_cuts_strengthened += curr_num_coeffs_str > 0;
+        num_coeffs_strengthened[(int) Stat::total] += curr_num_coeffs_str;
+        num_coeffs_strengthened[(int) Stat::avg] += curr_num_coeffs_str;
+        num_coeffs_strengthened[(int) Stat::stddev] += curr_num_coeffs_str * curr_num_coeffs_str;
+        if (curr_num_coeffs_str < num_coeffs_strengthened[(int) Stat::min]) {
+          num_coeffs_strengthened[(int) Stat::min] = curr_num_coeffs_str;
+        }
+        if (curr_num_coeffs_str > num_coeffs_strengthened[(int) Stat::max]) {
+          num_coeffs_strengthened[(int) Stat::max] = curr_num_coeffs_str;
+        }
+        
         // Replace row
         CoinPackedVector strCutCoeff(str_coeff.size(), str_coeff.data());
         intCut.setRow(strCutCoeff);
@@ -132,7 +150,12 @@ void generateGomoryCuts(
       // Insert new cut into currGMICs
       currGMICs.insert(intCut);
     } // iterate over cols, generating GMICs
+    if (currGMICs.sizeCuts() > 0) {
+      num_coeffs_strengthened[(int) Stat::avg] /= currGMICs.sizeCuts();
+      num_coeffs_strengthened[(int) Stat::stddev] /= currGMICs.sizeCuts();
+    }
   } // generate GMICs via gmic.hpp and strengthen via strengthen.hpp
+
   // Test closed-form strengthening for GMICs
   else if (std::abs(option) == 3) {
     solver->enableFactorization();
@@ -289,8 +312,20 @@ void generateGomoryCuts(
         const double rhs = intCut.rhs();
         std::vector<double> str_coeff;
         double str_rhs;
-        strengthenCut(str_coeff, str_rhs, lhs.getNumElements(), lhs.getIndices(), lhs.getElements(), rhs, &disj, v, solver);
+        const int curr_num_coeffs_str = strengthenCut(str_coeff, str_rhs, lhs.getNumElements(), lhs.getIndices(), lhs.getElements(), rhs, &disj, v, solver);
 
+        // Update stats
+        num_cuts_strengthened += curr_num_coeffs_str > 0;
+        num_coeffs_strengthened[(int) Stat::total] += curr_num_coeffs_str;
+        num_coeffs_strengthened[(int) Stat::avg] += curr_num_coeffs_str;
+        num_coeffs_strengthened[(int) Stat::stddev] += curr_num_coeffs_str * curr_num_coeffs_str;
+        if (curr_num_coeffs_str < num_coeffs_strengthened[(int) Stat::min]) {
+          num_coeffs_strengthened[(int) Stat::min] = curr_num_coeffs_str;
+        }
+        if (curr_num_coeffs_str > num_coeffs_strengthened[(int) Stat::max]) {
+          num_coeffs_strengthened[(int) Stat::max] = curr_num_coeffs_str;
+        }
+        
         // Replace row
         CoinPackedVector strCutCoeff(str_coeff.size(), str_coeff.data());
         intCut.setRow(strCutCoeff);
@@ -300,8 +335,21 @@ void generateGomoryCuts(
       // Insert new cut into currGMICs
       currGMICs.insert(intCut);
     } // iterate over cols, generating GMICs
+    if (currGMICs.sizeCuts() > 0) {
+      num_coeffs_strengthened[(int) Stat::avg] /= currGMICs.sizeCuts();
+      num_coeffs_strengthened[(int) Stat::stddev] /= currGMICs.sizeCuts();
+    }
   } // test closed-form strengthening for GMICs
 
+  num_coeffs_strengthened[(int) Stat::stddev] -= num_coeffs_strengthened[(int) Stat::avg] * num_coeffs_strengthened[(int) Stat::avg];
+  fprintf(stdout, "\nFinished strengthening GMICs (%d cuts affected).\n", num_cuts_strengthened);
+  fprintf(stdout, "Number coeffs changed:\n");
+  fprintf(stdout, "\ttotal: %g\n", num_coeffs_strengthened[(int) Stat::total]);
+  fprintf(stdout, "\tavg: %g\n", num_coeffs_strengthened[(int) Stat::avg]);
+  fprintf(stdout, "\tstddev: %g\n", num_coeffs_strengthened[(int) Stat::stddev]);
+  fprintf(stdout, "\tmin: %g\n", num_coeffs_strengthened[(int) Stat::min]);
+  fprintf(stdout, "\tmax: %g\n", num_coeffs_strengthened[(int) Stat::max]);
+  fprintf(stdout, "--------------------------------------------------\n");
 #if 0
   fprintf(stdout, "\n## Printing GMICs ##\n");
   for (int cut_ind = 0; cut_ind < gmics.sizeCuts(); cut_ind++) {

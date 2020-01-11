@@ -250,21 +250,44 @@ int main(int argc, char** argv) {
       //====================================================================================================//
       // Do strengthening
       printf("\n## Strengthening disjunctive cuts: (# cuts = %d). ##\n", (int) currCuts.sizeCuts());
+      enum class Stat { total = 0, avg, stddev, min, max, num_stats } ;
       int num_cuts_strengthened = 0;
+      std::vector<double> num_coeffs_strengthened((int) Stat::num_stats, 0); // total,avg,stddev,min,max
+      num_coeffs_strengthened[(int) Stat::min] = std::numeric_limits<int>::max();
       for (int cut_ind = 0; cut_ind < currCuts.sizeCuts(); cut_ind++) {
         OsiRowCut* disjCut = currCuts.rowCutPtr(cut_ind);
         const CoinPackedVector lhs = disjCut->row();
         const double rhs = disjCut->rhs();
         std::vector<double> str_coeff;
         double str_rhs;
-        num_cuts_strengthened += strengthenCut(str_coeff, str_rhs, lhs.getNumElements(), lhs.getIndices(), lhs.getElements(), rhs, disj, v[cut_ind], solver);
+        const int curr_num_coeffs_str = strengthenCut(str_coeff, str_rhs, lhs.getNumElements(), lhs.getIndices(), lhs.getElements(), rhs, disj, v[cut_ind], solver);
 
+        // Update stats
+        num_cuts_strengthened += curr_num_coeffs_str > 0;
+        num_coeffs_strengthened[(int) Stat::total] += curr_num_coeffs_str;
+        num_coeffs_strengthened[(int) Stat::avg] += curr_num_coeffs_str / currCuts.sizeCuts();
+        num_coeffs_strengthened[(int) Stat::stddev] += curr_num_coeffs_str * curr_num_coeffs_str / currCuts.sizeCuts();
+        if (curr_num_coeffs_str < num_coeffs_strengthened[(int) Stat::min]) {
+          num_coeffs_strengthened[(int) Stat::min] = curr_num_coeffs_str;
+        }
+        if (curr_num_coeffs_str > num_coeffs_strengthened[(int) Stat::max]) {
+          num_coeffs_strengthened[(int) Stat::max] = curr_num_coeffs_str;
+        }
+        
         // Replace row
         CoinPackedVector strCutCoeff(str_coeff.size(), str_coeff.data());
         disjCut->setRow(strCutCoeff);
         disjCut->setLb(str_rhs);
       }
+      num_coeffs_strengthened[(int) Stat::stddev] -= num_coeffs_strengthened[(int) Stat::avg] * num_coeffs_strengthened[(int) Stat::avg];
       fprintf(stdout, "\nFinished strengthening (%d cuts affected).\n", num_cuts_strengthened);
+      fprintf(stdout, "Number coeffs changed:\n");
+      fprintf(stdout, "\ttotal: %g\n", num_coeffs_strengthened[(int) Stat::total]);
+      fprintf(stdout, "\tavg: %g\n", num_coeffs_strengthened[(int) Stat::avg]);
+      fprintf(stdout, "\tstddev: %g\n", num_coeffs_strengthened[(int) Stat::stddev]);
+      fprintf(stdout, "\tmin: %g\n", num_coeffs_strengthened[(int) Stat::min]);
+      fprintf(stdout, "\tmax: %g\n", num_coeffs_strengthened[(int) Stat::max]);
+      fprintf(stdout, "--------------------------------------------------\n");
 #if 0
       fprintf(stdout, "\n## Printing strengthened custom cuts ##\n");
       for (int cut_ind = 0; cut_ind < currCuts.sizeCuts(); cut_ind++) {
