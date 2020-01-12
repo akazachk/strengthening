@@ -6,10 +6,13 @@
 #include "strengthen.hpp"
 
 #include <OsiRowCut.hpp> // for setting a disjunctive term
+#include <OsiCuts.hpp>
+#include <CbcModel.hpp>
 
 #include "CutHelper.hpp" // for setObjective and addToObjective
 #include "Disjunction.hpp"
 //#include "Parameters.hpp"
+#include "SolverInterface.hpp"
 #include "SolverHelper.hpp" // isBasicVar, checkSolverOptimality, isNonBasicUBVar
 #include "utility.hpp"
 
@@ -530,6 +533,148 @@ void getCutFromCertificate(
 } /* getCutFromCertificate */
 
 /**
+ * @brief Attempt to strengthen coefficients of given cuts
+ *
+ * Required:
+ * (1) original cuts
+ * (2) disjunction for which the cut is valid
+ * (3) Farkas certificate for the cut for this disjunction, 
+ *      where the first m rows correspond to the original constraint matrix, 
+ *      the next m_t rows correspond to the multipliers on the disjunctive term inequalities
+ *      the last n rows are bounds on the variables, 
+ * (4) globally valid lower bounds on the disjunctive term inequalties
+ *
+ * With those, the strengthening requires finding values m_1,...,m_T
+ *  str_coeff[k] = coeff[k] + max_t { -u^t_k + u^t_0 (D^t_0 - \ell^t) m_t }
+ *
+ * @return Number of coefficients strengthened
+ *
+ * TODO If k is nonbasic at a nonzero bound, what do we do?
+ * TODO Get this to work with general disjunctive inequalities, not just bound changes (see below TODO)
+ */
+int strengthenCutS(
+    /// [out] strengthened cuts
+    OsiCuts& str_cuts,
+    /// [in] original cuts
+    const OsiCuts& cuts,
+    /// [in] disjunction
+    const Disjunction* const disj,
+    /// [in] Farkas multipliers for each of the terms of the disjunction (each is a vector of length m + n)
+    const std::vector<std::vector<double> >& v, 
+    /// [in] original solver (used to get globally-valid lower bounds for the disjunctive terms)
+    const OsiSolverInterface* const solver) {
+  const int num_cuts = cuts.sizeCuts();
+  if (num_cuts == 0) { return 0; }
+  for (int i = 0; i < num_cuts; i++) {
+    str_cuts.insert(cuts.rowCut(i));
+  }
+  if (!disj) { return 0; }
+  const int num_terms = disj->num_terms;
+  if (num_terms < 2) { return 0; }
+
+  // Get globally lower bound for each of the disjunctive terms
+  // and use this to set up term-by-term coefficients for strengthening
+  // TODO get this to work with generic inequality description of disjunction, not just the bound changes version
+  std::vector<std::vector<double> > disj_lb_diff(num_terms);
+  std::vector<double> lb_term(num_terms, 0.0); // u^t_0 (D^t_0 - \ell^t)
+  for (int term_ind = 0; term_ind < num_terms; term_ind++) {
+    const DisjunctiveTerm& term = disj->terms[term_ind];
+    const int num_disj_ineqs = (int) term.changed_var.size();
+    // Resize current term vector
+    disj_lb_diff[term_ind].resize(num_disj_ineqs, 0.0);
+
+    for (int bound_ind = 0; bound_ind < num_disj_ineqs; bound_ind++) {
+      const int var = term.changed_var[bound_ind];
+      const double mult = (term.changed_bound[bound_ind] <= 0) ? 1.0 : -1.0;
+      const double bd = (term.changed_bound[bound_ind] <= 0) ? solver->getColLower()[var] : solver->getColUpper()[var];
+      double lb = mult * bd;
+      if (isInfinity(std::abs(lb))) {
+        {
+          // No bound readily available; try to optimize to find one
+          OsiSolverInterface* tmpSolver = solver->clone();
+          addToObjectiveFromPackedVector(tmpSolver, NULL, true);
+          setConstantObjectiveFromPackedVector(tmpSolver, mult, 1, &var);
+          tmpSolver->resolve();
+          checkSolverOptimality(tmpSolver, false);
+          if (tmpSolver->isProvenOptimal()) {
+            lb = tmpSolver->getObjValue();
+          }
+
+          if (tmpSolver) { delete tmpSolver; }
+        }
+        if (isInfinity(std::abs(lb))) {
+          fprintf(stderr,
+              "*** ERROR: Cannot strengthen cut using this disjunction because variable %d is missing its %s bound.\n",
+              var, term.changed_bound[bound_ind] <= 0 ? "lower" : "upper");
+          exit(1);
+        }
+      } // check if lb is infinite
+
+      disj_lb_diff[term_ind][bound_ind] = mult * term.changed_value[bound_ind] - lb;
+#ifdef TRACE
+      assert(disj_lb_diff[term_ind][bound_ind] > -1e-3);
+#endif
+      if (!isZero(v[term_ind][solver->getNumRows() + bound_ind]) && !isZero(disj_lb_diff[term_ind][bound_ind])) {
+        lb_term[term_ind] += v[term_ind][solver->getNumRows() + bound_ind] * disj_lb_diff[term_ind][bound_ind];
+        if (isZero(lb_term[term_ind])) {
+          lb_term[term_ind] = 0.;
+        }
+      }
+    } // loop over bounds
+  } // loop over terms
+
+  // Strengthen the coefficient on each cut
+  SolverInterface* mono = NULL;
+  int num_coeffs_changed = 0;
+  for (int col = 0; col < solver->getNumCols(); col++) {
+    if (!solver->isInteger(col)) continue;
+    if (!mono && num_terms > 2) {
+      mono = new SolverInterface;
+      setupMonoidalIP(mono, col, disj, lb_term, v, solver);
+    } else if (mono != NULL) {
+      updateMonoidalIP(mono, col, disj, v, solver);
+    }
+
+    // Now try to strengthen the coefficients on the integer-restricted variables
+    for (int cut_ind = 0; cut_ind < num_cuts; cut_ind++) {
+      OsiRowCut& cut = str_cuts.rowCut(cut_ind);
+      double str_rhs = cut.rhs();
+
+      CoinPackedVector& row = cut.mutableRow();
+      const int num_el = row.getNumElements();
+      int* ind = row.getIndices();
+      double* el = row.getElements();
+      int ind_of_col = 0;
+      for (ind_of_col = 0; ind_of_col < num_el; ind_of_col++) {
+        if (ind[ind_of_col] >= col) {
+          break;
+        }
+      }
+
+      // Check if this index already existed in the cut
+      if (ind_of_col < num_el && ind[ind_of_col] == col) {
+        double& str_coeff = el[ind_of_col];
+        num_coeffs_changed += strengthenCutCoefficient(str_coeff, str_rhs, col, str_coeff, disj, lb_term, v, solver, mono);
+      } else {
+        // The coefficient on col is currently 0
+        double str_coeff = 0.;
+        num_coeffs_changed += strengthenCutCoefficient(str_coeff, str_rhs, col, str_coeff, disj, lb_term, v, solver, mono);
+        if (!isZero(str_coeff)) {
+          // We need to insert this into the cut
+          row.insert(ind_of_col, str_coeff);
+        }
+      }
+
+      cut.setLb(str_rhs);
+    } // loop over cuts
+  } // loop over cols
+
+  if (mono) { delete mono; }
+
+  return num_coeffs_changed;
+} /* strengthenCut */
+
+/**
  * @brief Attempt to strengthen coefficients of given cut
  *
  * Required:
@@ -544,9 +689,10 @@ void getCutFromCertificate(
  * With those, the strengthening requires finding values m_1,...,m_T
  *  str_coeff[k] = coeff[k] + max_t { -u^t_k + u^t_0 (D^t_0 - \ell^t) m_t }
  *
- * @return Whether any coefficients changed
+ * @return Number of coefficients strengthened
  *
- * TODO If k is nonbasic at a nonzero bound or is at its upper bound, what do we do?
+ * TODO If k is nonbasic at a nonzero bound, what do we do?
+ * TODO Get this to work with general disjunctive inequalities, not just bound changes (see below TODO)
  */
 int strengthenCut(
     /// [out] strengthened cut coefficients
@@ -567,15 +713,15 @@ int strengthenCut(
     const std::vector<std::vector<double> >& v, 
     /// [in] original solver (used to get globally-valid lower bounds for the disjunctive terms)
     const OsiSolverInterface* const solver) {
-  str_coeff.clear();
-  str_coeff.resize(solver->getNumCols(), 0.0);
-  if (!disj) { return 0; }
-
   // Set up original cut coeff and rhs
   str_rhs = rhs;
+  str_coeff.clear();
+  str_coeff.resize(solver->getNumCols(), 0.0);
   for (int i = 0; i < num_elem; i++) {
     str_coeff[ind[i]] = coeff[i];
   }
+
+  if (!disj) { return 0; }
 
   // Get globally lower bound for each of the disjunctive terms
   // and use this to set up term-by-term coefficients for strengthening
@@ -628,12 +774,25 @@ int strengthenCut(
     } // loop over bounds
   } // loop over terms
 
+  // Setup monoidal cut strengthening LP
+  SolverInterface* mono = NULL;
+
   // Now try to strengthen the coefficients on the integer-restricted variables
   int num_coeffs_changed = 0;
   for (int col = 0; col < solver->getNumCols(); col++) {
     if (!solver->isInteger(col)) continue;
-    num_coeffs_changed += strengthenCutCoefficient(str_coeff[col], str_rhs, col, str_coeff[col], disj, lb_term, v, solver);
+    if (!mono && disj->num_terms > 2) {
+      mono = new SolverInterface;
+      setupMonoidalIP(mono, col, disj, lb_term, v, solver);
+    } else if (mono != NULL) {
+      updateMonoidalIP(mono, col, disj, v, solver);
+    }
+
+    num_coeffs_changed += strengthenCutCoefficient(str_coeff[col], str_rhs, col, str_coeff[col], disj, lb_term, v, solver, mono);
   }
+
+  if (mono) { delete mono; }
+
   return num_coeffs_changed;
 } /* strengthenCut */
 
@@ -655,11 +814,13 @@ bool strengthenCutCoefficient(
     /// [in] Farkas multipliers for each of the terms of the disjunction (each is a vector of length m + n)
     const std::vector<std::vector<double> >& v, 
     /// [in] original solver
-    const OsiSolverInterface* const solver) {
+    const OsiSolverInterface* const solver,
+    /// [in/out] monoidal cut strengthening solver (req'd for num_terms > 2),
+    OsiSolverInterface* const mono) {
   const int num_terms = disj->num_terms;
-  if (num_terms > 2) {
-    fprintf(stderr, "Currently strengthening is limited to 2-term disjunctions.\n");
-    exit(1);
+  if (num_terms < 2) {
+    str_coeff = coeff;
+    return false;
   }
 
   // Check if complementing is necessary
@@ -672,34 +833,54 @@ bool strengthenCutCoefficient(
   }
   str_coeff = mult * coeff;
 
-  std::vector<int> m1(num_terms, 0.0);
-  std::vector<int> m2(num_terms, 0.0);
-  std::vector<int> m3(num_terms, 0.0);
-  if (num_terms == 2) {
+  if (num_terms == 2 && !mono) {
+    std::vector<int> m1(num_terms, 0.0);
+    std::vector<int> m2(num_terms, 0.0);
+    std::vector<int> m3(num_terms, 0.0);
+    std::vector<int> m4(num_terms, 0.0);
+    std::vector<int> m5(num_terms, 0.0);
     m2[0] = 1.0;
     m2[1] = -1.0;
     m3[0] = -1.0;
     m3[1] = 1.0;
-  }
-  std::vector<std::vector<int> > m_options = { m1, m2, m3 };
-  double min_max_term_val = std::numeric_limits<double>::max();
-  for (const auto& m : m_options) {
-    double max_term_val = std::numeric_limits<double>::lowest(); 
-    for (int term_ind = 0; term_ind < num_terms; term_ind++) {
-      const DisjunctiveTerm& term = disj->terms[term_ind];
-      const int num_disj_ineqs = (int) term.changed_var.size();
-      const double utk = std::abs(v[term_ind][solver->getNumRows() + num_disj_ineqs + var]);
-      const double curr_val = -utk + lb_term[term_ind] * m[term_ind];
-      if (curr_val > max_term_val) {
-        max_term_val = curr_val;
+    m4[0] = -2.0;
+    m4[1] = 2.0;
+    m5[0] = 2.0;
+    m5[1] = -2.0;
+    std::vector<std::vector<int> > m_options = { m1, m2, m3, m4, m5 };
+    double min_max_term_val = std::numeric_limits<double>::max();
+    for (const auto& m : m_options) {
+      double max_term_val = std::numeric_limits<double>::lowest(); 
+      for (int term_ind = 0; term_ind < num_terms; term_ind++) {
+        const DisjunctiveTerm& term = disj->terms[term_ind];
+        const int num_disj_ineqs = (int) term.changed_var.size();
+        const double utk = std::abs(v[term_ind][solver->getNumRows() + num_disj_ineqs + var]);
+        const double curr_val = -utk + lb_term[term_ind] * m[term_ind];
+        if (curr_val > max_term_val) {
+          max_term_val = curr_val;
+        }
       }
+      if (max_term_val < min_max_term_val) {
+        min_max_term_val = max_term_val;
+      }
+    } // loop over monoid options
+
+    if (!isZero(min_max_term_val)) {
+      str_coeff += min_max_term_val;
     }
-    if (max_term_val < min_max_term_val) {
-      min_max_term_val = max_term_val;
+  } // if mono solver not given
+  else if (mono) {
+    CbcModel model(*mono);
+    model.setModelOwnsSolver(false);
+    model.branchAndBound();
+    if (model.status() != 0) {
+      fprintf(stderr, "*** ERROR: Failed to optimize monoidal strengthening solver for var %d.\n", var);
+      exit(1);
     }
-  } // loop over monoid options
-  if (!isZero(min_max_term_val)) {
-    str_coeff += min_max_term_val;
+    str_coeff += model.getObjValue();
+  } // num_terms > 2
+  else {
+    throw("Unable to strengthen coefficient.\n");
   }
 
   if (mult < 0) {
@@ -707,5 +888,221 @@ bool strengthenCutCoefficient(
     str_rhs += (str_coeff - coeff) * solver->getColUpper()[var];
   }
 
-  return !isZero(min_max_term_val);
+  return !isVal(str_coeff, coeff);
 } /* strengthenCutCoefficient */
+
+/**
+ * @brief Creates monoidal strengthening IP
+ *
+ * Let d_t := u^t_0 (D^t_0 - \ell^t)
+ *
+ * min_{\gamma_k, m \in \Z^T} \gamma_k + \alpha_k (we leave out \alpha_k in the formulation as it is a constant)
+ *    - d_t m_t + gamma \ge -u^t_k    for all t
+ *   \sum_t m_t         \ge 0
+ *          m_t         \in \Z        for all t (we should add bounds to make it easier)
+ */
+void setupMonoidalIP(
+    /// [in/out] monoidal IP solver (memory needs to already have been allocated)
+    OsiSolverInterface* const mono,
+    /// [in] variable for which the coefficient is being changed
+    const int var,
+    /// [in] disjunction
+    const Disjunction* const disj,
+    /// [in] u^t_0 (D^t_0 - \ell^t) for all t
+    const std::vector<double>& lb_term,
+    /// [in] Farkas multipliers for each of the terms of the disjunction (each is a vector of length m + n)
+    const std::vector<std::vector<double> >& v, 
+    /// [in] original solver
+    const OsiSolverInterface* const solver) {
+  if (!disj) return;
+  if (!mono) {
+    fprintf(stderr,
+        "*** ERROR: setupMonoidalIP: Monoidal cut strengthening LP mono needs to have been allocated.\n");
+    exit(1);
+  }
+  const int num_terms = disj->num_terms;
+  const int num_cols = num_terms + 1; // m_t for all t; gamma 
+  const int num_rows = num_terms + 1; // \sum_t m_t \ge 0; gamma - d_t m_t \ge -u^t_k
+  const int numElementsEstimate = 3 * num_terms;
+
+  CoinPackedMatrix mx; // create a new col-ordered matrix
+  mx.reverseOrdering(); // make it row-ordered
+  mx.setDimensions(0, num_cols);
+  mx.reserve(num_rows, numElementsEstimate, false);
+
+  std::vector<int> rowStarts(num_rows);
+  std::vector<int> column(numElementsEstimate);
+  std::vector<double> element(numElementsEstimate);
+  std::vector<double> rowLB(num_rows, 0.);
+
+  int el_ind = 0;
+  int row_ind = 0;
+
+  // -d_t m_t + gamma \ge -u^t_k
+  for (int t = 0; t < num_terms; t++) {
+    rowStarts[row_ind] = el_ind;
+    column[el_ind] = t;
+    element[el_ind] = -1. * lb_term[t];
+    el_ind++;
+    column[el_ind] = num_terms;
+    element[el_ind] = 1.;
+    el_ind++;
+
+    const DisjunctiveTerm& term = disj->terms[t];
+    const int num_disj_ineqs = (int) term.changed_var.size();
+    const double utk = std::abs(v[t][solver->getNumRows() + num_disj_ineqs + var]);
+    rowLB[row_ind] = -utk;
+
+    row_ind++;
+  }
+
+  // \sum_t m_t \ge 0
+  rowStarts[row_ind] = el_ind;
+  for (int t = 0; t < num_terms; t++) {
+    column[el_ind] = t;
+    element[el_ind] = 1.;
+    el_ind++;
+  }
+  rowLB[row_ind] = 0;
+
+  // Finish setting up matrix
+  //mx.appendRows(num_rows, rowStarts.data(), column.data(), element.data(), num_cols);
+  for (int row = 0; row < num_rows; row++) {
+    const int vecsize = (row < num_rows-1) ? 2 : num_terms;
+    const int offset = rowStarts[row];
+    mx.appendRow(vecsize, column.data() + offset, element.data() + offset);
+  }
+
+  // Column bounds
+  std::vector<double> colLB(num_cols, -1 * solver->getInfinity());
+  std::vector<double> colUB(num_cols, solver->getInfinity());
+
+  // Objective
+  std::vector<double> obj(num_cols, 0.);
+  obj[num_cols - 1] = 1.;
+
+  // Load problem
+  // Defaults (in COIN-OR):
+  // colLB: 0 **** We want it to be -inf
+  // colUB: inf
+  // obj coeff: 0 **** We set it to be minimize gamma
+  // rowSense: >=
+  // rhs: 0 **** We want this to be as above
+  // rowRange: 0
+  mono->loadProblem(mx, colLB.data(), colUB.data(), obj.data(), NULL,
+      rowLB.data(), NULL);
+  mono->disableFactorization();
+
+  for (int t = 0; t < num_terms; t++) {
+    mono->setInteger(t);
+  }
+} /* setupMonoidalIP */
+
+/**
+ * @brief Change relevant rhs for rows of monoidal IP set up as in setupMonoidalIP
+ */
+void updateMonoidalIP(
+    /// [in/out] monoidal solver (assumed to already be set up)
+    OsiSolverInterface* const mono,
+    /// [in] variable for which we are changing the coefficients
+    const int var,
+    /// [in] disjunction
+    const Disjunction* const disj,
+    /// [in] Farkas multipliers for each of the terms of the disjunction (each is a vector of length m + n)
+    const std::vector<std::vector<double> >& v, 
+    /// [in] original solver
+    const OsiSolverInterface* const solver) {
+  if (!disj) { return; }
+  for (int t = 0; t < disj->num_terms; t++) {
+    const DisjunctiveTerm& term = disj->terms[t];
+    const int num_disj_ineqs = (int) term.changed_var.size();
+    const double utk = std::abs(v[t][solver->getNumRows() + num_disj_ineqs + var]);
+    mono->setRowLower(t, -utk);
+  }
+} /* updateMonoidalIP */
+
+/**
+ * @brief Calculate value of m to use in strengthening
+ *
+ * This algorithm assumes u^t_0 D^t_0 = 1 + u^t_0 \ell^t > 0
+ * (e.g., satisfied in the nonbasic space for disjunctions involving only binary variables)
+ * This leads to the cuts alpha x >= 1 (which we strengthen with the below algorithm)
+ * 
+ * Algorithm 2 (Balas and Jeroslow, 1979)
+ * -----------
+ * \gamma^t_0 = u^t_0 D^t_0
+ * \gamma^t_k = u^t_0 D^t_{\cdot, k}
+ * \gamma_k \gets (\sum_t \gamma^t_k) / (\sum_t \gamma^t_0) for each k \in I
+ *                \max_t \gamma^t_k / \gamma^t_0 for all k \notin I
+ * m^*_t \gets \gamma^t_0 \gamma_k - \gamma^t_k (implies (\gamma^t_k + m^*_t) / \gamma^t_0 = \gamma_k)
+ * m_t \gets floor(m^*_t)
+ * for i = 1 to -\sum_t m_t
+ *   m_t \gets m_t + 1 for t = argmin_t (\gamma^t_k + m_t + 1) / \gamma^t_0
+ * \gamma_k = max_t (\gamma^t_k + m_t) / \gamma^t_0
+ *
+ * @return Number of coefficients strengthened
+ */
+int BalJer79_Algorithm2(
+    /// [out] strengthened cut coefficients
+    std::vector<double>& str_coeff,
+    /// [out] strengthened cut rhs
+    double& str_rhs,
+    /// [in] number of nonzero cut coefficients
+    const int num_elem, 
+    /// [in] indices of nonzero cut coefficients
+    const int* const ind, 
+    /// [in] nonzero cut coefficients
+    const double* const coeff,
+    /// [in] original cut rhs
+    const double rhs,
+    /// [in] disjunction
+    const Disjunction* const disj,
+    /// [in] Farkas multipliers for each of the terms of the disjunction (each is a vector of length m + n)
+    const std::vector<std::vector<double> >& v, 
+    /// [in] original solver
+    const OsiSolverInterface* const solver) {
+  // Set up original cut coeff and rhs
+  str_rhs = rhs;
+  str_coeff.clear();
+  str_coeff.resize(solver->getNumCols(), 0.0);
+  for (int i = 0; i < num_elem; i++) {
+    str_coeff[ind[i]] = coeff[i];
+  }
+
+  if (!disj) { return 0; }
+
+  const int num_terms = disj->num_terms;
+
+  std::vector<double> gamma_t0(num_terms, 0.);
+  std::vector<double> gamma_tk(num_terms, 0.);
+  double sum_gamma_t0 = 0., sum_gamma_tk = 0.;
+  for (int t = 0; t < num_terms; t++) {
+    const DisjunctiveTerm& term = disj->terms[t];
+    const int num_disj_ineqs = (int) term.changed_var.size();
+
+    // TODO get this to work with general inequalities not just bound changes
+    for (int bound_ind = 0; bound_ind < num_disj_ineqs; bound_ind++) {
+      const double mult = (term.changed_bound[bound_ind] <= 0) ? 1.0 : -1.0;
+      gamma_t0[t] += v[t][solver->getNumRows() + bound_ind] * mult * term.changed_value[bound_ind];
+      gamma_tk[t] += v[t][solver->getNumRows() + bound_ind] * mult;
+      sum_gamma_t0 += gamma_t0[t];
+      sum_gamma_tk += gamma_tk[t];
+    }
+  } // loop over terms to set up gamma_t0 and gamma_tk
+
+  if (isZero(sum_gamma_t0)) {
+    fprintf(stderr,
+        "\\sum_t \\gamma^t_0 = 0, which it should not be.\n");
+    exit(1);
+  }
+
+  /*double gamma_k = 0.;
+  if (solver->isInteger(var)) {
+    gamma_k = sum_gamma_tk / sum_gamma_t0;
+  } else {
+    int max_ind = -1;
+  }*/
+  fprintf(stderr,
+      "*** ERROR: BalJer79_Alg2 implementation unfinished.\n");
+  exit(1);
+} /* BalJer79_Algorithm2 */
