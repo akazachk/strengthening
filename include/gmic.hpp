@@ -6,6 +6,7 @@
 #pragma once
 
 #include <vector>
+#include <cstdio>
 
 class OsiCuts;
 class OsiRowCut;

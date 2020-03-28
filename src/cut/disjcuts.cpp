@@ -4,6 +4,7 @@
  * @date 2019-12-27
  */
 #include "disjcuts.hpp"
+#include <memory>
 
 // COIN-OR includes
 #include <OsiSolverInterface.hpp>

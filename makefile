@@ -20,7 +20,7 @@ BUILD_CONFIG = debug
 
 ### Variables user should set ###
 PROJ_DIR=${PWD}
-COIN_VERSION = 2.9
+COIN_VERSION = 2.10
 COIN_OR = $(PROJ_DIR)/lib/Cbc-$(COIN_VERSION)
 EIG_LIB = $(PROJ_DIR)/lib
 ifeq ($(USER),otherperson)
@@ -35,8 +35,10 @@ endif
 
 ifeq ($(USER),kazaalek)
   GUROBI_LINK = gurobi81
-  GUROBI_DIR = ${HOME}/gurobi/linux64
+  GUROBI_DIR = ${HOME}/gurobi/8.1.0/linux64
   CPLEX_DIR = /home/ibm/cplex-studio/12.9.0.0/cplex
+	COIN_OR = /local_workspace/$(USER)/coin-or/Cbc-trunk
+	EIG_LIB = ${HOME}/repos/eigen
 endif
 
 ifeq ($(USER),akazachk)
@@ -209,7 +211,7 @@ ifeq ($(USE_COIN),1)
 		CBC = $(COIN_OR)/build
 	endif
 	CBClib = $(CBC)/lib
-	CBCinc = $(CBC)/include/coin
+	CBCinc = $(CBC)/include/coin-or
 	APPLINCLS += -isystem $(CBCinc)
 	APPLLIB += -L$(CBClib)
   CXXLINKFLAGS += -Wl,-rpath $(CBClib)

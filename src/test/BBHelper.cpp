@@ -434,7 +434,8 @@ void doBranchAndBoundNoCuts(const Parameters& params,
     cbc_model->branchAndBound(0);
 #endif
   } else {
-    CbcMain0(*cbc_model);
+#ifndef CBC_VERSION_210PLUS
+    CbcMain0(*cbc_model); // need to add CbcSolverUsefulData to call: https://www.coin-or.org/Doxygen/Cbc/classCbcSolverUsefulData.html
     std::string name, logLevel, presolveOnOff, preprocessOnOff, cutsOnOff, heurOnOff, solveOption;
     name = "BBHelper_doBranchAndBoundNoCuts";
     presolveOnOff = "-presolve=off";
@@ -460,6 +461,7 @@ void doBranchAndBoundNoCuts(const Parameters& params,
 
     CbcMain1(argc, cbc_options, *cbc_model);
     delete[] cbc_options;
+#endif
   }
 
   // Collect statistics
@@ -524,7 +526,8 @@ void doBranchAndBoundYesCuts(const Parameters& params,
     cbc_model->branchAndBound(0);
 #endif
   } else {
-    CbcMain0(*cbc_model);
+#ifndef CBC_VERSION_210PLUS
+    CbcMain0(*cbc_model); // Need to add CbcSolverUsefulData to call: https://www.coin-or.org/Doxygen/Cbc/classCbcSolverUsefulData.html
     std::string name, logLevel, presolveOnOff, preprocessOnOff, cutsOnOff, heurOnOff, solveOption;
     name = "BBHelper_doBranchAndBoundYesCuts";
     presolveOnOff = "-presolve=off";
@@ -550,6 +553,7 @@ void doBranchAndBoundYesCuts(const Parameters& params,
 
     CbcMain1(argc, cbc_options, *cbc_model);
     delete[] cbc_options;
+#endif
   }
 
   // Collect statistics
