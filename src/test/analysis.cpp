@@ -23,7 +23,7 @@ const int countGapInfoEntries = 4;
 const int countSummaryBBInfoEntries = 4 * 2;
 const int countFullBBInfoEntries = static_cast<int>(BB_INFO_CONTENTS.size()) * 4 * 2;
 const int countOrigProbEntries = 13;
-const int countPostCutProbEntries = 6;
+const int countPostCutProbEntries = 10;
 const int countDisjInfoEntries = 0;
 const int countCutInfoEntries = 10;
 const int countObjInfoEntries = 1;
@@ -143,8 +143,12 @@ void printHeader(const StrengtheningParameters::Parameters& params,
     fprintf(logfile, "%s%c", "NEW MIN FRACTIONALITY", SEP); count++;
     fprintf(logfile, "%s%c", "NEW MAX FRACTIONALITY", SEP); count++;
     fprintf(logfile, "%s%c", "NEW A-DENSITY", SEP); count++;
-    fprintf(logfile, "%s%c", "ACTIVE GMIC", SEP); count++;
-    fprintf(logfile, "%s%c", "ACTIVE MYCUTS", SEP); count++;
+    fprintf(logfile, "%s%c", "ACTIVE GMIC (gmics)", SEP); count++;
+    fprintf(logfile, "%s%c", "ACTIVE MYCUTS (gmics)", SEP); count++;
+    fprintf(logfile, "%s%c", "ACTIVE GMIC (my cuts)", SEP); count++;
+    fprintf(logfile, "%s%c", "ACTIVE MYCUTS (my cuts)", SEP); count++;
+    fprintf(logfile, "%s%c", "ACTIVE GMIC (all cuts)", SEP); count++;
+    fprintf(logfile, "%s%c", "ACTIVE MYCUTS (all cuts)", SEP); count++;
     assert(count == countPostCutProbEntries);
   } // POST-CUT PROB
   { // CUT INFO
@@ -582,8 +586,12 @@ void printPostCutProbInfo(const OsiSolverInterface* const solver,
   fprintf(logfile, "%s%c", stringValue(min_frac, "%.5f").c_str(), SEP); count++;
   fprintf(logfile, "%s%c", stringValue(max_frac, "%.5f").c_str(), SEP); count++;
   fprintf(logfile, "%s%c", stringValue((double) solver->getMatrixByCol()->getNumElements() / (num_rows * num_cols)).c_str(), SEP); count++;
+  fprintf(logfile, "%s%c", stringValue(cutInfoGMICs.num_active_gmic).c_str(), SEP); count++;
+  fprintf(logfile, "%s%c", stringValue(cutInfo.num_active_gmic).c_str(), SEP); count++;
   fprintf(logfile, "%s%c", stringValue(cutInfoGMICs.num_active_mycut).c_str(), SEP); count++;
   fprintf(logfile, "%s%c", stringValue(cutInfo.num_active_mycut).c_str(), SEP); count++;
+  fprintf(logfile, "%s%c", stringValue(cutInfoGMICs.num_active_all).c_str(), SEP); count++;
+  fprintf(logfile, "%s%c", stringValue(cutInfo.num_active_all).c_str(), SEP); count++;
   fflush(logfile);
   assert(count == countPostCutProbEntries);
 } /* printPostCutProbInfo */
@@ -678,6 +686,9 @@ void analyzeStrength(
     int total_support = 0;
     for (int cut_ind = 0; cut_ind < num_mycuts; cut_ind++) {
       const OsiRowCut* const cut = mycuts->rowCutPtr(cut_ind);
+      if (checkCutActivity(cutInfo, solver_gmic, cut)) {
+        cutInfo.num_active_gmic++;
+      }
       if (checkCutActivity(cutInfo, solver_mycut, cut)) {
         cutInfo.num_active_mycut++;
         cutInfo.numActiveFromHeur[static_cast<int>(cutInfo.objType[cut_ind])]++;
@@ -725,10 +736,17 @@ void analyzeStrength(
   output += tmpstring;
   if (!isInfinity(std::abs(boundInfo.gmic_obj))) {
     snprintf(tmpstring, sizeof(tmpstring) / sizeof(char),
-        "%-*.*s%s (%d cuts, %d active)\n", NAME_WIDTH, NAME_WIDTH, "GMICs: ",
+        "%-*.*s%s (%d cuts", NAME_WIDTH, NAME_WIDTH, "GMICs: ",
         stringValue(boundInfo.gmic_obj, "% -*.*f", NUM_DIGITS_BEFORE_DEC,
-            NUM_DIGITS_AFTER_DEC).c_str(), boundInfo.num_gmic, cutInfoGMICs.num_active_gmic);
+            NUM_DIGITS_AFTER_DEC).c_str(), boundInfo.num_gmic);
     output += tmpstring;
+    snprintf(tmpstring, sizeof(tmpstring) / sizeof(char),
+        ", %d active GMICs", cutInfoGMICs.num_active_gmic);
+    output += tmpstring;
+    snprintf(tmpstring, sizeof(tmpstring) / sizeof(char),
+        ", %d active MYCUTs", cutInfo.num_active_gmic);
+    output += tmpstring;
+    output += ")\n";
   }
   if (!isInfinity(std::abs(boundInfo.mycut_obj))) {
     snprintf(tmpstring, sizeof(tmpstring) / sizeof(char),
