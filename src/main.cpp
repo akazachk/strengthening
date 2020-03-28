@@ -180,6 +180,7 @@ int main(int argc, char** argv) {
     if (gomory_option != 0) {
       OsiCuts currGMICs;
       generateGomoryCuts(currGMICs, solver, gomory_option, params.get(intParam::STRENGTHEN), params.get(doubleConst::AWAY), params.get(doubleConst::DIFFEPS), params.logfile);
+      gmics.insert(currGMICs);
       boundInfo.num_gmic += currGMICs.sizeCuts();
       applyCutsCustom(GMICSolver, currGMICs);
       boundInfo.gmic_obj = GMICSolver->getObjValue();
@@ -779,7 +780,7 @@ void processArgs(int argc, char** argv) {
                 helpstring += "\n# General cut options #\n";
                 helpstring += "-c num cuts, --cutlimit=num cuts\n\tMaximum number of cuts to generate (0+ = as given, -k = k * # fractional variables at root).\n";
                 helpstring += "-d num terms, --disj_terms=num terms\n\tMaximum number of disjunctive terms or disjunctions to generate (depending on mode).\n";
-                helpstring += "-g -1/0/1, --gomory=-1/0/1\n\t0: do not use Gomory cuts before generating mycuts, +/-1: generate Gomory cuts before generating mycuts (-1: only gen, +1: also apply to LP).\n";
+                helpstring += "-g +/- 0-3, --gomory=+/- 0-3\n\t0: do not use Gomory cuts, 1: generate Gomory cuts via CglGMI, 2: generate Gomory cuts via gmic.cpp, 3: try closed-form strengthening (<0: only gen, >0: also apply to LP).\n";
                 helpstring += "-m mode, --mode=mode\n\tDescription needs to be entered.\n";
                 helpstring += "-r num rounds, --rounds=num rounds\n\tNumber of rounds of cuts to apply.\n";
                 helpstring += "-s 0/1/2, --strengthen=0/1/2\n\tWhether to strengthen cuts.\n";
