@@ -1027,7 +1027,9 @@ void setCutInfo(SummaryCutInfo& cutInfo, const int num_rounds,
 
   for (int round = 0; round < num_rounds; round++) {
     cutInfo.num_cuts += oldCutInfos[round].num_cuts;
-    cutInfo.num_cuts += oldCutInfos[round].num_active_mycut;
+    cutInfo.num_active_gmic += oldCutInfos[round].num_active_gmic;
+    cutInfo.num_active_mycut += oldCutInfos[round].num_active_mycut;
+    cutInfo.num_active_all += oldCutInfos[round].num_active_all;
     cutInfo.num_obj_tried += oldCutInfos[round].num_obj_tried;
     cutInfo.num_failures += oldCutInfos[round].num_failures;
 
