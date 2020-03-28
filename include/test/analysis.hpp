@@ -26,15 +26,15 @@ struct SummaryBoundInfo {
   double all_cuts_obj = std::numeric_limits<double>::max();
   double gmic_obj = std::numeric_limits<double>::max();
   double lpc_obj = std::numeric_limits<double>::max();
-  double mycuts_obj = std::numeric_limits<double>::max();
-  double gmic_mycuts_obj = std::numeric_limits<double>::max();
+  double mycut_obj = std::numeric_limits<double>::max();
+  double gmic_mycut_obj = std::numeric_limits<double>::max();
   int num_gmic = 0, num_lpc = 0;
-  int num_mycuts = 0;
+  int num_mycut = 0;
 }; /* SummaryBoundInfo */
 
 struct SummaryCutInfo {
   int num_cuts = 0;
-  int num_active = 0;
+  int num_active_gmic = 0, num_active_lpc = 0, num_active_mycut, num_active_all = 0;
   int num_obj_tried = 0, num_failures = 0;
   int num_rounds = 0;
   int min_support = std::numeric_limits<int>::max();
@@ -65,7 +65,10 @@ void printPostCutProbInfo(const OsiSolverInterface* const solver,
 void printCutInfo(const SummaryCutInfo& cutInfoGMICs,
     const SummaryCutInfo& cutInfo, FILE* logfile, const char SEP = ',');
 
-void analyzeStrength(const StrengtheningParameters::Parameters& params, const OsiSolverInterface* solver,
+void analyzeStrength(const StrengtheningParameters::Parameters& params, 
+    const OsiSolverInterface* const solver_gmic,
+    const OsiSolverInterface* const solver_mycut,
+    const OsiSolverInterface* const solver_all,
     SummaryCutInfo& cutInfoGMICs, SummaryCutInfo& cutInfo, 
     const OsiCuts* const gmics, const OsiCuts* const mycuts,
     const SummaryBoundInfo& boundInfo, std::string& output);

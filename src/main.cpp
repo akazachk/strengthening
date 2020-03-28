@@ -159,7 +159,7 @@ int main(int argc, char** argv) {
 
   //====================================================================================================//
   // Now do rounds of cuts, until a limit is reached (e.g., time, number failures, number cuts, or all rounds are exhausted)
-  boundInfo.num_mycuts = 0, boundInfo.num_gmic = 0;
+  boundInfo.num_mycut = 0, boundInfo.num_gmic = 0;
   int num_rounds = params.get(ROUNDS);
   std::vector<OsiCuts> mycuts_by_round(num_rounds);
   cutInfoVec.resize(num_rounds);
@@ -209,7 +209,7 @@ int main(int argc, char** argv) {
     Disjunction* disj = gen.gen.disj();
     exitReason = gen.exitReason;
     updateCutInfo(cutInfoVec[round_ind], &gen);
-    boundInfo.num_mycuts += gen.num_cuts;
+    boundInfo.num_mycut += gen.num_cuts;
 
 #if 0
     fprintf(stdout, "\n## Printing custom cuts ##\n");
@@ -307,20 +307,20 @@ int main(int argc, char** argv) {
     printf("\n## Applying disjunctive cuts (# cuts = %d). ##\n", (int) currCuts.sizeCuts());
     timer.start_timer(OverallTimeStats::APPLY_TIME);
     applyCutsCustom(solver, currCuts);
-    if (params.get(GOMORY) > 0) {
-      boundInfo.gmic_mycuts_obj = solver->getObjValue();
+    if (params.get(GOMORY) > 0) { // when GOMORY > 0, solver has all cuts and CutSolver has only mycuts
+      boundInfo.gmic_mycut_obj = solver->getObjValue();
       applyCutsCustom(CutSolver, currCuts);
-      boundInfo.mycuts_obj = CutSolver->getObjValue();
-      boundInfo.all_cuts_obj = boundInfo.gmic_mycuts_obj;
+      boundInfo.mycut_obj = CutSolver->getObjValue();
+      boundInfo.all_cuts_obj = boundInfo.gmic_mycut_obj;
     }
-    else if (params.get(GOMORY) < 0) {
-      boundInfo.mycuts_obj = solver->getObjValue();
+    else if (params.get(GOMORY) < 0) { // when GOMORY < 0, solver has only mycuts and CutSolver has all cuts
+      boundInfo.mycut_obj = solver->getObjValue();
       applyCutsCustom(CutSolver, currCuts);
-      boundInfo.gmic_mycuts_obj = CutSolver->getObjValue();
-      boundInfo.all_cuts_obj = boundInfo.gmic_mycuts_obj;
+      boundInfo.gmic_mycut_obj = CutSolver->getObjValue();
+      boundInfo.all_cuts_obj = boundInfo.gmic_mycut_obj;
     } else {
-      boundInfo.mycuts_obj = solver->getObjValue();
-      boundInfo.all_cuts_obj = boundInfo.mycuts_obj;
+      boundInfo.mycut_obj = solver->getObjValue();
+      boundInfo.all_cuts_obj = boundInfo.mycut_obj;
     }
     timer.end_timer(OverallTimeStats::APPLY_TIME);
 
@@ -356,14 +356,14 @@ int main(int argc, char** argv) {
 
   printf(
       "\n## Finished cut generation with %d cuts. Initial obj value: %s. Final obj value: %s. Disj lb: %s. ##\n",
-      boundInfo.num_mycuts,
+      boundInfo.num_mycut,
       stringValue(boundInfo.lp_obj, "%1.6f").c_str(),
-      stringValue(boundInfo.mycuts_obj, "%1.6f").c_str(),
+      stringValue(boundInfo.mycut_obj, "%1.6f").c_str(),
       stringValue(boundInfo.best_disj_obj, "%1.6f").c_str());
   timer.end_timer(OverallTimeStats::TOTAL_TIME);
 
 #ifdef PRINT_LP_WITH_CUTS
-  if (boundInfo.num_mycuts > 0) {
+  if (boundInfo.num_mycut > 0) {
     std::string fileWithCuts = filename + "_cuts";
     solver->writeMps(fileWithCuts.c_str());
   }
@@ -372,7 +372,13 @@ int main(int argc, char** argv) {
   //====================================================================================================//
   // Do analyses in preparation for printing
   setCutInfo(cutInfo, num_rounds, cutInfoVec.data());
-  analyzeStrength(params, solver, cutInfoGMICs, cutInfo, &gmics, &mycuts,
+  analyzeStrength(params,
+      params.get(GOMORY) == 0 ? NULL : GMICSolver,
+      params.get(GOMORY) >= 0 ? CutSolver : solver, 
+      params.get(GOMORY) >= 0 ? solver : CutSolver, 
+      cutInfoGMICs, cutInfo, 
+      params.get(GOMORY) == 0 ? NULL : &gmics, 
+      &mycuts,
       boundInfo, cut_output);
   analyzeBB(params, info_nocuts, info_mycuts, info_allcuts, bb_output);
 
