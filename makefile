@@ -1,3 +1,10 @@
+### Makefile for strengthening project
+# If there are errors, debug with
+#   make --just-print
+# or check defined variables with
+#   make --print-data-base
+# You can also use
+#   make --warn-undefined-variables
 ### Shell type ###
 # REMEMBER: use hard tabs only in a makefile
 UNAME := $(shell uname)
@@ -20,9 +27,11 @@ BUILD_CONFIG = debug
 
 ### Variables user should set ###
 PROJ_DIR=${PWD}
-COIN_VERSION = 2.10
+COIN_VERSION = trunk
 COIN_OR = $(PROJ_DIR)/lib/Cbc-$(COIN_VERSION)
 EIG_LIB = $(PROJ_DIR)/lib
+VPC_HOME = ${PROJ_DIR}/../vpc
+
 ifeq ($(USER),otherperson)
   #COIN_OR = enter/dir/here
   #EIG_LIB = enter/dir/here
@@ -41,13 +50,34 @@ ifeq ($(USER),kazaalek)
 	EIG_LIB = ${HOME}/repos/eigen
 endif
 
-ifeq ($(USER),akazachk)
+# HiPerGator
+ifeq ($(USER),akazachkov)
   ifeq ($(UNAME),Linux)
+	  COIN_OR = ${HOME}/repos/coin-or/Cbc-$(COIN_VERSION)
+    GUROBI_LINK = gurobi91
+    GUROBI_DIR = ${GUROBI_HOME}
+		CPLEX_DIR = ${CPLEX_HOME}
+		CONDA_LIB = ${HOME}/.conda/envs/vpc/lib
+	endif
+endif
+
+ifeq ($(USER),akazachk)
+	# ComputeCanada
+  ifeq ($(UNAME),Linux)
+	  COIN_OR = ${HOME}/projects/def-alodi/$(USER)/coin-or/Cbc-$(COIN_VERSION)
+    GUROBI_LINK = gurobi90
+    GUROBI_DIR = ${GUROBI_LOCAL}
+    CPLEX_DIR = ${CPLEX_HOME}
   endif
+	# Mac
   ifeq ($(UNAME),Darwin)
-    GUROBI_LINK = gurobi81
-    GUROBI_DIR = /Library/gurobi811/mac64
-    CPLEX_DIR = /Applications/CPLEX_Studio129/cplex
+    GUROBI_LINK = gurobi90
+    #GUROBI_DIR = /Library/gurobi902/mac64
+    #CPLEX_DIR = /Applications/CPLEX_Studio201/cplex/
+    GUROBI_DIR = ${GUROBI_HOME}
+    CPLEX_DIR = ${CPLEX_HOME}
+		COIN_OR = $(PROJ_DIR)/../coin-or/Cbc-$(COIN_VERSION)
+		#COIN_OR = $(PROJ_DIR)/../vpc/lib/Cbc-$(COIN_VERSION)
   endif
 endif
 
@@ -57,7 +87,7 @@ USE_CLP    = 1
 USE_EIGEN  = 1
 USE_CBC    = 1
 USE_GUROBI = 1
-USE_CPLEX  = 0
+USE_CPLEX  = 1
 USE_CLP_SOLVER = 1
 USE_CPLEX_SOLVER = 0
 
@@ -66,6 +96,12 @@ EXECUTABLE_STUB = main
 SRC_DIR = src
 SOURCES = main.cpp
 DIR_LIST = $(SRC_DIR) $(SRC_DIR)/cut $(SRC_DIR)/utility
+
+# Code version
+CODE_VERSION    = $(shell git log -1 --pretty=format:"%H")
+VPC_VERSION     = $(shell git -C ${VPC_HOME} log -1 --pretty=format:"%H")
+VPC_CBC_VERSION = $(shell git -C ${COIN_OR}/Cbc log -1 --pretty=format:"%H")
+VPC_CLP_VERSION = $(shell git -C ${COIN_OR}/Clp log -1 --pretty=format:"%H")
 
 SOURCES += \
 		cut/CglAdvCut.cpp \
@@ -78,7 +114,6 @@ SOURCES += \
 		utility/utility.cpp
 
 # VPC directories
-VPC_HOME = ${PROJ_DIR}/../vpc
 VPC_SRC_DIR = ${VPC_HOME}/src
 VPC_DIR_LIST = $(VPC_SRC_DIR) $(VPC_SRC_DIR)/branch $(VPC_SRC_DIR)/cut $(VPC_SRC_DIR)/disjunction $(VPC_SRC_DIR)/utility
 
@@ -109,7 +144,7 @@ ifeq ($(BUILD_CONFIG),debug)
   OUT_DIR = Debug
   DEBUG_FLAG = -g3
   OPT_FLAG = -O0
-  DEFS = -DTRACE
+  DEFS = -DTRACE -DCODE_VERSION="\#${CODE_VERSION}" -DVPC_VERSION="\#${VPC_VERSION}"
   # message-length sets line wrapping for error messages; 0 = no line wrapping
   EXTRA_FLAGS = -fmessage-length=0
   ifeq ($(CC),g++)
@@ -123,7 +158,7 @@ ifeq ($(BUILD_CONFIG),release)
   OUT_DIR = Release
   DEBUG_FLAG = 
   OPT_FLAG = -O3
-  DEFS = 
+  DEFS = -DCODE_VERSION="\#${CODE_VERSION}" -DVPC_VERSION="\#${VPC_VERSION}"
   EXTRA_FLAGS = -fmessage-length=0 -ffast-math
 endif
 ifeq ($(USE_COIN),1)
@@ -131,12 +166,14 @@ ifeq ($(USE_COIN),1)
 endif
 ifeq ($(USE_CLP),1)
   DEFS += -DUSE_CLP
+  DEFS += -DVPC_CLP_VERSION="\#${VPC_CLP_VERSION}"
 endif
 ifeq ($(USE_CLP_SOLVER),1)
   DEFS += -DUSE_CLP_SOLVER
 endif
 ifeq ($(USE_CBC),1)
   DEFS += -DUSE_CBC
+  DEFS += -DVPC_CBC_VERSION="\#${VPC_CBC_VERSION}"
 endif
 ifeq ($(USE_EIGEN),1)
   DEFS += -DUSE_EIGEN
@@ -149,12 +186,18 @@ ifeq ($(USE_GUROBI),1)
 endif
 ifeq ($(USE_CPLEX),1)
   DEFS += -DIL_STD -DUSE_CPLEX
+  SOURCES += test/CplexHelper.cpp
+  CPLEX_INC = $(CPLEX_DIR)/include
+  CPLEX_LIB = $(CPLEX_DIR)/lib/$(SYSTEM)/static_pic
 endif
 ifeq ($(USE_CPLEX_SOLVER),1)
   DEFS += -DUSE_CPLEX_SOLVER
 endif
 ifeq ($(COIN_VERSION),2.10)
-  DEFS += -DCBC_VERSION_210PLUS
+  DEFS += -DCBC_VERSION_210PLUS -DSAVE_NODE_INFO
+endif
+ifeq ($(COIN_VERSION),trunk)
+  DEFS += -DCBC_VERSION_210PLUS -DCBC_TRUNK -DSAVE_NODE_INFO
 endif
 
 EXECUTABLE = $(OUT_DIR)/$(EXECUTABLE_STUB)
@@ -179,6 +222,9 @@ APPLINCLS = -Iinclude -Iinclude/common -Iinclude/test
 APPLINCLS += -I${VPC_HOME}/include
 
 APPLLIB = -lm -lz -lbz2 -lreadline
+ifeq ($(USER),akazachkov)
+	APPLLIB += -L${CONDA_LIB}
+endif
 
 # Linker
 CFLAGS = -Wall -MMD -MP
@@ -211,7 +257,11 @@ ifeq ($(USE_COIN),1)
 		CBC = $(COIN_OR)/build
 	endif
 	CBClib = $(CBC)/lib
-	CBCinc = $(CBC)/include/coin-or
+	ifeq ($(COIN_VERSION),trunk)
+		CBCinc = $(CBC)/include/coin-or
+  else
+		CBCinc = $(CBC)/include/coin
+	endif
 	APPLINCLS += -isystem $(CBCinc)
 	APPLLIB += -L$(CBClib)
   CXXLINKFLAGS += -Wl,-rpath $(CBClib)
@@ -233,11 +283,9 @@ ifeq ($(USE_GUROBI),1)
   APPLLIB   += -L${GUROBI_LIB} -lgurobi_c++ -l${GUROBI_LINK} -lm
 endif
 ifeq ($(USE_CPLEX),1)
-  CPLEX_INC_DIR   =  $(CPLEX_DIR)/include
-  CPLEX_LIB_DIR   =  $(CPLEX_DIR)/lib/$(SYSTEM)/static_pic
-  APPLINCLS      += -isystem "$(CPLEX_INC_DIR)"
-  APPLLIB        += -L${CPLEX_LIB_DIR} -lilocplex -lcplex -lm -lpthread -ldl
-  CXXLINKFLAGS   += -Wl,-rpath $(CPLEX_LIB_DIR)
+  APPLINCLS      += -isystem "$(CPLEX_INC)"
+  APPLLIB        += -L${CPLEX_LIB} -lilocplex -lcplex -lm -lpthread -ldl
+  CXXLINKFLAGS   += -Wl,-rpath $(CPLEX_LIB)
   #APPLLIB       += -lOsiCpx
 endif
 ifeq ($(USE_EIGEN),1)
@@ -277,14 +325,37 @@ LIB_DIR=lib
 archive_%:
 	@$(MAKE) archive "BUILD_CONFIG=$*"
 
-archive: $(LIB_DIR)/lib$(EXECUTABLE_STUB).a 
+archive: | lib_directory $(OUT_DIR)/lib$(EXECUTABLE_STUB).a
+	  @cp ${OUT_DIR}/lib${EXECUTABLE_STUB}.a ${LIB_DIR}/lib${EXECUTABLE_STUB}.a
 
-$(LIB_DIR)/lib$(EXECUTABLE_STUB).a: $(OUT_OBJECTS)
+$(OUT_DIR)/lib$(EXECUTABLE_STUB).a: $(OUT_OBJECTS)
 		@echo ' '
 		@echo 'Making archive file: $@'
 		@echo 'Invoking archiver'
 		$(AR) $(AR_FLAGS) $@ $^
 		@echo 'Finished making archive'
+
+### Shared object library file ###
+SO_TARGET_STUB = $(LIB_DIR)/lib$(EXECUTABLE_STUB)
+ifeq ($(UNAME),Linux)
+  SO_TARGET = $(SO_TARGET_STUB).so
+  SO_FLAGS = -shared
+endif
+ifeq ($(UNAME),Darwin)
+  SO_TARGET = $(SO_TARGET_STUB).dylib
+  #SO_FLAGS += -undefined dynamic_lookup
+  SO_FLAGS += -dynamiclib
+endif
+shared_lib_%:
+	@$(MAKE) shared_lib "BUILD_CONFIG=$*"
+
+shared_lib: $(SO_TARGET)
+
+$(SO_TARGET): $(OUT_OBJECTS)
+		@echo ' '
+		@echo 'Making shared object library file: $@'
+		$(CC) $(DEFS) $(CXXLINKFLAGS) $(APPLINCLS) $(SO_FLAGS) -o $@ $^ $(APPLLIB)
+		@echo 'Finished making shared object library file'
 
 ### Dependencies ###
 # Dependencies (the -include says to ignore errors)
@@ -299,7 +370,7 @@ DEPENDENCIES = $(OUT_OBJECTS:.o=.d)
 #		print print_dep \
 #		archive_debug archive_release archive
 
-.PHONY = all clean directories distclean doxygen print
+.PHONY = all clean directories distclean doxygen print test
 
 ### Docs ###
 doxygen: FORCE
@@ -312,10 +383,10 @@ distclean_%: FORCE
 	@$(MAKE) distclean "BUILD_CONFIG=$*"
 
 clean: FORCE
-	@$(RM) $(OUT_OBJECTS) $(EXECUTABLE)
+	@$(RM) $(OUT_OBJECTS) $(EXECUTABLE) $(OUT_DIR)/lib$(EXECUTABLE_STUB).a
 
 distclean: FORCE
-	@$(RM) $(OUT_OBJECTS) $(EXECUTABLE) $(DEPENDENCIES) $(LIB_DIR)/lib$(EXECUTABLE_STUB).a
+	@$(RM) $(OUT_OBJECTS) $(EXECUTABLE) $(DEPENDENCIES) $(OUT_DIR)/lib$(EXECUTABLE_STUB).a $(LIB_DIR)/lib$(EXECUTABLE_STUB).a
 
 ### Making directories that you need ###
 MKDIR_P = mkdir -p
@@ -332,6 +403,15 @@ dir_lib_%: FORCE
 	@$(MAKE) dir_lib "BUILD_CONFIG=$*"
 dir_lib: FORCE
 	$(MKDIR_P) $(LIB_DIR)
+lib_directory: $(LIB_DIR)
+$(LIB_DIR):
+	$(MKDIR_P) $(LIB_DIR)
+
+test_%: FORCE
+	@$(MAKE) test "BUILD_CONFIG=$*"
+test: FORCE
+	@$(EXECUTABLE) -f test/bm23.mps -d 2
+
 print: FORCE
 	$(info UNAME: ${UNAME})
 	$(info CC: ${CC})

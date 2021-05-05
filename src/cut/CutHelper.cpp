@@ -36,74 +36,6 @@ void setOsiRowCut(OsiRowCut* const cut, const std::vector<int>& nonZeroColIndex,
 } /* setOsiRowCut */
 
 /**
- * Set the cut solver objective coefficients based on a packed vector
- * We do not zero out the other coefficients unless requested
- */
-void addToObjectiveFromPackedVector(OsiSolverInterface* const solver,
-    const CoinPackedVectorBase* vec, const bool zeroOut, const double mult,
-    const std::vector<int>* const nonZeroColIndices) {
-  if (zeroOut) {
-    for (int i = 0; i < solver->getNumCols(); i++) {
-      solver->setObjCoeff(i, 0.);
-    }
-  }
-
-  if (vec) {
-    const double twoNorm = vec->twoNorm() / solver->getNumCols();
-    if (nonZeroColIndices) {
-      int ind = 0; // assuming nonZeroColIndices are sorted in increasing order
-      const int numNZ = (*nonZeroColIndices).size();
-      for (int i = 0; i < (*vec).getNumElements(); i++) {
-        const int col = (*vec).getIndices()[i];
-
-        while ((ind < numNZ) && (col > (*nonZeroColIndices)[ind])) {
-          ind++;
-        }
-        if (ind >= numNZ)
-          break;
-        if (col < (*nonZeroColIndices)[ind])
-          continue;
-
-        const double elem = (*vec).getElements()[i];
-        const double coeff = solver->getObjCoefficients()[ind];
-        solver->setObjCoeff(ind, coeff + elem * mult / twoNorm);
-      }
-    } else {
-      for (int i = 0; i < (*vec).getNumElements(); i++) {
-        const int col = (*vec).getIndices()[i];
-        const double elem = (*vec).getElements()[i];
-        const double coeff = solver->getObjCoefficients()[col];
-        solver->setObjCoeff(col, coeff + elem * mult / twoNorm);
-      }
-    }
-  }
-} /* addToObjectiveFromPackedVector */
-
-void setConstantObjectiveFromPackedVector(
-    OsiSolverInterface* const solver, const double val,
-    const int numIndices, const int* indices) {
-  if (numIndices > 0 && indices) {
-    for (int i = 0; i < numIndices; i++) {
-      solver->setObjCoeff(indices[i], val);
-    }
-  } else {
-    for (int i = 0; i < solver->getNumCols(); i++) {
-      solver->setObjCoeff(i, val);
-    }
-  }
-} /* setConstantObjectiveFromPackedVector */
-
-/** Set solution (set to zero if the second argument is NULL) */
-void setSolverSolution(OsiSolverInterface* const solver, const double* const sol) {
-  if (sol) {
-    solver->setColSolution(sol);
-  } else {
-    std::vector<double> zerosol(solver->getNumCols(), 0.);
-    solver->setColSolution(zerosol.data());
-  }
-} /* setSolverSolution */
-
-/**
  * Taken from CglGMI with some minor modifications, including switching to >= cut as we use
  */
 void removeSmallCoefficients(OsiRowCut* const cut, const OsiSolverInterface* const solver, const double EPS, const double EPS_COEFF) {
@@ -150,10 +82,7 @@ void removeSmallCoefficients(OsiRowCut* const cut, const OsiSolverInterface* con
 } /* removeSmallCoefficients */
 
 bool badSupport(const int cutNz, const int numCols, const double max_sup_abs, const double max_sup_rel) {
-  if (cutNz > max_sup_abs + max_sup_rel * numCols) {
-    return true;
-  }
-  return false;
+  return (cutNz > max_sup_abs + max_sup_rel * numCols);
 } /* badSupport */
 
 bool badViolation(const OsiRowCut* const cut, const OsiSolverInterface* const solver, const double min_viol_abs, const double min_viol_rel) {
@@ -170,10 +99,7 @@ bool badViolation(const OsiRowCut* const cut, const OsiSolverInterface* const so
       greaterThanVal(violation, 0.0, min_viol_abs);
   const bool cuttingSolutionFlagRel = //(inNBSpace) ||
       greaterThanVal(violation, 0.0, currCutNorm * min_viol_rel);
-  if (!cuttingSolutionFlagAbs || !cuttingSolutionFlagRel) {
-    return true;
-  }
-  return false;
+  return (!cuttingSolutionFlagAbs || !cuttingSolutionFlagRel);
 } /* badViolation */
 
 bool badDynamism(const OsiRowCut* const cut, const double minAbsCoeff, const double maxAbsCoeff, const double SENSIBLE_MAX, const double EPS) {
@@ -199,15 +125,12 @@ bool badDynamism(const OsiRowCut* const cut, const double minAbsCoeff, const dou
   if (absCurr > maxAbsElem) {
     maxAbsElem = absCurr;
   }
-  if (isZero(maxAbsElem, EPS)
+  return isZero(maxAbsElem, EPS)
       // || isZero(minAbsElem / maxAbsElem)
       || greaterThanVal(maxAbsElem / minAbsElem, SENSIBLE_MAX, EPS)
       || (!isZero(minAbsCoeff, EPS)
           && greaterThanVal(std::abs(maxAbsElem / minAbsCoeff),
-              std::abs(SENSIBLE_MAX * maxAbsCoeff / minAbsCoeff), EPS))) {
-    return true;
-  }
-  return false;
+              std::abs(SENSIBLE_MAX * maxAbsCoeff / minAbsCoeff), EPS));
 } /* badDynamism */
 
 /**
