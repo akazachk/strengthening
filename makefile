@@ -49,11 +49,13 @@ ifeq ($(USER),otherperson)
   #CPLEX_DIR = enter/dir/here
 endif
 
+# rossobianco
 ifeq ($(USER),kazaalek)
-  GUROBI_LINK = gurobi81
-  GUROBI_DIR = ${HOME}/gurobi/8.1.0/linux64
-  CPLEX_DIR = /home/ibm/cplex-studio/12.9.0.0/cplex
-	COIN_OR = /local_workspace/$(USER)/coin-or/Cbc-trunk
+  GUROBI_LINK = gurobi91
+	GUROBI_DIR = ${GUROBI_HOME}
+  #CPLEX_DIR = /home/ibm/cplex/20.1/cplex
+	CPLEX_DIR = ${CPLEX_HOME}
+	COIN_OR = /local_workspace/$(USER)/coin-or/Cbc-$(COIN_VERSION)
 	EIG_LIB = ${HOME}/repos/eigen
 endif
 
@@ -72,18 +74,16 @@ ifeq ($(USER),akazachk)
 	# ComputeCanada
   ifeq ($(UNAME),Linux)
 	  COIN_OR = ${HOME}/projects/def-alodi/$(USER)/coin-or/Cbc-$(COIN_VERSION)
-    GUROBI_LINK = gurobi90
+    GUROBI_LINK = gurobi91
     GUROBI_DIR = ${GUROBI_LOCAL}
     CPLEX_DIR = ${CPLEX_HOME}
   endif
 	# Mac
   ifeq ($(UNAME),Darwin)
     GUROBI_LINK = gurobi90
-    #GUROBI_DIR = /Library/gurobi902/mac64
-    #CPLEX_DIR = /Applications/CPLEX_Studio201/cplex/
     GUROBI_DIR = ${GUROBI_HOME}
     CPLEX_DIR = ${CPLEX_HOME}
-		COIN_OR = $(PROJ_DIR)/../coin-or/Cbc-$(COIN_VERSION)
+		#COIN_OR = $(PROJ_DIR)/../coin-or/Cbc-$(COIN_VERSION)
 		#COIN_OR = $(PROJ_DIR)/../vpc/lib/Cbc-$(COIN_VERSION)
   endif
 endif
@@ -264,6 +264,7 @@ ifeq ($(USE_COIN),1)
 		CBC = $(COIN_OR)/build
 	endif
 	CBClib = $(CBC)/lib
+	# When switching from svn to coinbrew, the new include directory is coin-or not coin
 	ifeq ($(COIN_VERSION),trunk)
 		CBCinc = $(CBC)/include/coin-or
   else
