@@ -80,7 +80,7 @@ ifeq ($(USER),akazachk)
   endif
 	# Mac
   ifeq ($(UNAME),Darwin)
-    GUROBI_LINK = gurobi90
+    GUROBI_LINK = gurobi91
     GUROBI_DIR = ${GUROBI_HOME}
     CPLEX_DIR = ${CPLEX_HOME}
 		#COIN_OR = $(PROJ_DIR)/../coin-or/Cbc-$(COIN_VERSION)
