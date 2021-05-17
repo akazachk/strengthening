@@ -26,11 +26,18 @@ BUILD_CONFIG = release
 BUILD_CONFIG = debug
 
 ### Variables user should set ###
+ifeq ($(REPOS_DIR),)
+	REPOS_DIR=${PWD}/..
+endif
 PROJ_DIR=${PWD}
 COIN_VERSION = trunk
-COIN_OR = $(PROJ_DIR)/lib/Cbc-$(COIN_VERSION)
+ifeq (${COIN_OR_HOME},)
+	COIN_OR = $(PROJ_DIR)/lib/Cbc-$(COIN_VERSION)
+else
+	COIN_OR = ${COIN_OR_HOME}
+endif
 EIG_LIB = $(PROJ_DIR)/lib
-VPC_HOME = ${PROJ_DIR}/../vpc
+VPC_DIR = ${REPOS_DIR}/vpc
 
 ifeq ($(USER),otherperson)
   #COIN_OR = enter/dir/here
@@ -99,7 +106,7 @@ DIR_LIST = $(SRC_DIR) $(SRC_DIR)/cut $(SRC_DIR)/utility
 
 # Code version
 CODE_VERSION    = $(shell git log -1 --pretty=format:"%H")
-VPC_VERSION     = $(shell git -C ${VPC_HOME} log -1 --pretty=format:"%H")
+VPC_VERSION     = $(shell git -C ${VPC_DIR} log -1 --pretty=format:"%H")
 VPC_CBC_VERSION = $(shell git -C ${COIN_OR}/Cbc log -1 --pretty=format:"%H")
 VPC_CLP_VERSION = $(shell git -C ${COIN_OR}/Clp log -1 --pretty=format:"%H")
 
@@ -114,7 +121,7 @@ SOURCES += \
 		utility/utility.cpp
 
 # VPC directories
-VPC_SRC_DIR = ${VPC_HOME}/src
+VPC_SRC_DIR = ${VPC_DIR}/src
 VPC_DIR_LIST = $(VPC_SRC_DIR) $(VPC_SRC_DIR)/branch $(VPC_SRC_DIR)/cut $(VPC_SRC_DIR)/disjunction $(VPC_SRC_DIR)/utility
 
 VPC_SOURCES += \
@@ -219,7 +226,7 @@ VPC_OUT_OBJECTS = $(addprefix $(VPC_OBJ_DIR)/,$(VPC_OBJECTS))
 # Set includes
 APPLINCLS = -Iinclude -Iinclude/common -Iinclude/test
 ## TEMPORARY CHANGE TO PARENT VPC (NO WIFI)
-APPLINCLS += -I${VPC_HOME}/include
+APPLINCLS += -I${VPC_DIR}/include
 
 APPLLIB = -lm -lz -lbz2 -lreadline
 ifeq ($(USER),akazachkov)
