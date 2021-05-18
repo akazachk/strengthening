@@ -197,7 +197,7 @@ int main(int argc, char** argv) {
 
     //====================================================================================================//
     // Generate Gomory cuts
-    // > 0: apply cuts to solver; < 0: apply cuts to CutSolver only
+    // > 0: apply cuts to solver (affects disjunctive cuts generated); < 0: apply cuts to CutSolver only
     // Option 1: GglGMI
     // Option 2: custom generate intersection cuts, calculate Farkas certificate, do strengthening
     // Option 3: custom generate intersection cuts, calculate Farkas certificate, do closed-form strengthening

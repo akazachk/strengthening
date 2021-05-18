@@ -19,4 +19,4 @@ VPC_DIR=${PROJ_DIR}/../vpc
 # Cbc: --bb_runs=1 --bb_mode=11 --bb_strategy=528
 # CPLEX: --bb_runs=1 --bb_mode=11 --bb_strategy=532
 # Gurobi: --bb_runs=1 --bb_mode=11 --bb_strategy=536
-${PROJ_DIR}/Debug/main -f ${PROJ_DIR}/test/bm23.mps -d 2 --strengthen=1 --optfile=${VPC_DIR}/data/ip_obj.csv $1 $2 $3 $4 $5 $6 $7 $8
+${PROJ_DIR}/Debug/main -f ${PROJ_DIR}/test/bm23.mps -d 2 --strengthen=1 --gomory=-1 --optfile=${VPC_DIR}/data/ip_obj.csv $1 $2 $3 $4 $5 $6 $7 $8
