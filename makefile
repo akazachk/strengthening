@@ -418,7 +418,7 @@ $(LIB_DIR):
 test_%: FORCE
 	@$(MAKE) test "BUILD_CONFIG=$*"
 test: FORCE
-	@$(EXECUTABLE) -f test/bm23.mps -d 2
+	@$(EXECUTABLE) -f test/bm23.mps -d 2 --strengthen=1 --gomory=-1
 
 print: FORCE
 	$(info UNAME: ${UNAME})
