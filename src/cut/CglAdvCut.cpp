@@ -208,6 +208,12 @@ void CglAdvCut::generateCuts(const OsiSolverInterface& si, OsiCuts& cuts, const 
   VPCParametersNamespace::VPCParameters vpc_params;
   vpc_params.set(VPCParametersNamespace::DISJ_TERMS, this->params.get(StrengtheningParameters::DISJ_TERMS));
   vpc_params.set(VPCParametersNamespace::CUTLIMIT, this->params.get(StrengtheningParameters::CUTLIMIT));
+  vpc_params.set(VPCParametersNamespace::USE_ALL_ONES, 1);
+  vpc_params.set(VPCParametersNamespace::USE_ITER_BILINEAR, 1);
+  vpc_params.set(VPCParametersNamespace::USE_DISJ_LB, 1);
+  vpc_params.set(VPCParametersNamespace::USE_TIGHT_POINTS, 0);
+  vpc_params.set(VPCParametersNamespace::USE_TIGHT_RAYS, 0);
+  vpc_params.set(VPCParametersNamespace::USE_UNIT_VECTORS, 0);
 
   this->gen.setParams(vpc_params);
 
