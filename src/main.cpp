@@ -234,6 +234,10 @@ int main(int argc, char** argv) {
     exitReason = gen.exitReason;
     updateCutInfo(cutInfoVec[round_ind], &gen);
     boundInfo.num_mycut += gen.num_cuts;
+    if (boundInfo.best_disj_obj < disj->best_obj)
+      boundInfo.best_disj_obj = disj->best_obj;
+    if (boundInfo.worst_disj_obj < disj->worst_obj)
+      boundInfo.worst_disj_obj = disj->worst_obj;
 
 #if 0
     fprintf(stdout, "\n## Printing custom cuts ##\n");
@@ -573,10 +577,9 @@ int wrapUp(int retCode /*= 0*/) {
       printFullBBInfo({info_nocuts, info_mycuts}, params.logfile);
       // Print time info
       timer.print(params.logfile, 2); // only values
-      // Print exit reason and finish
-      fprintf(logfile, "%s,", CglAdvCut::ExitReasonName[exitReasonInt].c_str());
     }
 
+    // Print version information
 #ifdef CODE_VERSION
     fprintf(logfile, "%s,", CODE_VERSION_STRING.substr(0,8).c_str());
 #else
@@ -608,6 +611,8 @@ int wrapUp(int retCode /*= 0*/) {
     fprintf(logfile, ",");
 #endif
 
+    // Print exit reason and finish
+    fprintf(logfile, "%s,", CglAdvCut::ExitReasonName[exitReasonInt].c_str());
     fprintf(logfile, "%s,", end_time_string);
     fprintf(logfile, "%.2f,", difftime(end_time_t, start_time_t));
     fprintf(logfile, "%s,", instname.c_str());
