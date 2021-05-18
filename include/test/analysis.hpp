@@ -25,10 +25,13 @@ struct SummaryBoundInfo {
   double ip_obj = std::numeric_limits<double>::max();
   double gmic_obj = std::numeric_limits<double>::max();
   double lpc_obj = std::numeric_limits<double>::max();
+  double unstr_mycut_obj = std::numeric_limits<double>::max();
+  double unstr_gmic_mycut_obj = std::numeric_limits<double>::max();
+  double unstr_all_cuts_obj = std::numeric_limits<double>::max();
   double mycut_obj = std::numeric_limits<double>::max();
   double gmic_mycut_obj = std::numeric_limits<double>::max();
   double all_cuts_obj = std::numeric_limits<double>::max();
-  int num_gmic = 0, num_lpc = 0, num_mycut = 0;
+  int num_gmic = 0, num_lpc = 0, num_mycut = 0, num_str_cuts = 0;
 }; /* SummaryBoundInfo */
 
 struct SummaryCutInfo {

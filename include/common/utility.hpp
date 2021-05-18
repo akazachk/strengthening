@@ -1,14 +1,14 @@
-// @name     utility.hpp
-// @author   A. M. Kazachkov
-// @date     2019-11-19
-//-----------------------------------------------------------------------------
-#pragma once
-
-/*********************************************************************
- * Utility functions
+/**
+ * @file utility.hpp
+ * @brief Utility functions
+ *
  * The header is going to be included in many places,
  * so ideally it will not have too much included that is unnecessary
- *********************************************************************/
+ *
+ * @author A. M. Kazachkov
+ * @date 2018-Dec-24
+ */
+#pragma once
 
 #include <cstdio>
 #include <iostream> // cerr
@@ -20,6 +20,9 @@
 class CoinPackedVectorBase;
 class CoinPackedVector;
 class CoinPackedMatrix;
+
+#define macro_to_string(s) #s
+#define x_macro_to_string(s) macro_to_string(s)
 
 inline std::ostream& operator<<(std::ostream& os, const std::vector<int> &input) {
   os << "{";
@@ -91,17 +94,30 @@ template<class T> struct index_cmp_asc {
   snprintf(str, sizeof(str) / sizeof(char), "*** WARNING: %s:%d: " fmt, __FILE__, __LINE__); \
   std::cerr << str */
 
+#ifdef CODE_VERSION
 #define error_msg(str, fmt, ...) \
-  char str[500]; \
+  char str[2028]; \
+  snprintf(str, sizeof(str) / sizeof(char), "*** ERROR (version %.8s): %s:%d: " fmt, x_macro_to_string(CODE_VERSION), __FILE__, __LINE__, ##__VA_ARGS__); \
+  std::cerr << str
+#else
+#define error_msg(str, fmt, ...) \
+  char str[2028]; \
   snprintf(str, sizeof(str) / sizeof(char), "*** ERROR: %s:%d: " fmt, __FILE__, __LINE__, ##__VA_ARGS__); \
   std::cerr << str
+#endif
 
+#ifdef CODE_VERSION
 #define warning_msg(str, fmt, ...) \
-  char str[500]; \
+  char str[2028]; \
+  snprintf(str, sizeof(str) / sizeof(char), "*** WARNING (version %.8s): %s:%d: " fmt, x_macro_to_string(CODE_VERSION), __FILE__, __LINE__, ##__VA_ARGS__); \
+  std::cerr << str
+#else
+#define warning_msg(str, fmt, ...) \
+  char str[2028]; \
   snprintf(str, sizeof(str) / sizeof(char), "*** WARNING: %s:%d: " fmt, __FILE__, __LINE__, ##__VA_ARGS__); \
   std::cerr << str
+#endif
 
-/***********************************************************************/
 /**
  * @brief Writes error and closes file myfile.
  */
@@ -112,9 +128,10 @@ inline void writeErrorToLog(std::string text, FILE *myfile) {
   fclose(myfile);
 }
 
-/** Separate filename into the directory, instance name, and extension */
-void parseFilename(std::string& dir, std::string& instname, std::string& in_file_ext, const std::string& fullfilename, FILE* logfile);
+/** @brief Separate filename into the directory, instance name, and extension */
+int parseFilename(std::string& dir, std::string& instname, std::string& in_file_ext, const std::string& fullfilename, FILE* logfile);
 
+/// Get objective value from file \p opt_filename where each line is "instance,value"
 double getObjValueFromFile(std::string opt_filename, std::string fullfilename, FILE* logfile);
 
 /**
@@ -226,7 +243,7 @@ inline const std::string stringValue(const double value, const char* format = "%
   }
 } /* stringValue (double) */
 
-/** The below is mostly for ease of use with params; in the future we may way to format strings though */
+/** @brief The below is mostly for ease of use with params; in the future we may way to format strings though */
 inline const std::string stringValue(const std::string value, const char* format = "%s") {
   return value;
 } /* stringValue (string) */
@@ -234,15 +251,15 @@ inline const std::string stringValue(const std::string value, const char* format
 double dotProductNoCompensation(const CoinPackedVector& vec1, const double* vec2);
 double dotProductNoCompensation(const CoinPackedVector& vec1, const CoinPackedVector& vec2);
 
-// Compute dot product using compensated summation to have small
-// numerical error. First version: dense vectors
+/// @brief Compute dot product using compensated summation to have small numerical error.
+/// First version: dense vectors.
 double dotProductNoCompensation(const double* a, const double* b, int dimension);
 
-// Second version: first vector is sparse, second one is dense
+/// @brief Second version: first vector is sparse, second one is dense.
 double dotProductNoCompensation(int sizea, const int* indexa, const double* a,
     const double* b);
 
-// Third version: sparse vectors
+/// @brief Third version: sparse vectors.
 double dotProductNoCompensation(int sizea, const int* indexa, const double* a, int sizeb,
     const int* indexb, const double* b);
 
@@ -259,18 +276,21 @@ double dotProductNoCompensation(int sizea, const int* indexa, const double* a, i
 //-----------------------------------------------------------------------------
 // Copyright (C) 2012, Giacomo Nannicini.  All Rights Reserved.
 
+/// @brief Dot product between sparse and dense vec
 double dotProduct(const CoinPackedVector& vec1, const double* vec2);
+
+/// @brief Dot product between two sparse vectors
 double dotProduct(const CoinPackedVector& vec1, const CoinPackedVector& vec2);
 
-// Compute dot product using compensated summation to have small
-// numerical error. First version: dense vectors
+/// @brief Compute dot product using compensated summation to have small
+/// numerical error. First version: dense vectors
 double dotProduct(const double* a, const double* b, int dimension);
 
-// Second version: first vector is sparse, second one is dense
+/// @brief Second version: first vector is sparse, second one is dense
 double dotProduct(int sizea, const int* indexa, const double* a,
     const double* b);
 
-// Third version: sparse vectors
+/// @brief Third version: sparse vectors
 double dotProduct(int sizea, const int* indexa, const double* a, int sizeb,
     const int* indexb, const double* b);
 

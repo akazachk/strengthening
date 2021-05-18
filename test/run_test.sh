@@ -2,19 +2,21 @@
 
 if [ -z ${PROJ_DIR} ]; then
   if [ -z "${REPOS_DIR}" ]; then
-    echo "Please define VPC_DIR (the root vpc dir, possibly ${REPOS_DIR}/vpc):"
+    echo "Please define PROJ_DIR (the root strengthening dir, possibly ${REPOS_DIR}/strengthening):"
   else
-    echo "Please define VPC_DIR (the root vpc dir):"
+    echo "Please define PROJ_DIR (the root strengthening dir):"
   fi
-  read VPC_DIR
-  echo "Set VPC_DIR=$VPC_DIR"
-  if [ -z "$VPC_DIR" ]; then
-    echo "Need to define VPC_DIR. Exiting."
+  read PROJ_DIR
+  echo "Set PROJ_DIR=$PROJ_DIR"
+  if [ -z "$PROJ_DIR" ]; then
+    echo "Need to define PROJ_DIR. Exiting."
     exit
   fi
 fi
 
+VPC_DIR=${PROJ_DIR}/../vpc
+
 # Cbc: --bb_runs=1 --bb_mode=11 --bb_strategy=528
 # CPLEX: --bb_runs=1 --bb_mode=11 --bb_strategy=532
 # Gurobi: --bb_runs=1 --bb_mode=11 --bb_strategy=536
-${PROJ_DIR}/Debug/main -f ${PROJ_DIR}/test/bm23.mps --mode=1 --optfile=${PROJ_DIR}/data/ip_obj.csv $1 $2 $3 $4 $5 $6 $7 $8
+${PROJ_DIR}/Debug/main -f ${PROJ_DIR}/test/bm23.mps -d 2 --strengthen=1 --optfile=${VPC_DIR}/data/ip_obj.csv $1 $2 $3 $4 $5 $6 $7 $8

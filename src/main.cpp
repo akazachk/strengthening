@@ -59,6 +59,8 @@ Parameters params;
 OsiSolverInterface *solver, *origSolver;
 OsiSolverInterface* GMICSolver = NULL;
 OsiSolverInterface* CutSolver = NULL;
+//OsiSolverInterface* solverCopy = NULL; // for storing unstrengthened cuts
+//OsiSolverInterface* CutSolverCopy = NULL; // for storing unstrengthened cuts
 OsiCuts gmics, mycuts;
 std::string dir = "", filename = "", instname = "", in_file_ext = "";
 CglAdvCut::ExitReason exitReason;
@@ -74,6 +76,27 @@ SummaryCutInfo cutInfo, cutInfoGMICs;
 // For output
 std::string cut_output = "", bb_output = "";
 
+#ifdef CODE_VERSION
+const std::string CODE_VERSION_STRING = x_macro_to_string(CODE_VERSION);
+#endif
+#ifdef VPC_VERSION
+const std::string VPC_VERSION_STRING = x_macro_to_string(VPC_VERSION);
+#endif
+#ifdef VPC_CBC_VERSION
+const std::string CBC_VERSION_STRING = x_macro_to_string(VPC_CBC_VERSION);
+#endif
+#ifdef VPC_CLP_VERSION
+const std::string CLP_VERSION_STRING = x_macro_to_string(VPC_CLP_VERSION);
+#endif
+#ifdef USE_GUROBI
+#include <gurobi_c++.h>
+const std::string GUROBI_VERSION_STRING = std::to_string(GRB_VERSION_MAJOR) + "." + std::to_string(GRB_VERSION_MINOR) + std::to_string(GRB_VERSION_TECHNICAL);
+#endif // USE_GUROBI
+#ifdef USE_CPLEX
+#include "ilcplex/cpxconst.h"
+const std::string CPLEX_VERSION_STRING = std::to_string(CPX_VERSION_VERSION) + "." + std::to_string(CPX_VERSION_RELEASE) + "." + std::to_string(CPX_VERSION_MODIFICATION);
+#endif // USE_CPLEX
+
 // Catch abort signal if it ever gets sent
 /**
  * Catch a signal. You can output debugging info.
@@ -88,8 +111,8 @@ void signal_handler_with_error_msg(int signal_number) {
   exit(1);
 } /* signal_handler_with_error_msg */
 
-void startUp(int argc, char** argv);
-void processArgs(int argc, char** argv);
+int startUp(int argc, char** argv);
+int processArgs(int argc, char** argv);
 void initializeSolver(OsiSolverInterface* &solver);
 int wrapUp(int retCode);
 
@@ -108,7 +131,8 @@ int main(int argc, char** argv) {
   //====================================================================================================//
   // Print welcome message, set up logfile
   timer.start_timer(OverallTimeStats::TOTAL_TIME);
-  startUp(argc, argv);
+  int status = startUp(argc, argv);
+  if (status) { return status; }
 
   //====================================================================================================//
   // Set up solver and get initial solution
@@ -152,14 +176,15 @@ int main(int argc, char** argv) {
   // solver      ::  stores the cuts we actually want to "count"
   // GMICSolver  ::  only GMICs
   // CutSolver   ::  if GMICs count, this is only mycuts; otherwise, it is both GMICs and mycuts
-  if (params.get(GOMORY) != 0) {
+  const int gomory_option = params.get(intParam::GOMORY);
+  if (gomory_option != 0) {
     GMICSolver = solver->clone();
     CutSolver = solver->clone();
   }
 
   //====================================================================================================//
   // Now do rounds of cuts, until a limit is reached (e.g., time, number failures, number cuts, or all rounds are exhausted)
-  boundInfo.num_mycut = 0, boundInfo.num_gmic = 0;
+  boundInfo.num_mycut = 0, boundInfo.num_gmic = 0, boundInfo.num_str_cuts = 0;
   int num_rounds = params.get(ROUNDS);
   std::vector<OsiCuts> mycuts_by_round(num_rounds);
   cutInfoVec.resize(num_rounds);
@@ -176,7 +201,6 @@ int main(int argc, char** argv) {
     // Option 1: GglGMI
     // Option 2: custom generate intersection cuts, calculate Farkas certificate, do strengthening
     // Option 3: custom generate intersection cuts, calculate Farkas certificate, do closed-form strengthening
-    const int gomory_option = params.get(intParam::GOMORY);
     if (gomory_option != 0) {
       OsiCuts currGMICs;
       generateGomoryCuts(currGMICs, solver, gomory_option, params.get(intParam::STRENGTHEN), params.get(doubleConst::AWAY), params.get(doubleConst::DIFFEPS), params.logfile);
@@ -223,6 +247,7 @@ int main(int argc, char** argv) {
 
     //====================================================================================================//
     // Get Farkas certificate and do strengthening
+    OsiCuts origCurrCuts(currCuts);
     if (params.get(STRENGTHEN) == 1 && disj && disj->terms.size() > 0 && currCuts.sizeCuts() > 0) {
       std::vector<std::vector<std::vector<double> > > v(currCuts.sizeCuts()); // [cut][term][Farkas multiplier] in the end, per term, this will be of dimension rows + cols
       for (int cut_ind = 0; cut_ind < currCuts.sizeCuts(); cut_ind++) {
@@ -252,8 +277,7 @@ int main(int argc, char** argv) {
       // Do strengthening
       printf("\n## Strengthening disjunctive cuts: (# cuts = %d). ##\n", (int) currCuts.sizeCuts());
       enum class Stat { total = 0, avg, stddev, min, max, num_stats } ;
-      int num_cuts_strengthened = 0;
-      std::vector<double> num_coeffs_strengthened((int) Stat::num_stats, 0); // total,avg,stddev,min,max
+      std::vector<double> num_coeffs_strengthened((int) Stat::num_stats, 0.); // total,avg,stddev,min,max
       num_coeffs_strengthened[(int) Stat::min] = std::numeric_limits<int>::max();
       for (int cut_ind = 0; cut_ind < currCuts.sizeCuts(); cut_ind++) {
         OsiRowCut* disjCut = currCuts.rowCutPtr(cut_ind);
@@ -264,10 +288,10 @@ int main(int argc, char** argv) {
         const int curr_num_coeffs_str = strengthenCut(str_coeff, str_rhs, lhs.getNumElements(), lhs.getIndices(), lhs.getElements(), rhs, disj, v[cut_ind], solver);
 
         // Update stats
-        num_cuts_strengthened += curr_num_coeffs_str > 0;
+        boundInfo.num_str_cuts += curr_num_coeffs_str > 0;
         num_coeffs_strengthened[(int) Stat::total] += curr_num_coeffs_str;
-        num_coeffs_strengthened[(int) Stat::avg] += curr_num_coeffs_str / currCuts.sizeCuts();
-        num_coeffs_strengthened[(int) Stat::stddev] += curr_num_coeffs_str * curr_num_coeffs_str / currCuts.sizeCuts();
+        num_coeffs_strengthened[(int) Stat::avg] += (double) curr_num_coeffs_str / currCuts.sizeCuts();
+        num_coeffs_strengthened[(int) Stat::stddev] += (double) curr_num_coeffs_str * curr_num_coeffs_str / currCuts.sizeCuts();
         if (curr_num_coeffs_str < num_coeffs_strengthened[(int) Stat::min]) {
           num_coeffs_strengthened[(int) Stat::min] = curr_num_coeffs_str;
         }
@@ -281,7 +305,7 @@ int main(int argc, char** argv) {
         disjCut->setLb(str_rhs);
       }
       num_coeffs_strengthened[(int) Stat::stddev] -= num_coeffs_strengthened[(int) Stat::avg] * num_coeffs_strengthened[(int) Stat::avg];
-      fprintf(stdout, "\nFinished strengthening (%d cuts affected).\n", num_cuts_strengthened);
+      fprintf(stdout, "\nFinished strengthening (%d cuts affected).\n", boundInfo.num_str_cuts);
       fprintf(stdout, "Number coeffs changed:\n");
       fprintf(stdout, "\ttotal: %g\n", num_coeffs_strengthened[(int) Stat::total]);
       fprintf(stdout, "\tavg: %g\n", num_coeffs_strengthened[(int) Stat::avg]);
@@ -306,21 +330,47 @@ int main(int argc, char** argv) {
     // Apply cuts
     printf("\n## Applying disjunctive cuts (# cuts = %d). ##\n", (int) currCuts.sizeCuts());
     timer.start_timer(OverallTimeStats::APPLY_TIME);
+
+    // For the unstrengthened cuts
+    OsiSolverInterface* solverCopy = (boundInfo.num_str_cuts == 0) ? solver : solver->clone();
+    OsiSolverInterface* CutSolverCopy = (boundInfo.num_str_cuts == 0 || gomory_option == 0) ? CutSolver : CutSolver->clone();
+
+    // Add MyCuts and GMICs
     applyCutsCustom(solver, currCuts);
-    if (params.get(GOMORY) > 0) { // when GOMORY > 0, solver has all cuts and CutSolver has only mycuts
+    if (solverCopy != solver) applyCutsCustom(solverCopy, origCurrCuts);
+    if (gomory_option > 0) { // when GOMORY > 0, solver has all cuts and CutSolver will have only mycuts
+      // For the strengthened cuts
       boundInfo.gmic_mycut_obj = solver->getObjValue();
       applyCutsCustom(CutSolver, currCuts);
       boundInfo.mycut_obj = CutSolver->getObjValue();
       boundInfo.all_cuts_obj = boundInfo.gmic_mycut_obj;
+      
+      // For the unstrengthened cuts
+      boundInfo.unstr_gmic_mycut_obj = solverCopy->getObjValue();
+      if (CutSolverCopy != CutSolver) applyCutsCustom(CutSolverCopy, origCurrCuts);
+      boundInfo.unstr_mycut_obj = CutSolverCopy->getObjValue();
+      boundInfo.unstr_all_cuts_obj = boundInfo.unstr_gmic_mycut_obj;
     }
-    else if (params.get(GOMORY) < 0) { // when GOMORY < 0, solver has only mycuts and CutSolver has all cuts
+    else if (gomory_option < 0) { // when GOMORY < 0, solver has only mycuts and CutSolver will have all cuts
+      // For the strengthened cuts
       boundInfo.mycut_obj = solver->getObjValue();
       applyCutsCustom(CutSolver, currCuts);
       boundInfo.gmic_mycut_obj = CutSolver->getObjValue();
       boundInfo.all_cuts_obj = boundInfo.gmic_mycut_obj;
+
+      // For the unstrengthened cuts
+      boundInfo.unstr_mycut_obj = solverCopy->getObjValue();
+      if (CutSolverCopy != CutSolver) applyCutsCustom(CutSolverCopy, origCurrCuts);
+      boundInfo.unstr_gmic_mycut_obj = CutSolverCopy->getObjValue();
+      boundInfo.unstr_all_cuts_obj = boundInfo.unstr_gmic_mycut_obj;
     } else {
+      // For the strengthened cuts
       boundInfo.mycut_obj = solver->getObjValue();
       boundInfo.all_cuts_obj = boundInfo.mycut_obj;
+
+      // For the unstrengthened cuts
+      boundInfo.unstr_mycut_obj = solverCopy->getObjValue();
+      boundInfo.unstr_all_cuts_obj = boundInfo.unstr_mycut_obj;
     }
     timer.end_timer(OverallTimeStats::APPLY_TIME);
 
@@ -332,9 +382,15 @@ int main(int argc, char** argv) {
         CglAdvCut::ExitReasonName[static_cast<int>(exitReason)].c_str(),
         currCuts.sizeCuts());
     fflush(stdout);
-    printf("Initial obj value: %1.6f. New obj value: %s. Disj lb: %s. ##\n",
-        boundInfo.lp_obj, stringValue(solver->getObjValue(), "%1.6f").c_str(),
+    printf("Initial obj value: %1.6f. New obj value (unstrengthened): %s. New obj value (strengthened): %s. Disj lb: %s. ##\n",
+        boundInfo.lp_obj,
+        stringValue(solverCopy->getObjValue(), "%1.6f").c_str(),
+        stringValue(solver->getObjValue(), "%1.6f").c_str(),
         stringValue(boundInfo.best_disj_obj, "%1.6f").c_str());
+
+    // Free memory from unstrengthened cut copies
+    if (solverCopy && solverCopy != solver) { delete solverCopy; }
+    if (CutSolverCopy && CutSolverCopy != CutSolver) { delete CutSolverCopy; }
 
     // Exit early from rounds of cuts if no cuts generated or solver is not optimal
     if (gen.num_cuts == 0 || !solver->isProvenOptimal()
@@ -373,11 +429,11 @@ int main(int argc, char** argv) {
   // Do analyses in preparation for printing
   setCutInfo(cutInfo, num_rounds, cutInfoVec.data());
   analyzeStrength(params,
-      params.get(GOMORY) == 0 ? NULL : GMICSolver,
-      params.get(GOMORY) <= 0 ? solver : CutSolver, 
-      params.get(GOMORY) >= 0 ? solver : CutSolver, 
+      gomory_option == 0 ? NULL : GMICSolver,
+      gomory_option <= 0 ? solver : CutSolver, 
+      gomory_option >= 0 ? solver : CutSolver, 
       cutInfoGMICs, cutInfo, 
-      params.get(GOMORY) == 0 ? NULL : &gmics, 
+      gomory_option == 0 ? NULL : &gmics, 
       &mycuts,
       boundInfo, cut_output);
   analyzeBB(params, info_nocuts, info_mycuts, info_allcuts, bb_output);
@@ -390,10 +446,12 @@ int main(int argc, char** argv) {
 /**
  * Call this early to print welcome message, etc.
  */
-void startUp(int argc, char** argv) {
+int startUp(int argc, char** argv) {
+  int status = 0;
+
   // Input handling
   printf("## Custom Cut Generator ##\n");
-  printf("Aleksandr M. Kazachkov\n");
+  printf("# Aleksandr M. Kazachkov\n");
   for (int i = 0; i < argc; i++) {
     std::cout << argv[i] << " ";
   }
@@ -404,12 +462,44 @@ void startUp(int argc, char** argv) {
   snprintf(start_time_string, sizeof(start_time_string) / sizeof(char), "%s", asctime(start_timeinfo));
   printf("Start time: %s\n", start_time_string);
 
-  processArgs(argc, argv);
+  /*
+  printf("\n## Version Information ##\n");
+#ifdef VPC_VERSION
+  printf("# VPC Version %s\n", VPC_VERSION_STRING.substr(0,8).c_str());
+#endif
+#ifdef VPC_CBC_VERSION
+  printf("# Cbc Version %s\n", CBC_VERSION_STRING.substr(0,8).c_str());
+#endif
+#ifdef VPC_CLP_VERSION
+  printf("# Clp Version %s\n", CLP_VERSION_STRING.substr(0,8).c_str());
+#endif
+#ifdef USE_GUROBI
+  printf("# Gurobi Version %s\n", GUROBI_VERSION_STRING.c_str());
+#endif
+#ifdef USE_CPLEX
+  printf("# CPLEX Version %s\n", CPLEX_VERSION_STRING.c_str());
+#endif
+  printf("\n");
+  */
+
+  status = processArgs(argc, argv);
+  if (status) { return status; }
 
   // Get instance file
+  if (params.get(stringParam::FILENAME).empty()) {
+    error_msg(errorstring,
+        "No instance file provided. Use -f /path/to/instance.mps to specify the instance.\n");
+    exit(1);
+  }
   printf("Instance file: %s\n", params.get(stringParam::FILENAME).c_str());
   
-  parseFilename(dir, instname, in_file_ext, params.get(stringParam::FILENAME), params.logfile);
+  if (parseFilename(dir, instname, in_file_ext, params.get(stringParam::FILENAME), params.logfile) != 0) {
+    error_msg(errorstring,
+        "Unable to parse filename: %s. Found: dir=\"%s\", instname=\"%s\",ext=\"%s\".\n",
+        params.get(stringParam::FILENAME).c_str(), dir.c_str(),
+        instname.c_str(), in_file_ext.c_str());
+    exit(1);
+  }
   filename = dir + "/" + instname;
 
   // Prepare logfile
@@ -425,16 +515,22 @@ void startUp(int argc, char** argv) {
     boundInfo.ip_obj = params.get(doubleParam::IP_OBJ);
   }
   if (isInfinity(boundInfo.ip_obj) && !params.get(stringParam::OPTFILE).empty()) {
-#ifdef TRACE
-    std::cout << "Reading objective information from \"" + params.get(stringParam::OPTFILE) + "\"" << std::endl;
-#endif
-    boundInfo.ip_obj = getObjValueFromFile(params.get(stringParam::OPTFILE), params.get(stringParam::FILENAME), params.logfile);
-    params.set(doubleParam::IP_OBJ, boundInfo.ip_obj);
-#ifdef TRACE
-    std::cout << "Best known objective value is " << boundInfo.ip_obj << std::endl;
-#endif
-    if (isInfinity(boundInfo.ip_obj)) {
-      warning_msg(warnstring, "Did not find objective value.\n");
+    std::string optfile = params.get(stringParam::OPTFILE);
+    std::string csvext = ".csv";
+    if (optfile.size() > csvext.size() && optfile.compare(optfile.size()-csvext.size(), csvext.size(), csvext) == 0) {
+  #ifdef TRACE
+      fprintf(stdout, "Reading objective information from \"%s\".\n", optfile.c_str());
+      //std::cout << "Reading objective information from \"" + params.get(stringParam::OPTFILE) + "\"" << std::endl;
+  #endif
+      boundInfo.ip_obj = getObjValueFromFile(optfile, params.get(stringParam::FILENAME), params.logfile);
+      params.set(doubleParam::IP_OBJ, boundInfo.ip_obj);
+  #ifdef TRACE
+      fprintf(stdout, "Best known objective value is %s.\n", stringValue(boundInfo.ip_obj, "%f").c_str());
+      //std::cout << "Best known objective value is " << boundInfo.ip_obj << std::endl;
+  #endif
+      if (isInfinity(boundInfo.ip_obj)) {
+        warning_msg(warnstring, "Did not find objective value.\n");
+      }
     }
   }
   if (params.logfile != NULL) {
@@ -445,6 +541,8 @@ void startUp(int argc, char** argv) {
     printParams(params, params.logfile, 2); // only values
     fflush(params.logfile);
   }
+
+  return status;
 } /* startUp */
 
 /**
@@ -478,6 +576,37 @@ int wrapUp(int retCode /*= 0*/) {
       // Print exit reason and finish
       fprintf(logfile, "%s,", CglAdvCut::ExitReasonName[exitReasonInt].c_str());
     }
+
+#ifdef CODE_VERSION
+    fprintf(logfile, "%s,", CODE_VERSION_STRING.substr(0,8).c_str());
+#else
+    fprintf(logfile, ",");
+#endif
+#ifdef VPC_VERSION
+    fprintf(logfile, "%s,", VPC_VERSION_STRING.substr(0,8).c_str());
+#else
+    fprintf(logfile, ",");
+#endif
+#ifdef VPC_CBC_VERSION
+    fprintf(logfile, "%s,", CBC_VERSION_STRING.substr(0,8).c_str());
+#else
+    fprintf(logfile, ",");
+#endif
+#ifdef VPC_CLP_VERSION
+    fprintf(logfile, "%s,", CLP_VERSION_STRING.substr(0,8).c_str());
+#else
+    fprintf(logfile, ",");
+#endif
+#ifdef USE_GUROBI
+    fprintf(logfile, "%s,", GUROBI_VERSION_STRING.c_str());
+#else
+    fprintf(logfile, ",");
+#endif
+#ifdef USE_CPLEX
+    fprintf(logfile, "%s,", CPLEX_VERSION_STRING.c_str());
+#else
+    fprintf(logfile, ",");
+#endif
 
     fprintf(logfile, "%s,", end_time_string);
     fprintf(logfile, "%.2f,", difftime(end_time_t, start_time_t));
@@ -513,7 +642,30 @@ int wrapUp(int retCode /*= 0*/) {
   printf("%s", bb_output.c_str());
 
   printf("\n## Exiting cut generation with reason %s. ##\n", CglAdvCut::ExitReasonName[exitReasonInt].c_str());
+#ifdef CODE_VERSION
+  printf("Code Version: %s\n", CODE_VERSION_STRING.substr(0,8).c_str());
+#endif
+#ifdef VPC_VERSION
+  printf("VPC Version: %s\n", VPC_VERSION_STRING.substr(0,8).c_str());
+#endif
+#ifdef VPC_CBC_VERSION
+  printf("Cbc Version: %s\n", CBC_VERSION_STRING.substr(0,8).c_str());
+#endif
+#ifdef VPC_CLP_VERSION
+  printf("Clp Version: %s\n", CLP_VERSION_STRING.substr(0,8).c_str());
+#endif
+#ifdef USE_GUROBI
+  printf("Gurobi Version: %s\n", GUROBI_VERSION_STRING.c_str());
+#endif
+#ifdef USE_CPLEX
+  printf("CPLEX Version: %s\n", CPLEX_VERSION_STRING.c_str());
+#endif
   printf("Instance: %s\n", instname.c_str());
+  if (!params.get(stringParam::LOGFILE).empty()) {
+    printf("Log: %s\n", params.get(stringParam::LOGFILE).c_str());
+  } else {
+    printf("Log: stdout\n");
+  }
   printf("Start time: %s\n", start_time_string);
   printf("End time: %s\n", end_time_string);
   printf("Elapsed time: %.f seconds\n", difftime(end_time_t, start_time_t));
@@ -592,7 +744,7 @@ void initializeSolver(OsiSolverInterface* &solver) {
 /**
  * See params.hpp for descriptions of the parameters
  */
-void processArgs(int argc, char** argv) {
+int processArgs(int argc, char** argv) {
   // Handle inputs
   // struct option declared in getopt.h
   // name: name of the long option
@@ -623,6 +775,7 @@ void processArgs(int argc, char** argv) {
   };
 
   int inp;
+  int status = 0;
   while ((inp = getopt_long(argc, argv, short_opts, long_opts, nullptr)) != -1) {
     switch (inp) {
       case 'b': {
@@ -797,7 +950,7 @@ void processArgs(int argc, char** argv) {
                 helpstring += "--bb_mode={0,1,10,11,100,...,111}\n\tWhich branch-and-bound experiments to run (ones = no cuts, tens = mycuts, hundreds = gmics).\n";
                 helpstring += "## END OF HELP ##\n";
                 std::cout << helpstring << std::endl;
-                exit(1);
+                status = 1;
                }
     } // switch statement for input
   } // process args
@@ -805,4 +958,5 @@ void processArgs(int argc, char** argv) {
   //  std::cout << argv[i] << " ";
   //}
   //std::cout << std::endl;
+  return status;
 } /* processArgs */
