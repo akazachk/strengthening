@@ -39,7 +39,7 @@ void generateGomoryCuts(
   int num_cuts_strengthened = 0;
   enum class Stat { total = 0, avg, stddev, min, max, num_stats } ;
   std::vector<double> num_coeffs_strengthened((int) Stat::num_stats, 0); // total,avg,stddev,min,max
-  num_coeffs_strengthened[(int) Stat::min] = std::numeric_limits<int>::max();
+  if (std::abs(option) != 1) num_coeffs_strengthened[(int) Stat::min] = std::numeric_limits<int>::max();
 
   // Use CglGMI
   if (std::abs(option) == 1) {
@@ -137,11 +137,13 @@ void generateGomoryCuts(
         if (curr_num_coeffs_str > num_coeffs_strengthened[(int) Stat::max]) {
           num_coeffs_strengthened[(int) Stat::max] = curr_num_coeffs_str;
         }
-        
-        // Replace row
-        CoinPackedVector strCutCoeff(str_coeff.size(), str_coeff.data());
-        intCut.setRow(strCutCoeff);
-        intCut.setLb(str_rhs);
+
+        // Replace row if any coefficients were strengthened
+        if (curr_num_coeffs_str > 0) {
+          CoinPackedVector strCutCoeff(str_coeff.size(), str_coeff.data());
+          intCut.setRow(strCutCoeff);
+          intCut.setLb(str_rhs);
+        }
 
         // We generate the strengthened intersection cut (to compare against)
         //OsiRowCut strIntCut;
@@ -326,11 +328,13 @@ void generateGomoryCuts(
         if (curr_num_coeffs_str > num_coeffs_strengthened[(int) Stat::max]) {
           num_coeffs_strengthened[(int) Stat::max] = curr_num_coeffs_str;
         }
-        
+
         // Replace row
-        CoinPackedVector strCutCoeff(str_coeff.size(), str_coeff.data());
-        intCut.setRow(strCutCoeff);
-        intCut.setLb(str_rhs);
+        if (curr_num_coeffs_str > 0) {
+          CoinPackedVector strCutCoeff(str_coeff.size(), str_coeff.data());
+          intCut.setRow(strCutCoeff);
+          intCut.setLb(str_rhs);
+        }
       } // do strengthening
 
       // Insert new cut into currGMICs

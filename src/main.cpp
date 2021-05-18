@@ -38,6 +38,10 @@ using namespace StrengtheningParameters;
 #include "strengthen.hpp"
 #include "utility.hpp"
 
+#ifdef TRACE
+#include "debug.hpp"
+#endif
+
 enum OverallTimeStats {
   INIT_SOLVE_TIME,
   CUT_TIME,
@@ -216,6 +220,10 @@ int main(int argc, char** argv) {
       }
     }
 
+    { /// DEBUG
+      // testGomory(solver, params);
+    } /// DEBUG
+
     //====================================================================================================//
     // Now for more general cuts
     OsiCuts& currCuts = mycuts_by_round[round_ind];
@@ -303,10 +311,12 @@ int main(int argc, char** argv) {
           num_coeffs_strengthened[(int) Stat::max] = curr_num_coeffs_str;
         }
         
-        // Replace row
-        CoinPackedVector strCutCoeff(str_coeff.size(), str_coeff.data());
-        disjCut->setRow(strCutCoeff);
-        disjCut->setLb(str_rhs);
+        // Replace row if any coefficients were strengthened
+        if (curr_num_coeffs_str > 0) {
+          CoinPackedVector strCutCoeff(str_coeff.size(), str_coeff.data());
+          disjCut->setRow(strCutCoeff);
+          disjCut->setLb(str_rhs);
+        }
       }
       num_coeffs_strengthened[(int) Stat::stddev] -= num_coeffs_strengthened[(int) Stat::avg] * num_coeffs_strengthened[(int) Stat::avg];
       fprintf(stdout, "\nFinished strengthening (%d cuts affected).\n", boundInfo.num_str_cuts);
@@ -415,9 +425,14 @@ int main(int argc, char** argv) {
   }
 
   printf(
-      "\n## Finished cut generation with %d cuts. Initial obj value: %s. Final obj value: %s. Disj lb: %s. ##\n",
+      "\n## Finished cut generation with %d cuts. Initial obj value: %s.",
       boundInfo.num_mycut,
-      stringValue(boundInfo.lp_obj, "%1.6f").c_str(),
+      stringValue(boundInfo.lp_obj, "%1.6f").c_str());
+  if (boundInfo.num_str_cuts > 0) printf(
+      " Unstrengthened obj value: %s.",
+      stringValue(boundInfo.unstr_mycut_obj, "%1.6f").c_str());
+  printf(
+      " Final obj value: %s. Disj lb: %s. ##\n",
       stringValue(boundInfo.mycut_obj, "%1.6f").c_str(),
       stringValue(boundInfo.best_disj_obj, "%1.6f").c_str());
   timer.end_timer(OverallTimeStats::TOTAL_TIME);

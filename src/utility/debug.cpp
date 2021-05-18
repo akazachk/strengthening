@@ -6,12 +6,18 @@
  */
 #include "debug.hpp"
 
+#include "gmic.hpp"
+#include "Parameters.hpp"
+using namespace StrengtheningParameters;
 #include "utility.hpp"
 
 #include <CoinPackedMatrix.hpp>
 #include <CoinPackedVectorBase.hpp>
 #include <CoinPackedVector.hpp>
 #include <CoinShallowPackedVector.hpp>
+#include <OsiSolverInterface.hpp>
+#include <OsiCuts.hpp>
+#include <OsiRowCut.hpp>
 
 /**
  * Print sparse vector
@@ -94,3 +100,39 @@ void printMatrix(const CoinPackedMatrix& mx_in) {
     delete mx;
   }
 } /* printMatrix */
+
+/// @brief Test to make sure Gomory methods all produce same outcome
+void testGomory(
+    /// [in/out] non-const because we may need to enable factorization inside of \link generateGomoryCuts \endlink
+    OsiSolverInterface* const solver,
+    /// [in] parameters to use for GMIC generation
+    const StrengtheningParameters::Parameters params) {
+  OsiCuts currGMICs1, currGMICs3;
+  generateGomoryCuts(currGMICs1, solver, 1, params.get(intParam::STRENGTHEN), params.get(doubleConst::AWAY), params.get(doubleConst::DIFFEPS), params.logfile);
+  generateGomoryCuts(currGMICs3, solver, 3, params.get(intParam::STRENGTHEN), params.get(doubleConst::AWAY), params.get(doubleConst::DIFFEPS), params.logfile);
+  const int num_gmics1 = currGMICs1.sizeCuts();
+  const int num_gmics3 = currGMICs3.sizeCuts();
+  if (num_gmics1 != num_gmics3) { printf("*** ERROR: %d gmics1 != %d gmics3\n", num_gmics1, num_gmics3); exit(1); }
+  for (int i = 0; i < num_gmics1; i++) {
+    OsiRowCut* cut = currGMICs1.rowCutPtr(i);
+    const double rhs = cut->rhs();
+    cut->mutableRow() /= rhs;
+    cut->setLb(1.);
+    cut->setUb(getInfinity());
+  }
+  for (int i = 0; i < num_gmics3; i++) {
+    OsiRowCut* cut = currGMICs3.rowCutPtr(i);
+    const double rhs = cut->rhs();
+    cut->mutableRow() /= rhs;
+    cut->setLb(1.);
+    cut->setUb(getInfinity());
+  }
+  // Check difference
+  for (int i = 0; i < num_gmics1; i++) {
+    OsiRowCut cut1 = currGMICs1.rowCut(i);
+    OsiRowCut cut2 = currGMICs3.rowCut(i);
+    CoinPackedVector vec = cut1.row() - cut2.row();
+    printf("Cut %d: sum = %f.\n", i, vec.sum());
+  }
+  printf("\n## DONE DEBUGGING GMICS ##\n");
+} /* testGomory */

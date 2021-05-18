@@ -8,6 +8,9 @@
 #include <string>
 #include <vector>
 
+namespace StrengtheningParameters {
+  struct Parameters;
+}
 class OsiSolverInterface;
 class OsiCuts;
 class CoinPackedVectorBase;
@@ -36,3 +39,6 @@ inline void printVectorDouble(const std::vector<double>& vec, const bool use_new
 }
 
 void printMatrix(const CoinPackedMatrix& mx_in);
+
+/// @brief Test to make sure Gomory methods all produce same outcome
+void testGomory(OsiSolverInterface* const solver, const StrengtheningParameters::Parameters params);
