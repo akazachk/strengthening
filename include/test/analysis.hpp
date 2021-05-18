@@ -65,7 +65,8 @@ void printPostCutProbInfo(const OsiSolverInterface* const solver,
     const SummaryCutInfo& cutInfoGMICs, const SummaryCutInfo& cutInfo,
     FILE* logfile, const char SEP = ',');
 void printCutInfo(const SummaryCutInfo& cutInfoGMICs,
-    const SummaryCutInfo& cutInfo, FILE* logfile, const char SEP = ',');
+    const SummaryCutInfo& cutInfo, const SummaryCutInfo& cutInfoUnstr,
+    FILE* logfile, const char SEP = ',');
 
 void analyzeStrength(const StrengtheningParameters::Parameters& params, 
     const OsiSolverInterface* const solver_gmic,

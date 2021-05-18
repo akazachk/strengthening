@@ -672,7 +672,7 @@ int strengthenCutS(
   if (mono) { delete mono; }
 
   return num_coeffs_changed;
-} /* strengthenCut */
+} /* strengthenCutS */
 
 /**
  * @brief Attempt to strengthen coefficients of given cut

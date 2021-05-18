@@ -25,7 +25,7 @@ const int countFullBBInfoEntries = static_cast<int>(BB_INFO_CONTENTS.size()) * 4
 const int countOrigProbEntries = 13;
 const int countPostCutProbEntries = 10;
 const int countDisjInfoEntries = 0;
-const int countCutInfoEntries = 10;
+const int countCutInfoEntries = 13;
 const int countObjInfoEntries = 1;
 const int countFailInfoEntries = 1 + static_cast<int>(CglAdvCut::FailureType::NUM_FAILURE_TYPES);
 const int countParamInfoEntries = intParam::NUM_INT_PARAMS + doubleParam::NUM_DOUBLE_PARAMS;
@@ -171,12 +171,15 @@ void printHeader(const StrengtheningParameters::Parameters& params,
     fprintf(logfile, "%s%c", "NUM CUTS", SEP); count++; // repeat, but it's ok
     fprintf(logfile, "%s%c", "NUM ONE SIDED CUTS", SEP); count++;
     fprintf(logfile, "%s%c", "NUM OPTIMALITY CUTS", SEP); count++;
-    fprintf(logfile, "%s%c", "MIN SUPPORT MYCUTS", SEP); count++;
-    fprintf(logfile, "%s%c", "MAX SUPPORT MYCUTS", SEP); count++;
-    fprintf(logfile, "%s%c", "AVG SUPPORT MYCUTS", SEP); count++;
-    fprintf(logfile, "%s%c", "MIN SUPPORT GOMORY", SEP); count++;
-    fprintf(logfile, "%s%c", "MAX SUPPORT GOMORY", SEP); count++;
-    fprintf(logfile, "%s%c", "AVG SUPPORT GOMORY", SEP); count++;
+    fprintf(logfile, "%s%c", "GOM MIN SUPPORT", SEP); count++;
+    fprintf(logfile, "%s%c", "GOM MAX SUPPORT", SEP); count++;
+    fprintf(logfile, "%s%c", "GOM AVG SUPPORT", SEP); count++;
+    fprintf(logfile, "%s%c", "MYCUTS MIN SUPPORT", SEP); count++;
+    fprintf(logfile, "%s%c", "MYCUTS MAX SUPPORT", SEP); count++;
+    fprintf(logfile, "%s%c", "MYCUTS AVG SUPPORT", SEP); count++;
+    fprintf(logfile, "%s%c", "UNSTR MYCUTS MIN SUPPORT", SEP); count++;
+    fprintf(logfile, "%s%c", "UNSTR MYCUTS MAX SUPPORT", SEP); count++;
+    fprintf(logfile, "%s%c", "UNSTR MYCUTS AVG SUPPORT", SEP); count++;
     assert(count == countCutInfoEntries);
   } // CUT INFO
   { // DISJ INFO
@@ -652,7 +655,8 @@ void printPostCutProbInfo(const OsiSolverInterface* const solver,
 } /* printPostCutProbInfo */
 
 void printCutInfo(const SummaryCutInfo& cutInfoGMICs,
-    const SummaryCutInfo& cutInfo, FILE* logfile, const char SEP) {
+    const SummaryCutInfo& cutInfo, const SummaryCutInfo& cutInfoUnstr,
+    FILE* logfile, const char SEP) {
   if (!logfile)
     return;
 
@@ -662,6 +666,15 @@ void printCutInfo(const SummaryCutInfo& cutInfoGMICs,
     fprintf(logfile, "%s%c", stringValue(cutInfo.num_cuts).c_str(), SEP); count++;
     fprintf(logfile, "%s%c", stringValue(cutInfo.numCutsOfType[static_cast<int>(CglAdvCut::CutType::ONE_SIDED_CUT)]).c_str(), SEP); count++;
     fprintf(logfile, "%s%c", stringValue(cutInfo.numCutsOfType[static_cast<int>(CglAdvCut::CutType::OPTIMALITY_CUT)]).c_str(), SEP); count++;
+    if (cutInfoGMICs.num_cuts > 0) {
+      fprintf(logfile, "%s%c", stringValue(cutInfoGMICs.min_support).c_str(), SEP); count++;
+      fprintf(logfile, "%s%c", stringValue(cutInfoGMICs.max_support).c_str(), SEP); count++;
+      fprintf(logfile, "%s%c", stringValue(cutInfoGMICs.avg_support, "%.3f").c_str(), SEP); count++;
+    } else {
+      fprintf(logfile, "%s%c", stringValue(0).c_str(), SEP); count++;
+      fprintf(logfile, "%s%c", stringValue(0).c_str(), SEP); count++;
+      fprintf(logfile, "%s%c", stringValue(0).c_str(), SEP); count++;
+    }
     if (cutInfo.num_cuts > 0) {
       fprintf(logfile, "%s%c", stringValue(cutInfo.min_support).c_str(), SEP); count++;
       fprintf(logfile, "%s%c", stringValue(cutInfo.max_support).c_str(), SEP); count++;
@@ -671,10 +684,10 @@ void printCutInfo(const SummaryCutInfo& cutInfoGMICs,
       fprintf(logfile, "%s%c", stringValue(0).c_str(), SEP); count++;
       fprintf(logfile, "%s%c", stringValue(0).c_str(), SEP); count++;
     }
-    if (cutInfoGMICs.num_cuts > 0) {
-      fprintf(logfile, "%s%c", stringValue(cutInfoGMICs.min_support).c_str(), SEP); count++;
-      fprintf(logfile, "%s%c", stringValue(cutInfoGMICs.max_support).c_str(), SEP); count++;
-      fprintf(logfile, "%s%c", stringValue(cutInfoGMICs.avg_support, "%.3f").c_str(), SEP); count++;
+    if (cutInfoUnstr.num_cuts > 0) {
+      fprintf(logfile, "%s%c", stringValue(cutInfoUnstr.min_support).c_str(), SEP); count++;
+      fprintf(logfile, "%s%c", stringValue(cutInfoUnstr.max_support).c_str(), SEP); count++;
+      fprintf(logfile, "%s%c", stringValue(cutInfoUnstr.avg_support, "%.3f").c_str(), SEP); count++;
     } else {
       fprintf(logfile, "%s%c", stringValue(0).c_str(), SEP); count++;
       fprintf(logfile, "%s%c", stringValue(0).c_str(), SEP); count++;
@@ -698,7 +711,8 @@ void printCutInfo(const SummaryCutInfo& cutInfoGMICs,
   fflush(logfile);
 } /* printCutInfo */
 
-bool checkCutActivity(
+/// @brief Check cut activity in solver and report cut density
+bool checkCutDensityAndActivity(
   SummaryCutInfo& cutInfo,
   const OsiSolverInterface* const solver,
   const OsiRowCut* const cut) {
@@ -713,7 +727,7 @@ bool checkCutActivity(
   } else {
     return false;
   }
-} /* checkCutActivity */
+} /* checkCutDensityAndActivity */
 
 /**
  * The cut properties we want to look at are:
@@ -741,14 +755,14 @@ void analyzeStrength(
     int total_support = 0;
     for (int cut_ind = 0; cut_ind < num_mycuts; cut_ind++) {
       const OsiRowCut* const cut = mycuts->rowCutPtr(cut_ind);
-      if (checkCutActivity(cutInfo, solver_gmic, cut)) {
+      if (checkCutDensityAndActivity(cutInfo, solver_gmic, cut)) {
         cutInfo.num_active_gmic++;
       }
-      if (checkCutActivity(cutInfo, solver_mycut, cut)) {
+      if (checkCutDensityAndActivity(cutInfo, solver_mycut, cut)) {
         cutInfo.num_active_mycut++;
         cutInfo.numActiveFromHeur[static_cast<int>(cutInfo.objType[cut_ind])]++;
       }
-      if (checkCutActivity(cutInfo, solver_all, cut)) {
+      if (checkCutDensityAndActivity(cutInfo, solver_all, cut)) {
         cutInfo.num_active_all++;
       }
       total_support += cut->row().getNumElements();
@@ -761,13 +775,13 @@ void analyzeStrength(
     int total_support = 0;
     for (int cut_ind = 0; cut_ind < num_gmics; cut_ind++) {
       const OsiRowCut* const cut = gmics->rowCutPtr(cut_ind);
-      if (checkCutActivity(cutInfoGMICs, solver_gmic, cut)) {
+      if (checkCutDensityAndActivity(cutInfoGMICs, solver_gmic, cut)) {
         cutInfoGMICs.num_active_gmic++;
       }
-      if (checkCutActivity(cutInfoGMICs, solver_mycut, cut)) {
+      if (checkCutDensityAndActivity(cutInfoGMICs, solver_mycut, cut)) {
         cutInfoGMICs.num_active_mycut++;
       }
-      if (checkCutActivity(cutInfoGMICs, solver_all, cut)) {
+      if (checkCutDensityAndActivity(cutInfoGMICs, solver_all, cut)) {
         cutInfoGMICs.num_active_all++;
       }
       total_support += cut->row().getNumElements();

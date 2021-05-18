@@ -63,8 +63,6 @@ Parameters params;
 OsiSolverInterface *solver, *origSolver;
 OsiSolverInterface* GMICSolver = NULL;
 OsiSolverInterface* CutSolver = NULL;
-//OsiSolverInterface* solverCopy = NULL; // for storing unstrengthened cuts
-//OsiSolverInterface* CutSolverCopy = NULL; // for storing unstrengthened cuts
 OsiCuts gmics, mycuts;
 std::string dir = "", filename = "", instname = "", in_file_ext = "";
 CglAdvCut::ExitReason exitReason;
@@ -75,7 +73,7 @@ char start_time_string[25];
 SummaryBoundInfo boundInfo;
 SummaryBBInfo info_nocuts, info_mycuts, info_allcuts;
 std::vector<SummaryCutInfo> cutInfoVec;
-SummaryCutInfo cutInfo, cutInfoGMICs;
+SummaryCutInfo cutInfo, cutInfoGMICs, cutInfoUnstr;
 
 // For output
 std::string cut_output = "", bb_output = "";
@@ -246,6 +244,24 @@ int main(int argc, char** argv) {
       boundInfo.best_disj_obj = disj->best_obj;
     if (boundInfo.worst_disj_obj < disj->worst_obj)
       boundInfo.worst_disj_obj = disj->worst_obj;
+
+    // Get density of unstr cuts
+    int total_support = 0;
+    for (int cut_ind = 0; cut_ind < currCuts.sizeCuts(); cut_ind++) {
+        OsiRowCut* disjCut = currCuts.rowCutPtr(cut_ind);
+        const CoinPackedVector lhs = disjCut->row();
+        const int num_elem = lhs.getNumElements();
+        /*for (const double coeff : strCutCoeff) {
+          if (!isZero(coeff)) num_elem++;
+        }*/
+        if (num_elem < cutInfoUnstr.min_support)
+          cutInfoUnstr.min_support = num_elem;
+        if (num_elem > cutInfoUnstr.max_support)
+          cutInfoUnstr.max_support = num_elem;
+        total_support += num_elem;
+    }
+    cutInfoUnstr.avg_support = (double) total_support / currCuts.sizeCuts();
+    cutInfoUnstr.num_cuts += currCuts.sizeCuts();
 
 #if 0
     fprintf(stdout, "\n## Printing custom cuts ##\n");
@@ -451,7 +467,7 @@ int main(int argc, char** argv) {
       gomory_option == 0 ? NULL : GMICSolver,
       gomory_option <= 0 ? solver : CutSolver, 
       gomory_option >= 0 ? solver : CutSolver, 
-      cutInfoGMICs, cutInfo, 
+      cutInfoGMICs, cutInfo,
       gomory_option == 0 ? NULL : &gmics, 
       &mycuts,
       boundInfo, cut_output);
@@ -587,7 +603,7 @@ int wrapUp(int retCode, int argc, char** argv) {
       // Post-cut prob
       printPostCutProbInfo(solver, cutInfoGMICs, cutInfo, params.logfile);
       // Cut, obj, fail info
-      printCutInfo(cutInfoGMICs, cutInfo, params.logfile);
+      printCutInfo(cutInfoGMICs, cutInfo, cutInfoUnstr, params.logfile);
       // Full B&B info
       printFullBBInfo({info_nocuts, info_mycuts}, params.logfile);
       // Print time info
