@@ -90,6 +90,7 @@ int strengthenCut(
     const Disjunction* const disj,
     const std::vector<std::vector<double> >& v, 
     const OsiSolverInterface* const solver,
+    FILE* logfile,
     const std::vector<double>& ip_solution = {});
 
 /**

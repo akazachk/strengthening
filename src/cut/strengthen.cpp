@@ -134,7 +134,7 @@ void createEigenMatrix(
   // Check matrix
   assert(M.rows() == num_selected_rows);
   assert(M.cols() == num_cols);
-  assert(M.nonZeros() == mat->getNumElements() - num_elem_removed + (doAll ? num_cols : cols.size()));
+  assert(M.nonZeros() == (long int) (mat->getNumElements() - num_elem_removed + (doAll ? num_cols : cols.size())));
 #endif
 } /* createEigenMatrix (sparse) */
 
@@ -715,6 +715,8 @@ int strengthenCut(
     const std::vector<std::vector<double> >& v, 
     /// [in] original solver (used to get globally-valid lower bounds for the disjunctive terms)
     const OsiSolverInterface* const solver,
+    /// [in] logfile for error printing
+    FILE* logfile,
     /// [in] IP solution to original problem (will usually be empty unless you are debugging)
     const std::vector<double>& ip_solution) {
   // Set up original cut coeff and rhs
@@ -770,6 +772,7 @@ int strengthenCut(
       assert(disj_lb_diff[term_ind][bound_ind] > -1e-3);
 #endif
       if (!isZero(v[term_ind][solver->getNumRows() + bound_ind]) && !isZero(disj_lb_diff[term_ind][bound_ind])) {
+        // u^t_0 (D^t_0 - ell^t)
         lb_term[term_ind] += v[term_ind][solver->getNumRows() + bound_ind] * disj_lb_diff[term_ind][bound_ind];
         if (isZero(lb_term[term_ind])) {
           lb_term[term_ind] = 0.;
@@ -792,15 +795,22 @@ int strengthenCut(
       updateMonoidalIP(mono, col, disj, v, solver);
     }
 
-    num_coeffs_changed += strengthenCutCoefficient(str_coeff[col], str_rhs, col, str_coeff[col], disj, lb_term, v, solver, mono);
+    if (strengthenCutCoefficient(str_coeff[col], str_rhs, col, str_coeff[col], disj, lb_term, v, solver, mono)) {
+      num_coeffs_changed += 1;
 
-    if (!ip_solution.empty()) {
-      const double activity = dotProduct(str_coeff.data(), ip_solution.data(), str_coeff.size());
-      if (lessThanVal(activity, str_rhs)) {
-        warning_msg(warnstring, "Cut removes optimal solution after strengthening col %d. Activity: %.10f. Rhs: %.10f.\n", col, activity, str_rhs);
+      if (!ip_solution.empty()) {
+        const double activity = dotProduct(str_coeff.data(), ip_solution.data(), str_coeff.size());
+        if (lessThanVal(activity, str_rhs, 1e-3)) {
+          error_msg(errorstring, "Cut removes optimal solution after strengthening col %d. Activity: %.10f. Rhs: %.10f.\n", col, activity, str_rhs);
+          writeErrorToLog(errorstring, logfile);
+          exit(1);
+        }
+        if (lessThanVal(activity, str_rhs)) {
+          warning_msg(warnstring, "Cut removes optimal solution after strengthening col %d. Activity: %.10f. Rhs: %.10f.\n", col, activity, str_rhs);
+        }
       }
-    }
-  }
+    } // if coefficient strengthened, updated num_coeffs_changed and check continued correctness
+  } // loop over cols
 
   if (mono) { delete mono; }
 
@@ -820,7 +830,7 @@ bool strengthenCutCoefficient(
     const double coeff,
     /// [in] disjunction
     const Disjunction* const disj,
-    /// [in] u^t_0 (D^t_0 - \ell^t) for all t
+    /// [in] u^t_0 (D^t_0 - ell^t) for all t
     const std::vector<double>& lb_term,
     /// [in] Farkas multipliers for each of the terms of the disjunction (each is a vector of length m + n)
     const std::vector<std::vector<double> >& v, 

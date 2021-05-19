@@ -346,7 +346,7 @@ int main(int argc, char** argv) {
         double str_rhs;
         const int curr_num_coeffs_str = strengthenCut(str_coeff, str_rhs,
             lhs.getNumElements(), lhs.getIndices(), lhs.getElements(), rhs,
-            disj, v[cut_ind], solver, ip_solution);
+            disj, v[cut_ind], solver, params.logfile, ip_solution);
 
         // Update stats
         boundInfo.num_str_cuts += curr_num_coeffs_str > 0;

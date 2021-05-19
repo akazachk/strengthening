@@ -124,7 +124,7 @@ void generateGomoryCuts(
         const double rhs = intCut.rhs();
         std::vector<double> str_coeff;
         double str_rhs;
-        const int curr_num_coeffs_str = strengthenCut(str_coeff, str_rhs, lhs.getNumElements(), lhs.getIndices(), lhs.getElements(), rhs, &disj, v, solver);
+        const int curr_num_coeffs_str = strengthenCut(str_coeff, str_rhs, lhs.getNumElements(), lhs.getIndices(), lhs.getElements(), rhs, &disj, v, solver, logfile);
 
         // Update stats
         num_cuts_strengthened += curr_num_coeffs_str > 0;
@@ -315,7 +315,7 @@ void generateGomoryCuts(
         const double rhs = intCut.rhs();
         std::vector<double> str_coeff;
         double str_rhs;
-        const int curr_num_coeffs_str = strengthenCut(str_coeff, str_rhs, lhs.getNumElements(), lhs.getIndices(), lhs.getElements(), rhs, &disj, v, solver);
+        const int curr_num_coeffs_str = strengthenCut(str_coeff, str_rhs, lhs.getNumElements(), lhs.getIndices(), lhs.getElements(), rhs, &disj, v, solver, logfile);
 
         // Update stats
         num_cuts_strengthened += curr_num_coeffs_str > 0;
