@@ -41,10 +41,27 @@ using namespace StrengtheningParameters;
 /**
  * Solver is changed unless we are doing row/col permutations
  */
-void runBBTests(const Parameters& base_params, SummaryBBInfo* const info_nocuts,
-    SummaryBBInfo* const info_mycuts, SummaryBBInfo* const info_allcuts,
-    const std::string fullfilename, OsiSolverInterface* const solver,
-    const double best_bound, const OsiCuts* mycuts, const OsiCuts* const gmics) {
+void runBBTests(
+    /// [in] Initial set of parameters (will be cloned to change random seeds)
+    const Parameters& base_params,
+    /// [out] Store information about branch-and-bound results with no (user-generated) cuts added
+    SummaryBBInfo* const info_nocuts,
+    /// [out] Store information about branch-and-bound results with only my user-generated cuts added
+    SummaryBBInfo* const info_mycuts,
+    /// [out] Store information about branch-and-bound results with all user-generated cuts added (including GMICs, for example)
+    SummaryBBInfo* const info_allcuts,
+    /// [in] Full path to instance
+    const std::string fullfilename,
+    /// [in] Original model
+    const OsiSolverInterface* const solver,
+    /// [in] Best bound (to provide to IP solver, if relevant option is selected)
+    const double best_bound,
+    /// [in] My cuts to add to solver
+    const OsiCuts* mycuts,
+    /// [in] (Optional) GMICs to test against
+    const OsiCuts* const gmics,
+    /// [in/out] IP solution to original problem (will usually be empty unless you are debugging; will be computed here if requested)
+    std::vector<double>* const ip_solution) {
   Parameters params = base_params;
   const int num_mycuts = (mycuts != NULL) ? mycuts->sizeCuts() : 0;
   // TODO Set number of b&b runs to be zero if no cuts generated (need to enable though if we just want to do b&b)
@@ -181,19 +198,23 @@ void runBBTests(const Parameters& base_params, SummaryBBInfo* const info_nocuts,
         }
       }
     } // test whether num_bb_runs >= 2 and permute row/col order
-    else {
-      runSolver = solver;
-    }
 
     // Do branch and bound
     if (use_bb_option(params.get(BB_STRATEGY), BB_Strategy_Options::gurobi)) {
 #ifdef USE_GUROBI
       if (params.get(TEMP) == static_cast<int>(TempOptions::CHECK_CUTS_AGAINST_BB_OPT) && num_mycuts > 0) {
-        // Get the original solution
-        BBInfo tmp_bb_info;
-        std::vector<double> solution;
-        doBranchAndBoundWithGurobi(params, params.get(BB_STRATEGY),
-            fullfilename.c_str(), tmp_bb_info, best_bound, &solution);
+        if (ip_solution && !ip_solution->empty()) {
+          // Get the original solution
+          BBInfo tmp_bb_info;
+          doBranchAndBoundWithGurobi(params, params.get(BB_STRATEGY),
+              fullfilename.c_str(), tmp_bb_info, best_bound, ip_solution);
+        }
+
+        if (!ip_solution || ip_solution->empty()) {
+          error_msg(errorstring, "Unable to obain IP solution.\n");
+          writeErrorToLog(errorstring, params.logfile);
+          exit(1);
+        }
 
         // Check cuts
         for (int cut_ind = 0; cut_ind < num_mycuts; cut_ind++) {
@@ -202,7 +223,7 @@ void runBBTests(const Parameters& base_params, SummaryBBInfo* const info_nocuts,
           const int num_el = currCut.row().getNumElements();
           const int* ind = currCut.row().getIndices();
           const double* el = currCut.row().getElements();
-          const double activity = dotProduct(num_el, ind, el, solution.data());
+          const double activity = dotProduct(num_el, ind, el, ip_solution->data());
 
           if (lessThanVal(activity, rhs)) {
             warning_msg(warnstring, "Cut %d removes optimal solution. Activity: %.10f. Rhs: %.10f.\n", cut_ind, activity, rhs);
@@ -235,6 +256,9 @@ void runBBTests(const Parameters& base_params, SummaryBBInfo* const info_nocuts,
 //          vec_bb_info_allcuts[run_ind]);
 //#endif // USE_CPLEX
     } else if (use_bb_option(params.get(BB_STRATEGY), BB_Strategy_Options::cbc)) {
+      if (runSolver == NULL) {
+        runSolver = const_cast<OsiSolverInterface*>(solver);
+      }
       if (branch_with_no_cuts) {
         doBranchAndBoundNoCuts(params, runSolver, info_nocuts->vec_bb_info[run_ind]);
       }

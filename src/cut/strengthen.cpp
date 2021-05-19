@@ -183,24 +183,24 @@ void solveLinearSystem(
 
 /// Given problem is (with A an [m x n] matrix)
 ///   Ax - s = b
-///   x \ge 0
-///   s \ge 0
+///   x >= 0
+///   s >= 0
 /// Suppose the basis is B (m columns); note that some of these might be slack variables
 /// Denote by N the remaining n columns (the cobasis)
 ///
 /// If solver is proven optimal, and the cut is valid for the basis cone,
 /// then it suffices to take the inverse of the optimal basis
-/// In particular, we want \alpha^T = v^T A
+/// In particular, we want alpha^T = v^T A
 /// 
-/// Note that \alpha is n-dimensional, v is m-dimensional
+/// Note that alpha is n-dimensional, v is m-dimensional
 /// The components of v corresponding to rows in which the slack is basic will be 0
 /// We need to get access to the inverse of the nxn submatrix of A corresponding to nonbasic slacks
 ///
 /// * Invertible case
 /// If A is invertible,
-/// then we can take v^T = \alpha^T A^{-1}
-/// or, equivalently, v = (A^{-1})^T \alpha
-/// This means that v_j can be calcuated as the dot product of the j-th column of A^{-1} with \alpha
+/// then we can take v^T = alpha^T A^{-1}
+/// or, equivalently, v = (A^{-1})^T alpha
+/// This means that v_j can be calcuated as the dot product of the j-th column of A^{-1} with alpha
 ///
 /// * General case
 /// If A is not invertible, then we need only consider the relaxed corner polyhedron
@@ -562,7 +562,9 @@ int strengthenCutS(
     /// [in] Farkas multipliers for each of the terms of the disjunction (each is a vector of length m + n)
     const std::vector<std::vector<double> >& v, 
     /// [in] original solver (used to get globally-valid lower bounds for the disjunctive terms)
-    const OsiSolverInterface* const solver) {
+    const OsiSolverInterface* const solver,
+    /// [in] IP solution to original problem (will usually be empty unless you are debugging)
+    const std::vector<double>& ip_solution) {
   const int num_cuts = cuts.sizeCuts();
   if (num_cuts == 0) { return 0; }
   for (int i = 0; i < num_cuts; i++) {
@@ -709,10 +711,12 @@ int strengthenCut(
     const double rhs,
     /// [in] disjunction
     const Disjunction* const disj,
-    /// [in] Farkas multipliers for each of the terms of the disjunction (each is a vector of length m + n)
+    /// [in] Farkas multipliers for each of the terms of the disjunction (each is a vector of length m + num_disj_ineqs + n)
     const std::vector<std::vector<double> >& v, 
     /// [in] original solver (used to get globally-valid lower bounds for the disjunctive terms)
-    const OsiSolverInterface* const solver) {
+    const OsiSolverInterface* const solver,
+    /// [in] IP solution to original problem (will usually be empty unless you are debugging)
+    const std::vector<double>& ip_solution) {
   // Set up original cut coeff and rhs
   str_rhs = rhs;
   str_coeff.clear();
@@ -789,6 +793,13 @@ int strengthenCut(
     }
 
     num_coeffs_changed += strengthenCutCoefficient(str_coeff[col], str_rhs, col, str_coeff[col], disj, lb_term, v, solver, mono);
+
+    if (!ip_solution.empty()) {
+      const double activity = dotProduct(str_coeff.data(), ip_solution.data(), str_coeff.size());
+      if (lessThanVal(activity, str_rhs)) {
+        warning_msg(warnstring, "Cut removes optimal solution after strengthening col %d. Activity: %.10f. Rhs: %.10f.\n", col, activity, str_rhs);
+      }
+    }
   }
 
   if (mono) { delete mono; }

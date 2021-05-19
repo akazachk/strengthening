@@ -38,6 +38,10 @@ using namespace StrengtheningParameters;
 #include "strengthen.hpp"
 #include "utility.hpp"
 
+#ifdef USE_GUROBI
+#include "GurobiHelper.hpp" // for obtaining ip opt
+#endif
+
 #ifdef TRACE
 #include "debug.hpp"
 #endif
@@ -166,6 +170,17 @@ int main(int argc, char** argv) {
   } **/
 
   //====================================================================================================//
+  // Get IP solution if requested
+  std::vector<double> ip_solution;
+#ifdef USE_GUROBI
+  if (params.get(TEMP) == static_cast<int>(TempOptions::CHECK_CUTS_AGAINST_BB_OPT)) {
+    BBInfo tmp_bb_info;
+    doBranchAndBoundWithGurobi(params, params.get(BB_STRATEGY),
+        params.get(stringParam::FILENAME).c_str(), tmp_bb_info, boundInfo.ip_obj, &ip_solution);
+  } // get ip opt
+#endif
+
+  //====================================================================================================//
   // Save original solver in case we wish to come back to it later
   origSolver = solver->clone();
   if (!origSolver->isProvenOptimal()) {
@@ -273,11 +288,27 @@ int main(int argc, char** argv) {
     fprintf(stdout, "Finished printing custom cuts.\n\n");
 #endif
 
+    if (params.get(TEMP) == static_cast<int>(TempOptions::CHECK_CUTS_AGAINST_BB_OPT) && !ip_solution.empty()) {
+      // Check cuts
+      for (int cut_ind = 0; cut_ind < currCuts.sizeCuts(); cut_ind++) {
+        OsiRowCut currCut = currCuts.rowCut(cut_ind);
+        const double rhs = currCut.rhs();
+        const int num_el = currCut.row().getNumElements();
+        const int* ind = currCut.row().getIndices();
+        const double* el = currCut.row().getElements();
+        const double activity = dotProduct(num_el, ind, el, ip_solution.data());
+
+        if (lessThanVal(activity, rhs)) {
+          warning_msg(warnstring, "Cut %d removes optimal solution. Activity: %.10f. Rhs: %.10f.\n", cut_ind, activity, rhs);
+        }
+      } // loop over cuts
+    } // check cuts against ip solution
+
     //====================================================================================================//
     // Get Farkas certificate and do strengthening
     OsiCuts origCurrCuts(currCuts);
     if (params.get(STRENGTHEN) == 1 && disj && disj->terms.size() > 0 && currCuts.sizeCuts() > 0) {
-      std::vector<std::vector<std::vector<double> > > v(currCuts.sizeCuts()); // [cut][term][Farkas multiplier] in the end, per term, this will be of dimension rows + cols
+      std::vector<std::vector<std::vector<double> > > v(currCuts.sizeCuts()); // [cut][term][Farkas multiplier] in the end, per term, this will be of dimension rows + disj term ineqs + cols
       for (int cut_ind = 0; cut_ind < currCuts.sizeCuts(); cut_ind++) {
         v[cut_ind].resize(disj->num_terms);
       }
@@ -313,7 +344,9 @@ int main(int argc, char** argv) {
         const double rhs = disjCut->rhs();
         std::vector<double> str_coeff;
         double str_rhs;
-        const int curr_num_coeffs_str = strengthenCut(str_coeff, str_rhs, lhs.getNumElements(), lhs.getIndices(), lhs.getElements(), rhs, disj, v[cut_ind], solver);
+        const int curr_num_coeffs_str = strengthenCut(str_coeff, str_rhs,
+            lhs.getNumElements(), lhs.getIndices(), lhs.getElements(), rhs,
+            disj, v[cut_ind], solver, ip_solution);
 
         // Update stats
         boundInfo.num_str_cuts += curr_num_coeffs_str > 0;
@@ -436,7 +469,8 @@ int main(int argc, char** argv) {
     // Collect cuts from all rounds
     timer.start_timer(BB_TIME);
     runBBTests(params, &info_nocuts, &info_mycuts, &info_allcuts,
-        params.get(stringParam::FILENAME), solver, boundInfo.ip_obj, &mycuts, NULL);
+        params.get(stringParam::FILENAME), solver, boundInfo.ip_obj,
+        &mycuts, NULL, &ip_solution);
     timer.end_timer(BB_TIME);
   }
 

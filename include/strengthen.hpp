@@ -89,7 +89,8 @@ int strengthenCut(
     const double rhs,
     const Disjunction* const disj,
     const std::vector<std::vector<double> >& v, 
-    const OsiSolverInterface* const solver);
+    const OsiSolverInterface* const solver,
+    const std::vector<double>& ip_solution = {});
 
 /**
  * @brief Calculate new cut coefficient

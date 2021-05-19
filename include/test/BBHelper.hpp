@@ -86,8 +86,9 @@ struct SummaryBBInfo {
 
 void runBBTests(const StrengtheningParameters::Parameters& base_params, SummaryBBInfo* const info_nocuts,
     SummaryBBInfo* const info_mycuts, SummaryBBInfo* const info_allcuts,
-    const std::string fullfilename, OsiSolverInterface* const solver,
-    const double best_bound, const OsiCuts* mycuts, const OsiCuts* const gmics = NULL);
+    const std::string fullfilename, const OsiSolverInterface* const solver,
+    const double best_bound, const OsiCuts* mycuts, const OsiCuts* const gmics = NULL,
+    std::vector<double>* const ip_solution = nullptr);
 
 inline void initializeBBInfo(BBInfo& info, double obj = 0.) {
   info.obj = obj;
