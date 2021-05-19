@@ -848,8 +848,21 @@ bool strengthenCutCoefficient(
   }
 
   // Check if complementing is necessary (translating may be necessary too)
-  // This happens if the multiplier is on the bound on var is negative, which means x_k <= bound is in effect
-  double mult = 1.;
+  // Complementing happens if the multiplier is on the bound on var is negative, which means x_k <= bound is in effect
+  // Theory assumes that x_k >= 0 is the bound, so generically strengthening a cut
+  //   alpha x >= beta
+  // (in which x_k <= g_k is being used)
+  // is equivalent to substituting y_k = g_k - x_k and strengthening
+  //   alpha_{-k} x_{-k} + alpha_k (g_k - y_k) >= beta
+  // or (moving constant terms to the right-hand side)
+  //  alpha_{-k} x_{-k} - alpha_k y_k >= beta - alpha_k g_k.
+  // Once we have a strengthened coefficient for x_k, say gamma, we need to uncomplement to get back to the x-space:
+  //  alpha_{-k} x_{-k} - gamma_k (g_k - x_k) >= beta - alpha_k g_k
+  //  ==>  alpha_{-k} x_{-k} + gamma_k x_k >= beta + (gamma_k - alpha_k) g_k.
+  //
+  // An analogous situation happens when we have x_k >= ell_k (not equal to 0)
+  // In this case, the cut the right-hand side of the strengthened cut becomes
+  //   beta + (gamma_k - alpha_k) ell_k.
   int count = 0;
   if (lessThanVal(v[0][solver->getNumRows() + disj->terms[0].changed_var.size() + var], 0)) {
     count++;
@@ -857,9 +870,9 @@ bool strengthenCutCoefficient(
   if (lessThanVal(v[1][solver->getNumRows() + disj->terms[1].changed_var.size() + var], 0)) {
     count++;
   }
-  // TODO can it happen that one of the multipliers is on the lower bound, and one is on the upper bound?
+  const double mult = (count > 0) ? -1 : 1.;
+  // Can it happen that one of the multipliers is on the lower bound, and one is on the upper bound?
   if (count > 0) {
-    mult = -1;
     if (count != 2) {
       const double uk0 = v[0][solver->getNumRows() + disj->terms[0].changed_var.size() + var];
       const double uk1 = v[1][solver->getNumRows() + disj->terms[0].changed_var.size() + var];
