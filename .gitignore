@@ -25,3 +25,4 @@ nohup.out
 data/instances/*
 *.mps*
 lib/
+gurobi.log
