@@ -563,6 +563,8 @@ int strengthenCutS(
     const std::vector<std::vector<double> >& v, 
     /// [in] original solver (used to get globally-valid lower bounds for the disjunctive terms)
     const OsiSolverInterface* const solver,
+    /// [in] logfile for error printing
+    FILE* logfile,
     /// [in] IP solution to original problem (will usually be empty unless you are debugging)
     const std::vector<double>& ip_solution) {
   const int num_cuts = cuts.sizeCuts();
@@ -656,11 +658,11 @@ int strengthenCutS(
       // Check if this index already existed in the cut
       if (ind_of_col < num_el && ind[ind_of_col] == col) {
         double& str_coeff = el[ind_of_col];
-        num_coeffs_changed += strengthenCutCoefficient(str_coeff, str_rhs, col, str_coeff, disj, lb_term, v, solver, mono);
+        num_coeffs_changed += strengthenCutCoefficient(str_coeff, str_rhs, col, str_coeff, disj, lb_term, v, solver, mono, logfile);
       } else {
         // The coefficient on col is currently 0
         double str_coeff = 0.;
-        num_coeffs_changed += strengthenCutCoefficient(str_coeff, str_rhs, col, str_coeff, disj, lb_term, v, solver, mono);
+        num_coeffs_changed += strengthenCutCoefficient(str_coeff, str_rhs, col, str_coeff, disj, lb_term, v, solver, mono, logfile);
         if (!isZero(str_coeff)) {
           // We need to insert this into the cut
           row.insert(ind_of_col, str_coeff);
@@ -729,11 +731,11 @@ int strengthenCut(
 
   if (!disj) { return 0; }
 
-  // Get globally lower bound for each of the disjunctive terms
+  // Get globally-valid lower bound for each of the disjunctive terms
   // and use this to set up term-by-term coefficients for strengthening
   // TODO get this to work with generic inequality description of disjunction, not just the bound changes version
-  std::vector<std::vector<double> > disj_lb_diff(disj->num_terms);
-  std::vector<double> lb_term(disj->num_terms, 0.0); // u^t_0 (D^t_0 - \ell^t)
+  std::vector<std::vector<double> > disj_lb_diff(disj->num_terms); // D^t_0 - ell^t
+  std::vector<double> lb_term(disj->num_terms, 0.0); // u^t_0 (D^t_0 - ell^t)
   for (int term_ind = 0; term_ind < disj->num_terms; term_ind++) {
     const DisjunctiveTerm& term = disj->terms[term_ind];
     const int num_disj_ineqs = (int) term.changed_var.size();
@@ -772,7 +774,6 @@ int strengthenCut(
       assert(disj_lb_diff[term_ind][bound_ind] > -1e-3);
 #endif
       if (!isZero(v[term_ind][solver->getNumRows() + bound_ind]) && !isZero(disj_lb_diff[term_ind][bound_ind])) {
-        // u^t_0 (D^t_0 - ell^t)
         lb_term[term_ind] += v[term_ind][solver->getNumRows() + bound_ind] * disj_lb_diff[term_ind][bound_ind];
         if (isZero(lb_term[term_ind])) {
           lb_term[term_ind] = 0.;
@@ -795,7 +796,7 @@ int strengthenCut(
       updateMonoidalIP(mono, col, disj, v, solver);
     }
 
-    if (strengthenCutCoefficient(str_coeff[col], str_rhs, col, str_coeff[col], disj, lb_term, v, solver, mono)) {
+    if (strengthenCutCoefficient(str_coeff[col], str_rhs, col, str_coeff[col], disj, lb_term, v, solver, mono, logfile)) {
       num_coeffs_changed += 1;
 
       if (!ip_solution.empty()) {
@@ -837,20 +838,36 @@ bool strengthenCutCoefficient(
     /// [in] original solver
     const OsiSolverInterface* const solver,
     /// [in/out] monoidal cut strengthening solver (req'd for num_terms > 2),
-    OsiSolverInterface* const mono) {
+    OsiSolverInterface* const mono,
+    /// [in] logfile for error printing
+    FILE* logfile) {
   const int num_terms = disj->num_terms;
   if (num_terms < 2) {
     str_coeff = coeff;
     return false;
   }
 
-  // Check if complementing is necessary
+  // Check if complementing is necessary (translating may be necessary too)
+  // This happens if the multiplier is on the bound on var is negative, which means x_k <= bound is in effect
   double mult = 1.;
+  int count = 0;
   if (lessThanVal(v[0][solver->getNumRows() + disj->terms[0].changed_var.size() + var], 0)) {
-    mult = -1;
+    count++;
   }
   if (lessThanVal(v[1][solver->getNumRows() + disj->terms[1].changed_var.size() + var], 0)) {
+    count++;
+  }
+  // TODO can it happen that one of the multipliers is on the lower bound, and one is on the upper bound?
+  if (count > 0) {
     mult = -1;
+    if (count != 2) {
+      const double uk0 = v[0][solver->getNumRows() + disj->terms[0].changed_var.size() + var];
+      const double uk1 = v[1][solver->getNumRows() + disj->terms[0].changed_var.size() + var];
+      error_msg(errorstring,
+          "CHECK: The u^t_0 multipliers on variable %d are of different signs: u^1_0 = %.6f, u^2_0 = %.6f."
+          " This is strange and may not be handled correctly in the code.\n",
+          var, uk0, uk1);
+    }
   }
   str_coeff = mult * coeff;
 
@@ -904,12 +921,25 @@ bool strengthenCutCoefficient(
     throw("Unable to strengthen coefficient.\n");
   }
 
-  if (mult < 0) {
-    str_coeff *= -1;
-    str_rhs += (str_coeff - coeff) * solver->getColUpper()[var];
-  }
+  if (!isVal(str_coeff, coeff)) {
+    // If complemented, adjust right-hand side
+    if (mult < 0) {
+      str_coeff *= -1;
+      if (!isZero(solver->getColUpper()[var])) {
+        str_rhs += (str_coeff - coeff) * solver->getColUpper()[var];
+      }
+    }
 
-  return !isVal(str_coeff, coeff);
+    // Translate if the lower bound on var is nonzero
+    if (mult > 0 && !isZero(solver->getColLower()[var])) {
+      str_rhs += (str_coeff - coeff) * solver->getColLower()[var];
+    }
+    return 1;
+  } // check if strengthening happened
+  else {
+    str_coeff = coeff;
+    return 0;
+  }
 } /* strengthenCutCoefficient */
 
 /**

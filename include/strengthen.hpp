@@ -105,7 +105,8 @@ bool strengthenCutCoefficient(
     const std::vector<double>& lb_term,
     const std::vector<std::vector<double> >& v, 
     const OsiSolverInterface* const solver,
-    OsiSolverInterface* const mono = NULL);
+    OsiSolverInterface* const mono,
+    FILE* logfile);
 
 void setupMonoidalIP(
     OsiSolverInterface* const mono,
