@@ -926,6 +926,7 @@ bool strengthenCutCoefficient(
   } // if mono solver not given
   else if (mono) {
     CbcModel model(*mono);
+    setIPSolverParameters(&model, mono->messageHandler()->logLevel());
     model.setModelOwnsSolver(false);
     model.branchAndBound();
     if (model.status() != 0) {
@@ -1064,6 +1065,9 @@ void setupMonoidalIP(
   for (int t = 0; t < num_terms; t++) {
     mono->setInteger(t);
   }
+
+  // Set message handling
+  setLPSolverParameters(mono, solver->messageHandler()->logLevel());
 } /* setupMonoidalIP */
 
 /**
