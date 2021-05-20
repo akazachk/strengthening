@@ -876,10 +876,14 @@ bool strengthenCutCoefficient(
     if (count != 2) {
       const double uk0 = v[0][solver->getNumRows() + disj->terms[0].changed_var.size() + var];
       const double uk1 = v[1][solver->getNumRows() + disj->terms[0].changed_var.size() + var];
-      error_msg(errorstring,
-          "CHECK: The u^t_0 multipliers on variable %d are of different signs: u^1_0 = %.6f, u^2_0 = %.6f."
-          " This is strange and may not be handled correctly in the code.\n",
-          var, uk0, uk1);
+      if (!isZero(uk0) && !isZero(uk1)) {
+        warning_msg(warnstring,
+            "CHECK: The u^t_0 multipliers on variable %d are of different signs: u^1_0 = %.6f, u^2_0 = %.6f."
+            " This is strange and may not be handled correctly in the code.\n",
+            var, uk0, uk1);
+        str_coeff = coeff;
+        return false;
+      }
     }
   }
   str_coeff = mult * coeff;
@@ -947,11 +951,11 @@ bool strengthenCutCoefficient(
     if (mult > 0 && !isZero(solver->getColLower()[var])) {
       str_rhs += (str_coeff - coeff) * solver->getColLower()[var];
     }
-    return 1;
+    return true;
   } // check if strengthening happened
   else {
     str_coeff = coeff;
-    return 0;
+    return false;
   }
 } /* strengthenCutCoefficient */
 
