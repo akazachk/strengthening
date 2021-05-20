@@ -878,7 +878,7 @@ bool strengthenCutCoefficient(
       const double uk1 = v[1][solver->getNumRows() + disj->terms[0].changed_var.size() + var];
       if (!isZero(uk0) && !isZero(uk1)) {
         warning_msg(warnstring,
-            "CHECK: The u^t_0 multipliers on variable %d are of different signs: u^1_0 = %.6f, u^2_0 = %.6f."
+            "CHECK: The u^t_0 multipliers on variable %d are of different signs: u^1_0 = %.6e, u^2_0 = %.6e."
             " This is strange and may not be handled correctly in the code.\n",
             var, uk0, uk1);
         str_coeff = coeff;
