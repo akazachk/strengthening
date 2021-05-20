@@ -240,21 +240,26 @@ protected:
   /** Initialize everything */
   void initialize(const CglAdvCut* const source = NULL, const StrengtheningParameters::Parameters* const param = NULL);
 
+  /// @brief Calculate values from given instance held in \p solver, and store this in \p probData
   void getProblemData(OsiSolverInterface* const solver, ProblemData& probData,
       const ProblemData* const origProbData = NULL,
       const bool enable_factorization = true);
 
+  /// @brief Return #num_cuts >= getCutLimit()
   inline bool reachedCutLimit() const {
-    const bool reached_limit = (num_cuts >= getCutLimit()); 
-    return reached_limit;
+    return (num_cuts >= getCutLimit()); 
   } /* reachedCutLimit */
+
+  /// @brief Call reachedTimeLimit(const std::string&,const double) const
   inline bool reachedTimeLimit(const CutTimeStats& timeName, const double max_time) const {
     return reachedTimeLimit(CutTimeStatsName[static_cast<int>(timeName)], max_time);
   } /* reachedTimeLimit */
+
+  /// @brief Return \link TimeStats::get_total_time() timer.get_total_time(timeName) \endlink > \p max_time
   inline bool reachedTimeLimit(const std::string& timeName, const double max_time) const {
-    const bool reached_limit = (timer.get_total_time(timeName) > max_time);
-    return reached_limit;
+    return (timer.get_total_time(timeName) > max_time);
   } /* reachedTimeLimit */
+
 //  inline bool reachedTimelimit(const std::chrono::time_point<std::chrono::high_resolution_clock>& start_chrono) const {
 //    std::chrono::duration<double> elapsed_seconds = std::chrono::high_resolution_clock::now() - start_chrono;
 //    const bool reached_limit = (elapsed_seconds.count() > this->param.get(TIMELIMIT));
@@ -262,17 +267,14 @@ protected:
 ////      exitReason = CglAdvCut::ExitReason::TIME_LIMIT_EXIT;
 //    return reached_limit;
 //  }
+
+  /// @brief Check whether too many unsuccessful objective attempts have been made
   bool reachedFailureLimit(const int num_cuts, const int num_fails,
       const double few_cuts_fail_threshold = 0.95,
       const double many_cuts_fail_threshold = 0.90,
       const double many_obj_fail_threshold = 0.80,
       const double time_fail_threshold = 0.66) const;
 
-  inline void finish(CglAdvCut::ExitReason exitReason = CglAdvCut::ExitReason::UNKNOWN) {
-    this->exitReason = exitReason;
-    this->timer.end_timer(CutTimeStatsName[static_cast<int>(CutTimeStats::TOTAL_TIME)]);
-#ifdef TRACE
-    printf("CglAdvCut: Finishing with exit reason: %s. Number cuts: %d.\n", ExitReasonName[static_cast<int>(exitReason)].c_str(), num_cuts);
-#endif
-  } /* finish */
+  /// @brief Set #exitReason to \p exitReason, end all running clocks in #timer
+  void finish(CglAdvCut::ExitReason exitReason = CglAdvCut::ExitReason::UNKNOWN);
 }; /* CglAdvCut */

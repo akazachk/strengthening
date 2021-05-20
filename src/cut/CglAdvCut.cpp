@@ -208,6 +208,8 @@ void CglAdvCut::generateCuts(const OsiSolverInterface& si, OsiCuts& cuts, const 
   VPCParametersNamespace::VPCParameters vpc_params;
   vpc_params.set(VPCParametersNamespace::DISJ_TERMS, this->params.get(StrengtheningParameters::DISJ_TERMS));
   vpc_params.set(VPCParametersNamespace::CUTLIMIT, this->params.get(StrengtheningParameters::CUTLIMIT));
+  vpc_params.set(VPCParametersNamespace::TIMELIMIT, this->params.get(StrengtheningParameters::TIMELIMIT));
+  vpc_params.set(VPCParametersNamespace::PARTIAL_BB_TIMELIMIT, this->params.get(StrengtheningParameters::TIMELIMIT));
   vpc_params.set(VPCParametersNamespace::USE_ALL_ONES, 1);
   vpc_params.set(VPCParametersNamespace::USE_ITER_BILINEAR, 1);
   vpc_params.set(VPCParametersNamespace::USE_DISJ_LB, 1);
@@ -374,8 +376,6 @@ void CglAdvCut::initialize(const CglAdvCut* const source, const Parameters* cons
 } /* initialize */
 
 /**
- * @brief Get data about solver and optimal basis
- *
  * Get problem data such as min/max coeff, problem-specific epsilon,
  * nonbasic variables, row in which each variable is basic, etc.
  */
@@ -616,8 +616,26 @@ bool CglAdvCut::reachedFailureLimit(const int num_cuts, const int num_fails, //c
       && time / num_obj_tried >= max_avg_time) { // checks if average time is too high
     reached_limit = true;
   }
-//  if (reached_limit) {
+  if (reached_limit) {
 //    this->exitReason = CglAdvCut::ExitReason::FAIL_LIMIT_EXIT;
-//  }
+    printf("Reached failure limit with %d cuts and %d fails.\n", num_cuts, num_fails);
+  }
   return reached_limit;
 } /* reachedFailureLimit */
+
+void CglAdvCut::finish(CglAdvCut::ExitReason exitReason) {
+  const std::string timeName = CutTimeStatsName[static_cast<int>(CutTimeStats::TOTAL_TIME)];
+  if (exitReason == CglAdvCut::ExitReason::TIME_LIMIT_EXIT) {
+    printf("Reached %s time limit %f < current time %f.\n",
+        timeName.c_str(), params.get(TIMELIMIT), timer.get_total_time(timeName));
+  } else if (exitReason == CglAdvCut::ExitReason::CUT_LIMIT_EXIT) {
+    printf("Reached cut limit %d.\n", getCutLimit());
+  } else if (exitReason == CglAdvCut::ExitReason::FAIL_LIMIT_EXIT) {
+    // printed when reachedFailureLimit() is called
+  }
+  this->exitReason = exitReason;
+  this->timer.end_timer(timeName);
+#ifdef TRACE
+  printf("CglAdvCut: Finishing with exit reason: %s. Number cuts: %d.\n", CglAdvCut::ExitReasonName[static_cast<int>(exitReason)].c_str(), num_cuts);
+#endif
+} /* finish */
