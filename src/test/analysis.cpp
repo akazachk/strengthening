@@ -12,6 +12,7 @@
 
 // Project files
 #include "CglAdvCut.hpp"
+#include "CutHelper.hpp" // isRowDifferent
 #include "BBHelper.hpp"
 #include "Disjunction.hpp"
 #include "SolverHelper.hpp"
@@ -1315,26 +1316,45 @@ void setStrInfo(
     }
   } // loop over terms
 
+  info.num_irreg_less += (num_nonzero_coeff < num_cols);
+  info.num_irreg_more += (num_nonzero_coeff > num_cols);
+
 #ifdef TRACE
   // Print facets generated
   std::string cgsName = "";
   for (int facet_ind = 0; facet_ind < (int) facetLHS.size(); facet_ind++) {
     CoinPackedVector& vec = facetLHS[facet_ind];
+    const double rhs = facetRHS[facet_ind];
     const int num_elem = vec.getNumElements();
     const int* indices = vec.getIndices();
     const double* elements = vec.getElements();
-    const double rhs = facetRHS[facet_ind];
     Disjunction::setCgsName(cgsName, num_elem, indices, elements, rhs, false);
   }
   printf("setStrInfo: After aggregating disjunctive terms, convex cut-generating set has following name:\n");
   printf("%s\n", cgsName.c_str());
 #endif
 
-  info.num_irreg_less += (num_nonzero_coeff < num_cols);
-  info.num_irreg_more += (num_nonzero_coeff > num_cols);
-
-  // Count how many distinct facets there are
+  // Loop over the new facets and check which are distinct
   int num_facets = 0;
+  std::vector<int> sameAsFacet(facetLHS.size(), -1);
+  for (int facet_ind = 0; facet_ind < (int) facetLHS.size(); facet_ind++) {
+    CoinPackedVector& vec1 = facetLHS[facet_ind];
+    const double rhs1 = facetRHS[facet_ind];
+    int f = 0;
+    for (f = 0; f < facet_ind; f++) {
+      if (sameAsFacet[f] != -1) continue;
+      CoinPackedVector& vec2 = facetLHS[f];
+      const double rhs2 = facetRHS[f];
+      const int howDifferent = isRowDifferent(&vec1, rhs1, &vec2, rhs2, EPS);
+      if (howDifferent == 0) {
+        sameAsFacet[facet_ind] = f;
+        break;
+      }
+    } // loop over previous facets
+    if (sameAsFacet[facet_ind] == -1) {
+      num_facets++;
+    }
+  } // loop over cgs facets
   info.avg_num_cgs_facets += (double) num_facets / num_str_cuts;
 
   // Update number of unmatched bounds (times both a lower and upper bound on a variable have
