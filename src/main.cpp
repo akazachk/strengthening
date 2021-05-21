@@ -653,7 +653,7 @@ int wrapUp(int retCode, int argc, char** argv) {
       // Bound and gap info
       printBoundAndGapInfo(boundInfo, params.logfile);
       // B&B info
-      printSummaryBBInfo({info_nocuts, info_mycuts}, params.logfile);
+      printSummaryBBInfo({info_nocuts, info_mycuts}, params.logfile, params.get(BB_RUNS) == 0);
       // Orig prob
       printOrigProbInfo(origSolver, params.logfile);
       // Post-cut prob
@@ -665,7 +665,7 @@ int wrapUp(int retCode, int argc, char** argv) {
       // Cut, obj, fail info
       printCutInfo(cutInfoGMICs, cutInfo, cutInfoUnstr, params.logfile);
       // Full B&B info
-      printFullBBInfo({info_nocuts, info_mycuts}, params.logfile);
+      printFullBBInfo({info_nocuts, info_mycuts}, params.logfile, params.get(BB_RUNS) == 0);
       // Print time info
       timer.print(params.logfile, 2); // only values
     }
