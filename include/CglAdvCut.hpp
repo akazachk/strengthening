@@ -23,6 +23,27 @@
  **********************************************************************************************************/
 class CglAdvCut : public CglCutGenerator {
 public:
+  /// For storing data about a problem and optimal basis
+  struct ProblemData {
+    int num_cols;
+    double lp_opt;
+    double minAbsCoeff, maxAbsCoeff; // useful for dynamism calculation
+    double EPS;
+    std::vector<int> NBVarIndex, varBasicInRow;
+    std::vector<int> rowOfVar; // row in which var is basic; if var is nonbasic, then it is (-(1 + nonbasic index))
+    std::vector<int> rowOfOrigNBVar; // row in which "original" nonbasic vars are basic; if var is still nonbasic, then it is (-(1 + new nonbasic index))
+    std::vector<double> NBReducedCost;
+
+    /** Get index of variable in NBVarIndex, and -1 if it is basic */
+    int getVarNBIndex(const int var) const {
+      if (rowOfVar[var] <= -1) {
+        return -1 * (1 + rowOfVar[var]);
+      } else {
+        return -1;
+      }
+    }
+  } probData;
+
   ///@{
   /// @name Enums
   /// If adding to any of these enums, do not forget to add the appropriate name (in the right position) in *Name in the source file
@@ -213,27 +234,6 @@ public:
   } /* printFailures */
 
 protected:
-  /// For storing data about a problem and optimal basis
-  struct ProblemData {
-    int num_cols;
-    double lp_opt;
-    double minAbsCoeff, maxAbsCoeff; // useful for dynamism calculation
-    double EPS;
-    std::vector<int> NBVarIndex, varBasicInRow;
-    std::vector<int> rowOfVar; // row in which var is basic; if var is nonbasic, then it is (-(1 + nonbasic index))
-    std::vector<int> rowOfOrigNBVar; // row in which "original" nonbasic vars are basic; if var is still nonbasic, then it is (-(1 + new nonbasic index))
-    std::vector<double> NBReducedCost;
-
-    /** Get index of variable in NBVarIndex, and -1 if it is basic */
-    int getVarNBIndex(const int var) const {
-      if (rowOfVar[var] <= -1) {
-        return -1 * (1 + rowOfVar[var]);
-      } else {
-        return -1;
-      }
-    }
-  } probData;
-
   /** Clear old information before another round of cuts */
   void setupAsNew();
 

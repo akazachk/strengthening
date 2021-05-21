@@ -1220,30 +1220,152 @@ void setCutInfo(SummaryCutInfo& cutInfo, const int num_rounds,
   }
 } /* setCutInfo (merge from multiple rounds) */
 
-/// @details Count number of nonzero multipliers,
+/// @details For a single cut, count number of nonzero multipliers,
 /// and also find number of distinct facets of the convex cut-generating set
 /// defined by these multipliers (applied to \p disj)
-void setStrInfo(SummaryStrengtheningInfo& info,
+///
+/// TODO only works with bounds defining disjunctive terms for now
+void setStrInfo(
+    SummaryStrengtheningInfo& info,
     const Disjunction* const disj,
-    const std::vector<CutCertificate>& v,
-    const int num_str_cuts) {
+    /// [in] Index is [term][multiplier] where the first m multipliers are on original rows, then there are m0 on the disjunctive term ineqs, and finally n on columns
+    const CutCertificate& v,
+    const int num_rows,
+    const int num_cols,
+    const int num_str_cuts,
+    const double EPS) {
   if (disj) { return; }
-  const int num_cols = 0;
-  const int num_terms = disj->num_terms;
-  std::vector<int> K(0);
+
+  std::vector<int> K(num_rows, 0);
   int num_nonzero_coeff = 0;
+
+  // Compute the convex set S using the multipliers on the disjunctive term ineqs
+  // These will all be stored as inequalities in >= form
+  std::vector<CoinPackedVector> facetLHS;
+  std::vector<double> facetRHS;
+  facetLHS.reserve(disj->num_terms);
+  facetRHS.reserve(disj->num_terms);
+  for (int term_ind = 0; term_ind < disj->num_terms; term_ind++) {
+    const DisjunctiveTerm& term = disj->terms[term_ind];
+    const int num_disj_ineqs = (int) term.changed_var.size();
+
+    // For each original inequality, check whether it has a nonzero multiplier
+    for (int row = 0; row < num_rows; row++) {
+      const double ukt = v[term_ind][row];
+      if (!isZero(ukt, EPS)) {
+        if (K[row] == 0) num_nonzero_coeff++;
+        K[row]++;
+      }
+    } // loop over original rows
+    
+    // For each disj term inequality, do the aggregation using u^t_0
+    // TODO generalize for general inequalities (need to account for coefficients)
+    std::vector<int> indices;
+    indices.reserve(num_disj_ineqs);
+    std::vector<double> elements;
+    elements.reserve(num_disj_ineqs);
+    double rhs = 0.;
+    for (int bound_ind = 0; bound_ind < num_disj_ineqs; bound_ind++) {
+      const double uk0 = v[term_ind][num_rows + bound_ind];
+      if (isZero(uk0, EPS)) continue;
+
+      const int var = term.changed_var[bound_ind];
+      const int bd = term.changed_bound[bound_ind]; // <= 0: lower bound, 1: upper bound
+      const double val = term.changed_value[bound_ind];
+      const double mult = (bd <= 0) ? 1. : -1.; // if bd == 1, then -x_k >= -val is the term
+      const double coeff = uk0 * mult;
+      const double curr_rhs = uk0 * val * mult;
+      
+      // Check if this variable appeared in a previous inequality for this term
+      // This could happen if we branch (x_k <= 1) v (x_k >= 2) and later (x_k <= 0) v (x_k >= 1)
+      // But in that case, only one of those should have a nonzero multiplier
+      // On the other hand, for disjunctions not restricted to variable branching,
+      // the situation can arise that a nonzero multiplier exists on two constraints containing the same var
+      int prev_ind = -1;
+      for (int i = 0; i < (int) indices.size(); i++) {
+        if (indices[i] == var) {
+          prev_ind = i;
+          break;
+        }
+      }
+
+      rhs += curr_rhs;
+      if (prev_ind == -1) {
+        indices.push_back(var);
+        elements.push_back(coeff);
+      } else {
+        elements[prev_ind] += coeff;
+      }
+    } // loop over disj term ineqs
+    if ((int) indices.size() > 0) {
+      facetLHS.push_back(CoinPackedVector((int) indices.size(), indices.data(), elements.data()));
+      facetRHS.push_back(rhs);
+    }
+  } // loop over terms
+
+#ifdef TRACE
+  // Print facets generated
+  std::string cgsName = "(";
+  for (int facet_ind = 0; facet_ind < (int) facetLHS.size(); facet_ind++) {
+    CoinPackedVector& vec = facetLHS[facet_ind];
+    const int num_elem = vec.getNumElements();
+    const int* indices = vec.getIndices();
+    const double* elements = vec.getElements();
+    const double rhs = facetRHS[facet_ind];
+    Disjunction::setCgsName(cgsName, num_elem, indices, elements, rhs, false);
+  }
+  cgsName += ")";
+  printf("setStrInfo: After aggregating disjunctive terms, convex cut-generating set has following name:\n");
+  printf("%s\n", cgsName.c_str());
+  exit(1);
+#endif
 
   info.num_irreg_less += (num_nonzero_coeff < num_cols);
   info.num_irreg_more += (num_nonzero_coeff > num_cols);
-
-  // Compute the convex set S using the multipliers on the disjunctive term ineqs
 
   // Count how many distinct facets there are
   int num_facets = 0;
   info.avg_num_cgs_facets += (double) num_facets / num_str_cuts;
 
-
   // Update number of unmatched bounds (times both a lower and upper bound on a variable have
   // nonzero multipliers, which can be detected by the sign on the corresponding bound in v)
-  info.num_unmatched_bounds += 0;
-} /* setStrInfo */
+  for (int var = 0; var < num_cols; var++) {
+    int lt_zero_ind = -1, gt_zero_ind = -1;
+    for (int term_ind = 0; term_ind < disj->num_terms; term_ind++) {
+      const int num_disj_ineqs = (int) disj->terms[term_ind].changed_var.size();
+      const double ukt = v[term_ind][num_rows + num_disj_ineqs + var];
+      if (lessThanVal(ukt, 0, EPS)) {
+        if (lt_zero_ind == -1) lt_zero_ind = term_ind;
+      } else if (greaterThanVal(ukt, 0, EPS)) {
+        if (gt_zero_ind == -1) gt_zero_ind = term_ind;
+      }
+      if (lt_zero_ind != -1 && gt_zero_ind != -1) break;
+    } // loop over terms
+    info.num_unmatched_bounds += (lt_zero_ind != -1 && gt_zero_ind != -1);
+  } // loop over vars 
+} /* setStrInfo (single cut) */
+
+/// @details For a collection of cuts, count number of nonzero multipliers,
+/// and also find number of distinct facets of the convex cut-generating set
+/// defined by these multipliers (applied to \p disj)
+///
+/// TODO only works with bounds defining disjunctive terms for now
+void setStrInfo(
+    SummaryStrengtheningInfo& info,
+    const Disjunction* const disj,
+    /// [in] Indexed at [cut][term][multiplier] where the first m multipliers are on original rows, then there are m0 on the disjunctive term ineqs, and finally n on columns
+    const std::vector<CutCertificate>& v,
+    const int num_rows,
+    const int num_cols,
+    /// [in] Indices of strengthened cuts
+    const std::vector<int>& str_cut_ind,
+    /// [in] Epsilon to be used for gathering statistics
+    const double EPS) {
+  if (disj) { return; }
+
+  const int num_str_cuts = (int) str_cut_ind.size();
+  info.num_str_cuts = num_str_cuts;
+  for (const int cut_ind : str_cut_ind) {
+    setStrInfo(info, disj, v[cut_ind], num_rows, num_cols, num_str_cuts, EPS);
+  }
+} /* setStrInfo (set of cuts) */

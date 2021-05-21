@@ -133,6 +133,9 @@ double getNumGomoryRounds(const StrengtheningParameters::Parameters& params,
 void updateCutInfo(SummaryCutInfo& cutInfo, const CglAdvCut* const gen);
 void setCutInfo(SummaryCutInfo& cutInfo, const int num_rounds, const SummaryCutInfo* const oldCutInfos);
 
-/// @brief Find |K| (number of nonzero multipliers) and info about the implied convex cgs for this cut
+/// @brief Find |K| (number of nonzero multipliers in \p v) and info about the implied convex cgs for this cut
 void setStrInfo(SummaryStrengtheningInfo& info, const Disjunction* const disj,
-    const std::vector<CutCertificate>& v, const int num_str_cuts);
+    const std::vector<CutCertificate>& v,
+    const int num_rows, const int num_cols,
+    const std::vector<int>& str_cut_ind,
+    const double EPS);

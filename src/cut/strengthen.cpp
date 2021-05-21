@@ -682,9 +682,7 @@ int strengthenCutS(
 } /* strengthenCutS */
 
 /**
- * @brief Attempt to strengthen coefficients of given cut
- *
- * Required:
+ * @details Required:
  * (1) original cut
  * (2) disjunction for which the cut is valid
  * (3) Farkas certificate for the cut for this disjunction, 
@@ -776,8 +774,9 @@ int strengthenCut(
 #ifdef TRACE
       assert(disj_lb_diff[term_ind][bound_ind] > -1e-3);
 #endif
-      if (!isZero(v[term_ind][solver->getNumRows() + bound_ind]) && !isZero(disj_lb_diff[term_ind][bound_ind])) {
-        lb_term[term_ind] += v[term_ind][solver->getNumRows() + bound_ind] * disj_lb_diff[term_ind][bound_ind];
+      const double uk0 = v[term_ind][solver->getNumRows() + bound_ind];
+      if (!isZero(uk0) && !isZero(disj_lb_diff[term_ind][bound_ind])) {
+        lb_term[term_ind] += uk0 * disj_lb_diff[term_ind][bound_ind];
         if (isZero(lb_term[term_ind])) {
           lb_term[term_ind] = 0.;
         }
@@ -836,7 +835,7 @@ bool strengthenCutCoefficient(
     const Disjunction* const disj,
     /// [in] u^t_0 (D^t_0 - ell^t) for all t
     const std::vector<double>& lb_term,
-    /// [in] Farkas multipliers for each of the terms of the disjunction (each is a vector of length m + n)
+    /// [in] Farkas multipliers for each of the terms of the disjunction (each is a vector of length num_rows + num_disj_term_ineqs + num_cols)
     const std::vector<std::vector<double> >& v, 
     /// [in] original solver
     const OsiSolverInterface* const solver,
@@ -866,27 +865,30 @@ bool strengthenCutCoefficient(
   // An analogous situation happens when we have x_k >= ell_k (not equal to 0)
   // In this case, the cut the right-hand side of the strengthened cut becomes
   //   beta + (gamma_k - alpha_k) ell_k.
-  int count = 0;
-  if (lessThanVal(v[0][solver->getNumRows() + disj->terms[0].changed_var.size() + var], 0)) {
-    count++;
+  int lt_zero_ind = -1, gt_zero_ind = -1;
+  for (int term_ind = 0; term_ind < disj->num_terms; term_ind++) {
+    const DisjunctiveTerm& term = disj->terms[term_ind];
+    const int num_disj_ineqs = (int) term.changed_var.size();
+    const double ukt = v[term_ind][solver->getNumRows() + num_disj_ineqs + var];
+    if (lessThanVal(ukt, 0)) {
+      if (lt_zero_ind == -1) lt_zero_ind = term_ind;
+    } else if (greaterThanVal(ukt, 0)) {
+      if (gt_zero_ind == -1) gt_zero_ind = term_ind;
+    }
+    if (lt_zero_ind != -1 && gt_zero_ind != -1) break;
   }
-  if (lessThanVal(v[1][solver->getNumRows() + disj->terms[1].changed_var.size() + var], 0)) {
-    count++;
-  }
-  const double mult = (count > 0) ? -1 : 1.;
+  const double mult = (lt_zero_ind != -1) ? -1 : 1.;
   // Can it happen that one of the multipliers is on the lower bound, and one is on the upper bound?
-  if (count > 0) {
-    if (count != 2) {
-      const double uk0 = v[0][solver->getNumRows() + disj->terms[0].changed_var.size() + var];
-      const double uk1 = v[1][solver->getNumRows() + disj->terms[0].changed_var.size() + var];
-      if (!isZero(uk0) && !isZero(uk1)) {
-        warning_msg(warnstring,
-            "CHECK: The u^t_0 multipliers on variable %d are of different signs: u^1_0 = %.6e, u^2_0 = %.6e."
-            " This is strange and may not be handled correctly in the code.\n",
-            var, uk0, uk1);
-        str_coeff = coeff;
-        return false;
-      }
+  if (lt_zero_ind != -1 && gt_zero_ind != -1) {
+    const double uk0 = v[lt_zero_ind][solver->getNumRows() + disj->terms[lt_zero_ind].changed_var.size() + var];
+    const double uk1 = v[gt_zero_ind][solver->getNumRows() + disj->terms[gt_zero_ind].changed_var.size() + var];
+    if (!isZero(uk0) && !isZero(uk1)) {
+      warning_msg(warnstring,
+          "CHECK: The u^t_k multipliers on variable k = %d are of different signs: u^{%d}_k = %.6e, u^{%d}_k = %.6e."
+          " This is strange and may not be handled correctly in the code.\n",
+          var, lt_zero_ind, uk0, gt_zero_ind, uk1);
+      str_coeff = coeff;
+      return false;
     }
   }
   str_coeff = mult * coeff;

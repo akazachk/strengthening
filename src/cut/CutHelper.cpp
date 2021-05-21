@@ -181,15 +181,15 @@ int cleanCut(OsiRowCut* const cut, const OsiSolverInterface* const solver,
  *
  * By the way, this is all essentially checking orthogonality...
  */
-int isRowDifferent(const CoinPackedVector& cut1Vec, const double cut1rhs,
-    const CoinPackedVector& cut2Vec, const double cut2rhs, const double EPS) {
-  const int numElem1 = cut1Vec.getNumElements();
-  const int* index1 = cut1Vec.getIndices();
-  const double* value1 = cut1Vec.getElements();
+int isRowDifferent(const CoinPackedVectorBase* const cut1Vec, const double cut1rhs,
+    const CoinPackedVectorBase* const cut2Vec, const double cut2rhs, const double EPS) {
+  const int numElem1 = cut1Vec->getNumElements();
+  const int* index1 = cut1Vec->getIndices();
+  const double* value1 = cut1Vec->getElements();
 
-  const int numElem2 = cut2Vec.getNumElements();
-  const int* index2 = cut2Vec.getIndices();
-  const double* value2 = cut2Vec.getElements();
+  const int numElem2 = cut2Vec->getNumElements();
+  const int* index2 = cut2Vec->getIndices();
+  const double* value2 = cut2Vec->getElements();
 
   double ratio = -1.0;
   double ratio_coeff = -1.0;
@@ -404,7 +404,7 @@ int howDuplicate(const OsiCuts& cuts, const OsiRowCut& tmpCut,
       }
     }
 
-    const int howDifferent = isRowDifferent(currCut->row(), currCut->rhs(), tmpCut.row(), tmpCut.rhs(), EPS);
+    const int howDifferent = isRowDifferent(&currCut->row(), currCut->rhs(), &tmpCut.row(), tmpCut.rhs(), EPS);
     if (howDifferent != 2) {
       duplicateCutIndex = i;
       return howDifferent;

@@ -324,9 +324,10 @@ int main(int argc, char** argv) {
     //====================================================================================================//
     // Get Farkas certificate and do strengthening
     OsiCuts origCurrCuts(currCuts);
+    std::vector<int> str_cut_ind; // indices of cuts that were strengthened
+    std::vector<CutCertificate> v; // [cut][term][Farkas multiplier] in the end, per term, this will be of dimension rows + disj term ineqs + cols
     if (params.get(STRENGTHEN) == 1 && disj && disj->terms.size() > 0 && currCuts.sizeCuts() > 0) {
-      //std::vector<std::vector<std::vector<double> > > v(currCuts.sizeCuts()); // [cut][term][Farkas multiplier] in the end, per term, this will be of dimension rows + disj term ineqs + cols
-      std::vector<CutCertificate> v(currCuts.sizeCuts()); // [cut][term][Farkas multiplier] in the end, per term, this will be of dimension rows + disj term ineqs + cols
+      v.resize(currCuts.sizeCuts());
       for (int cut_ind = 0; cut_ind < currCuts.sizeCuts(); cut_ind++) {
         v[cut_ind].resize(disj->num_terms);
       }
@@ -355,6 +356,7 @@ int main(int argc, char** argv) {
       printf("\n## Strengthening disjunctive cuts: (# cuts = %d). ##\n", (int) currCuts.sizeCuts());
       strInfo.num_coeffs_strengthened.resize(static_cast<int>(Stat::num_stats), 0.); // total,avg,stddev,min,max
       strInfo.num_coeffs_strengthened[(int) Stat::min] = std::numeric_limits<int>::max();
+      str_cut_ind.reserve(currCuts.sizeCuts());
       for (int cut_ind = 0; cut_ind < currCuts.sizeCuts(); cut_ind++) {
         OsiRowCut* disjCut = currCuts.rowCutPtr(cut_ind);
         const CoinPackedVector lhs = disjCut->row();
@@ -383,8 +385,9 @@ int main(int argc, char** argv) {
           CoinPackedVector strCutCoeff(str_coeff.size(), str_coeff.data());
           disjCut->setRow(strCutCoeff);
           disjCut->setLb(str_rhs);
+          str_cut_ind.push_back(cut_ind);
         }
-      }
+      } // loop over cuts
       strInfo.num_coeffs_strengthened[(int) Stat::stddev] -= strInfo.num_coeffs_strengthened[(int) Stat::avg] * strInfo.num_coeffs_strengthened[(int) Stat::avg];
       fprintf(stdout, "\nFinished strengthening (%d cuts affected).\n", boundInfo.num_str_cuts);
       fprintf(stdout, "Number coeffs changed:\n");
@@ -404,6 +407,7 @@ int main(int argc, char** argv) {
       fprintf(stdout, "Finished printing strengthened custom cuts.\n\n");
 #endif
     } // check that disj exists and cuts were generated
+    setStrInfo(strInfo, disj, v, solver->getNumRows(), solver->getNumCols(), str_cut_ind, gen.probData.EPS);
 
     timer.end_timer(OverallTimeStats::CUT_TIME);
 

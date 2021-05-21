@@ -35,8 +35,8 @@ int cleanCut(OsiRowCut* const cut,
 bool badViolation(const OsiRowCut* const cut, const OsiSolverInterface* const solver, const double min_viol_abs, const double min_viol_rel);
 
 /** @brief Decide if two rows are the same */
-int isRowDifferent(const CoinPackedVector& cut1Vec, const double cut1rhs,
-    const CoinPackedVector& cut2Vec, const double cut2rhs, const double EPS);
+int isRowDifferent(const CoinPackedVectorBase* const cut1Vec, const double cut1rhs,
+    const CoinPackedVectorBase* const cut2Vec, const double cut2rhs, const double EPS);
 
 /** @brief Determine parallelism; two vectors are parallel iff u.v/|u|*|v| = 1 */
 double getParallelism(const CoinPackedVectorBase& vec1, const CoinPackedVectorBase& vec2);
