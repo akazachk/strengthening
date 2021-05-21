@@ -1246,7 +1246,7 @@ void setStrInfo(
     const int num_cols,
     const int num_str_cuts,
     const double EPS) {
-  if (disj) { return; }
+  if (!disj) { return; }
 
   std::vector<int> K(num_rows, 0);
   int num_nonzero_coeff = 0;
@@ -1317,7 +1317,7 @@ void setStrInfo(
 
 #ifdef TRACE
   // Print facets generated
-  std::string cgsName = "(";
+  std::string cgsName = "";
   for (int facet_ind = 0; facet_ind < (int) facetLHS.size(); facet_ind++) {
     CoinPackedVector& vec = facetLHS[facet_ind];
     const int num_elem = vec.getNumElements();
@@ -1326,10 +1326,8 @@ void setStrInfo(
     const double rhs = facetRHS[facet_ind];
     Disjunction::setCgsName(cgsName, num_elem, indices, elements, rhs, false);
   }
-  cgsName += ")";
   printf("setStrInfo: After aggregating disjunctive terms, convex cut-generating set has following name:\n");
   printf("%s\n", cgsName.c_str());
-  exit(1);
 #endif
 
   info.num_irreg_less += (num_nonzero_coeff < num_cols);
@@ -1373,7 +1371,7 @@ void setStrInfo(
     const std::vector<int>& str_cut_ind,
     /// [in] Epsilon to be used for gathering statistics
     const double EPS) {
-  if (disj) { return; }
+  if (!disj) { return; }
 
   const int num_str_cuts = (int) str_cut_ind.size();
   info.num_str_cuts = num_str_cuts;
