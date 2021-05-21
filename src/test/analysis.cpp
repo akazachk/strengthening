@@ -30,7 +30,7 @@ const int countDisjInfoEntries = 12;
 const int countCutInfoEntries = 13;
 const int countObjInfoEntries = 1;
 const int countFailInfoEntries = 1 + static_cast<int>(CglAdvCut::FailureType::NUM_FAILURE_TYPES);
-const int countStrInfoEntries = 8;
+const int countStrInfoEntries = 9;
 const int countParamInfoEntries = intParam::NUM_INT_PARAMS + doubleParam::NUM_DOUBLE_PARAMS;
 int countTimeInfoEntries = 0; // set in printHeader
 const int countVersionInfoEntries = 6;
@@ -193,6 +193,7 @@ void printHeader(const StrengtheningParameters::Parameters& params,
     fprintf(logfile, "%s%c", "AVG NUM CGS FACETS", SEP); count++;
     fprintf(logfile, "%s%c", "NUM IRREG LESS", SEP); count++;
     fprintf(logfile, "%s%c", "NUM IRREG MORE", SEP); count++;
+    fprintf(logfile, "%s%c", "NUM UNMATCHED BOUNDS", SEP); count++;
     fprintf(logfile, "%s%c", "NUM COEFFS STR AVG", SEP); count++;
     fprintf(logfile, "%s%c", "NUM COEFFS STR STDDEV", SEP); count++;
     fprintf(logfile, "%s%c", "NUM COEFFS STR MIN", SEP); count++;
@@ -726,6 +727,7 @@ void printStrInfo(const SummaryStrengtheningInfo& info, FILE* logfile, const cha
   fprintf(logfile, "%s%c", stringValue(info.avg_num_cgs_facets, "%g").c_str(), SEP); count++;
   fprintf(logfile, "%s%c", stringValue(info.num_irreg_less, "%d").c_str(), SEP); count++;
   fprintf(logfile, "%s%c", stringValue(info.num_irreg_more, "%d").c_str(), SEP); count++;
+  fprintf(logfile, "%s%c", stringValue(info.num_unmatched_bounds, "%d").c_str(), SEP); count++;
   fprintf(logfile, "%s%c", stringValue(info.num_coeffs_strengthened[(int) Stat::avg], "%g").c_str(), SEP); count++;
   fprintf(logfile, "%s%c", stringValue(info.num_coeffs_strengthened[(int) Stat::stddev], "%g").c_str(), SEP); count++;
   fprintf(logfile, "%s%c", stringValue(info.num_coeffs_strengthened[(int) Stat::min], "%g").c_str(), SEP); count++;
@@ -1249,7 +1251,7 @@ void setStrInfo(
     const double EPS) {
   if (!disj) { return; }
 
-  std::vector<int> K(num_rows, 0);
+  std::vector<int> K(num_rows + num_cols, 0);
   int num_nonzero_coeff = 0;
 
   // Compute the convex set S using the multipliers on the disjunctive term ineqs
@@ -1316,9 +1318,6 @@ void setStrInfo(
     }
   } // loop over terms
 
-  info.num_irreg_less += (num_nonzero_coeff < num_cols);
-  info.num_irreg_more += (num_nonzero_coeff > num_cols);
-
 #ifdef TRACE
   // Print facets generated
   std::string cgsName = "";
@@ -1370,9 +1369,17 @@ void setStrInfo(
         if (gt_zero_ind == -1) gt_zero_ind = term_ind;
       }
       if (lt_zero_ind != -1 && gt_zero_ind != -1) break;
+
+      if (!isZero(ukt, EPS)) {
+        if (K[num_rows + var] == 0) num_nonzero_coeff++;
+        K[num_rows + var]++;
+      }
     } // loop over terms
     info.num_unmatched_bounds += (lt_zero_ind != -1 && gt_zero_ind != -1);
   } // loop over vars 
+
+  info.num_irreg_less += (num_nonzero_coeff < num_cols);
+  info.num_irreg_more += (num_nonzero_coeff > num_cols);
 } /* setStrInfo (single cut) */
 
 /// @details For a collection of cuts, count number of nonzero multipliers,
