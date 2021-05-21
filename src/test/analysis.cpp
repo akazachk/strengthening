@@ -24,10 +24,11 @@ const int countSummaryBBInfoEntries = 4 * 2;
 const int countFullBBInfoEntries = static_cast<int>(BB_INFO_CONTENTS.size()) * 4 * 2;
 const int countOrigProbEntries = 13;
 const int countPostCutProbEntries = 10;
-const int countDisjInfoEntries = 0;
+const int countDisjInfoEntries = 12;
 const int countCutInfoEntries = 13;
 const int countObjInfoEntries = 1;
 const int countFailInfoEntries = 1 + static_cast<int>(CglAdvCut::FailureType::NUM_FAILURE_TYPES);
+const int countStrInfoEntries = 8;
 const int countParamInfoEntries = intParam::NUM_INT_PARAMS + doubleParam::NUM_DOUBLE_PARAMS;
 int countTimeInfoEntries = 0; // set in printHeader
 const int countVersionInfoEntries = 6;
@@ -63,9 +64,12 @@ void printHeader(const StrengtheningParameters::Parameters& params,
   fprintf(logfile, "%s", "POST-CUT PROB");
   tmpstring.assign(countPostCutProbEntries, SEP);
   fprintf(logfile, "%s", tmpstring.c_str());
-  //fprintf(logfile, "%s", "DISJ INFO");
-  //tmpstring.assign(countDisjInfoEntries, SEP);
-  //fprintf(logfile, "%s", tmpstring.c_str());
+  fprintf(logfile, "%s", "DISJ INFO");
+  tmpstring.assign(countDisjInfoEntries, SEP);
+  fprintf(logfile, "%s", tmpstring.c_str());
+  fprintf(logfile, "%s", "STRENGTHENING INFO");
+  tmpstring.assign(countStrInfoEntries, SEP);
+  fprintf(logfile, "%s", tmpstring.c_str());
   fprintf(logfile, "%s", "CUT INFO");
   tmpstring.assign(countCutInfoEntries, SEP);
   fprintf(logfile, "%s", tmpstring.c_str());
@@ -165,6 +169,34 @@ void printHeader(const StrengtheningParameters::Parameters& params,
     fprintf(logfile, "%s%c", "ACTIVE MYCUTS (all cuts)", SEP); count++;
     assert(count == countPostCutProbEntries);
   } // POST-CUT PROB
+  { // DISJ INFO
+    int count = 0;
+    fprintf(logfile, "%s%c", "NUM DISJ TERMS", SEP); count++;
+    fprintf(logfile, "%s%c", "NUM INTEGER SOL", SEP); count++;
+    fprintf(logfile, "%s%c", "NUM DISJ", SEP); count++;
+    fprintf(logfile, "%s%c", "AVG DENSITY PRLP", SEP); count++;
+    fprintf(logfile, "%s%c", "AVG ROWS PRLP", SEP); count++;
+    fprintf(logfile, "%s%c", "AVG COLS PRLP", SEP); count++;
+    fprintf(logfile, "%s%c", "AVG POINTS PRLP", SEP); count++;
+    fprintf(logfile, "%s%c", "AVG RAYS PRLP", SEP); count++;
+    fprintf(logfile, "%s%c", "AVG PARTIAL BB EXPLORED NODES", SEP); count++;
+    fprintf(logfile, "%s%c", "AVG PARTIAL BB PRUNED NODES", SEP); count++;
+    fprintf(logfile, "%s%c", "AVG PARTIAL BB MIN DEPTH", SEP); count++;
+    fprintf(logfile, "%s%c", "AVG PARTIAL BB MAX DEPTH", SEP); count++;
+    assert(count == countDisjInfoEntries);
+  } // DISJ INFO
+  { // STR INFO
+    int count = 0;
+    fprintf(logfile, "%s%c", "NUM STR CUTS", SEP); count++;
+    fprintf(logfile, "%s%c", "AVG NUM CGS FACETS", SEP); count++;
+    fprintf(logfile, "%s%c", "NUM IRREG LESS", SEP); count++;
+    fprintf(logfile, "%s%c", "NUM IRREG MORE", SEP); count++;
+    fprintf(logfile, "%s%c", "NUM COEFFS STR AVG", SEP); count++;
+    fprintf(logfile, "%s%c", "NUM COEFFS STR STDDEV", SEP); count++;
+    fprintf(logfile, "%s%c", "NUM COEFFS STR MIN", SEP); count++;
+    fprintf(logfile, "%s%c", "NUM COEFFS STR MAX", SEP); count++;
+    assert(count == countStrInfoEntries);
+  } // STR INFO
   { // CUT INFO
     int count = 0;
     fprintf(logfile, "%s%c", "NUM ROUNDS", SEP); count++;
@@ -182,10 +214,6 @@ void printHeader(const StrengtheningParameters::Parameters& params,
     fprintf(logfile, "%s%c", "UNSTR MYCUTS AVG SUPPORT", SEP); count++;
     assert(count == countCutInfoEntries);
   } // CUT INFO
-  { // DISJ INFO
-    int count = 0;
-    assert(count == countDisjInfoEntries);
-  }
   { // OBJ INFO
     // For each objective: num obj, num fails, num active
     int count = 0;
@@ -653,6 +681,44 @@ void printPostCutProbInfo(const OsiSolverInterface* const solver,
   fflush(logfile);
   assert(count == countPostCutProbEntries);
 } /* printPostCutProbInfo */
+
+void printDisjInfo(const SummaryDisjunctionInfo& disjInfo, FILE* logfile, const char SEP) {
+  if (!logfile)
+    return;
+
+  int count = 0;
+  fprintf(logfile, "%s%c", stringValue(disjInfo.avg_num_terms, "%.0f").c_str(), SEP); count++;
+  fprintf(logfile, "%s%c", stringValue(disjInfo.num_integer_sol, "%d").c_str(), SEP); count++;
+  fprintf(logfile, "%s%c", stringValue(disjInfo.num_disj, "%d").c_str(), SEP); count++;
+  fprintf(logfile, "%s%c", stringValue(disjInfo.avg_density_prlp, "%.0f").c_str(), SEP); count++;
+  fprintf(logfile, "%s%c", stringValue(disjInfo.avg_num_rows_prlp, "%.0f").c_str(), SEP); count++;
+  fprintf(logfile, "%s%c", stringValue(disjInfo.avg_num_cols_prlp, "%.0f").c_str(), SEP); count++;
+  fprintf(logfile, "%s%c", stringValue(disjInfo.avg_num_points_prlp, "%.0f").c_str(), SEP); count++;
+  fprintf(logfile, "%s%c", stringValue(disjInfo.avg_num_rays_prlp, "%.0f").c_str(), SEP); count++;
+  fprintf(logfile, "%s%c", stringValue(disjInfo.avg_explored_nodes, "%.0f").c_str(), SEP); count++;
+  fprintf(logfile, "%s%c", stringValue(disjInfo.avg_pruned_nodes, "%.0f").c_str(), SEP); count++;
+  fprintf(logfile, "%s%c", stringValue(disjInfo.avg_min_depth, "%.0f").c_str(), SEP); count++;
+  fprintf(logfile, "%s%c", stringValue(disjInfo.avg_max_depth, "%.0f").c_str(), SEP); count++;
+  fflush(logfile);
+  assert(count == countDisjInfoEntries);
+} /* printDisjInfo */
+
+void printStrInfo(const SummaryStrengtheningInfo& info, FILE* logfile, const char SEP) {
+  if (!logfile)
+    return;
+
+  int count = 0;
+  fprintf(logfile, "%s%c", stringValue(info.num_str_cuts, "%d").c_str(), SEP); count++;
+  fprintf(logfile, "%s%c", stringValue(info.avg_num_cgs_facets, "%g").c_str(), SEP); count++;
+  fprintf(logfile, "%s%c", stringValue(info.num_irreg_less, "%d").c_str(), SEP); count++;
+  fprintf(logfile, "%s%c", stringValue(info.num_irreg_more, "%d").c_str(), SEP); count++;
+  fprintf(logfile, "%s%c", stringValue(info.num_coeffs_strengthened[(int) Stat::avg], "%g").c_str(), SEP); count++;
+  fprintf(logfile, "%s%c", stringValue(info.num_coeffs_strengthened[(int) Stat::stddev], "%g").c_str(), SEP); count++;
+  fprintf(logfile, "%s%c", stringValue(info.num_coeffs_strengthened[(int) Stat::min], "%g").c_str(), SEP); count++;
+  fprintf(logfile, "%s%c", stringValue(info.num_coeffs_strengthened[(int) Stat::max], "%g").c_str(), SEP); count++;
+  fflush(logfile);
+  assert(count == countStrInfoEntries);
+} /* printStrInfo */
 
 void printCutInfo(const SummaryCutInfo& cutInfoGMICs,
     const SummaryCutInfo& cutInfo, const SummaryCutInfo& cutInfoUnstr,

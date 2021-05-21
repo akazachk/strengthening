@@ -24,7 +24,7 @@
 #include <OsiSolverInterface.hpp>
 
 // Project files
-#include "analysis.hpp"
+#include "analysis.hpp" // SummaryBoundInfo, SummaryCutInfo, Stat, SummaryStrengtheningInfo, printing to logfile
 #include "BBHelper.hpp"
 #include "CglAdvCut.hpp"
 #include "CutHelper.hpp"
@@ -37,6 +37,11 @@ using namespace StrengtheningParameters;
 #include "SolverInterface.hpp"
 #include "strengthen.hpp"
 #include "utility.hpp"
+
+// For disjInfo
+#include "CglVPC.hpp"
+#include "PartialBBDisjunction.hpp"
+#include "PRLP.hpp"
 
 #ifdef USE_GUROBI
 #include "GurobiHelper.hpp" // for obtaining ip opt
@@ -76,8 +81,10 @@ char start_time_string[25];
 
 SummaryBoundInfo boundInfo;
 SummaryBBInfo info_nocuts, info_mycuts, info_allcuts;
+SummaryDisjunctionInfo disjInfo;
 std::vector<SummaryCutInfo> cutInfoVec;
 SummaryCutInfo cutInfo, cutInfoGMICs, cutInfoUnstr;
+SummaryStrengtheningInfo strInfo;
 
 // For output
 std::string cut_output = "", bb_output = "";
@@ -121,6 +128,9 @@ int startUp(int argc, char** argv);
 int processArgs(int argc, char** argv);
 void initializeSolver(OsiSolverInterface* &solver);
 int wrapUp(int retCode, int argc, char** argv);
+
+/// @brief Update average number of terms, density, rows, cols, points, rays, and partial tree information if applicable
+void updateDisjInfo(SummaryDisjunctionInfo& disjInfo, const int num_disj, const CglVPC& gen);
 
 /****************** MAIN FUNCTION **********************/
 int main(int argc, char** argv) {
@@ -253,12 +263,16 @@ int main(int argc, char** argv) {
     gen.generateCuts(*solver, currCuts);
     Disjunction* disj = gen.gen.disj();
     exitReason = gen.exitReason;
+    if (disj) {
+      disjInfo.num_disj++;
+      if (boundInfo.best_disj_obj < disj->best_obj)
+        boundInfo.best_disj_obj = disj->best_obj;
+      if (boundInfo.worst_disj_obj < disj->worst_obj)
+        boundInfo.worst_disj_obj = disj->worst_obj;
+      updateDisjInfo(disjInfo, disjInfo.num_disj, gen.gen);
+    }
     updateCutInfo(cutInfoVec[round_ind], &gen);
     boundInfo.num_mycut += gen.num_cuts;
-    if (boundInfo.best_disj_obj < disj->best_obj)
-      boundInfo.best_disj_obj = disj->best_obj;
-    if (boundInfo.worst_disj_obj < disj->worst_obj)
-      boundInfo.worst_disj_obj = disj->worst_obj;
 
     // Get density of unstr cuts
     int total_support = 0;
@@ -335,9 +349,10 @@ int main(int argc, char** argv) {
       //====================================================================================================//
       // Do strengthening
       printf("\n## Strengthening disjunctive cuts: (# cuts = %d). ##\n", (int) currCuts.sizeCuts());
-      enum class Stat { total = 0, avg, stddev, min, max, num_stats } ;
-      std::vector<double> num_coeffs_strengthened((int) Stat::num_stats, 0.); // total,avg,stddev,min,max
-      num_coeffs_strengthened[(int) Stat::min] = std::numeric_limits<int>::max();
+      //enum class Stat { total = 0, avg, stddev, min, max, num_stats };
+      //std::vector<double> strInfo.num_coeffs_strengthened((int) Stat::num_stats, 0.); // total,avg,stddev,min,max
+      strInfo.num_coeffs_strengthened.resize(static_cast<int>(Stat::num_stats), 0.); // total,avg,stddev,min,max
+      strInfo.num_coeffs_strengthened[(int) Stat::min] = std::numeric_limits<int>::max();
       for (int cut_ind = 0; cut_ind < currCuts.sizeCuts(); cut_ind++) {
         OsiRowCut* disjCut = currCuts.rowCutPtr(cut_ind);
         const CoinPackedVector lhs = disjCut->row();
@@ -350,14 +365,15 @@ int main(int argc, char** argv) {
 
         // Update stats
         boundInfo.num_str_cuts += curr_num_coeffs_str > 0;
-        num_coeffs_strengthened[(int) Stat::total] += curr_num_coeffs_str;
-        num_coeffs_strengthened[(int) Stat::avg] += (double) curr_num_coeffs_str / currCuts.sizeCuts();
-        num_coeffs_strengthened[(int) Stat::stddev] += (double) curr_num_coeffs_str * curr_num_coeffs_str / currCuts.sizeCuts();
-        if (curr_num_coeffs_str < num_coeffs_strengthened[(int) Stat::min]) {
-          num_coeffs_strengthened[(int) Stat::min] = curr_num_coeffs_str;
+        strInfo.num_str_cuts += curr_num_coeffs_str > 0;
+        strInfo.num_coeffs_strengthened[(int) Stat::total] += curr_num_coeffs_str;
+        strInfo.num_coeffs_strengthened[(int) Stat::avg] += (double) curr_num_coeffs_str / currCuts.sizeCuts();
+        strInfo.num_coeffs_strengthened[(int) Stat::stddev] += (double) curr_num_coeffs_str * curr_num_coeffs_str / currCuts.sizeCuts();
+        if (curr_num_coeffs_str < strInfo.num_coeffs_strengthened[(int) Stat::min]) {
+          strInfo.num_coeffs_strengthened[(int) Stat::min] = curr_num_coeffs_str;
         }
-        if (curr_num_coeffs_str > num_coeffs_strengthened[(int) Stat::max]) {
-          num_coeffs_strengthened[(int) Stat::max] = curr_num_coeffs_str;
+        if (curr_num_coeffs_str > strInfo.num_coeffs_strengthened[(int) Stat::max]) {
+          strInfo.num_coeffs_strengthened[(int) Stat::max] = curr_num_coeffs_str;
         }
         
         // Replace row if any coefficients were strengthened
@@ -367,14 +383,14 @@ int main(int argc, char** argv) {
           disjCut->setLb(str_rhs);
         }
       }
-      num_coeffs_strengthened[(int) Stat::stddev] -= num_coeffs_strengthened[(int) Stat::avg] * num_coeffs_strengthened[(int) Stat::avg];
+      strInfo.num_coeffs_strengthened[(int) Stat::stddev] -= strInfo.num_coeffs_strengthened[(int) Stat::avg] * strInfo.num_coeffs_strengthened[(int) Stat::avg];
       fprintf(stdout, "\nFinished strengthening (%d cuts affected).\n", boundInfo.num_str_cuts);
       fprintf(stdout, "Number coeffs changed:\n");
-      fprintf(stdout, "\ttotal: %g\n", num_coeffs_strengthened[(int) Stat::total]);
-      fprintf(stdout, "\tavg: %g\n", num_coeffs_strengthened[(int) Stat::avg]);
-      fprintf(stdout, "\tstddev: %g\n", num_coeffs_strengthened[(int) Stat::stddev]);
-      fprintf(stdout, "\tmin: %g\n", num_coeffs_strengthened[(int) Stat::min]);
-      fprintf(stdout, "\tmax: %g\n", num_coeffs_strengthened[(int) Stat::max]);
+      fprintf(stdout, "\ttotal: %g\n", strInfo.num_coeffs_strengthened[(int) Stat::total]);
+      fprintf(stdout, "\tavg: %g\n", strInfo.num_coeffs_strengthened[(int) Stat::avg]);
+      fprintf(stdout, "\tstddev: %g\n", strInfo.num_coeffs_strengthened[(int) Stat::stddev]);
+      fprintf(stdout, "\tmin: %g\n", strInfo.num_coeffs_strengthened[(int) Stat::min]);
+      fprintf(stdout, "\tmax: %g\n", strInfo.num_coeffs_strengthened[(int) Stat::max]);
       fprintf(stdout, "--------------------------------------------------\n");
 #if 0
       fprintf(stdout, "\n## Printing strengthened custom cuts ##\n");
@@ -636,6 +652,10 @@ int wrapUp(int retCode, int argc, char** argv) {
       printOrigProbInfo(origSolver, params.logfile);
       // Post-cut prob
       printPostCutProbInfo(solver, cutInfoGMICs, cutInfo, params.logfile);
+      // Disj info
+      printDisjInfo(disjInfo, params.logfile);
+      // Str info
+      printStrInfo(strInfo, params.logfile);
       // Cut, obj, fail info
       printCutInfo(cutInfoGMICs, cutInfo, cutInfoUnstr, params.logfile);
       // Full B&B info
@@ -1037,3 +1057,29 @@ int processArgs(int argc, char** argv) {
   //std::cout << std::endl;
   return status;
 } /* processArgs */
+
+void updateDisjInfo(SummaryDisjunctionInfo& disjInfo, const int num_disj, const CglVPC& gen) {
+  if (num_disj <= 0)
+    return;
+  const Disjunction* const disj = gen.getDisjunction();
+  const PRLP* const prlp = gen.getPRLP();
+  if (!prlp)
+    return;
+  disjInfo.num_integer_sol += !(disj->integer_sol.empty());
+  disjInfo.avg_num_terms = (disjInfo.avg_num_terms * (num_disj - 1) + disj->num_terms) / num_disj;
+  disjInfo.avg_density_prlp = (disjInfo.avg_density_prlp * (num_disj - 1) + prlp->density) / num_disj;
+  disjInfo.avg_num_rows_prlp += (disjInfo.avg_num_rows_prlp * (num_disj - 1) + prlp->getNumRows()) / num_disj;
+  disjInfo.avg_num_cols_prlp += (disjInfo.avg_num_cols_prlp * (num_disj - 1) + prlp->getNumCols()) / num_disj;
+  disjInfo.avg_num_points_prlp += (disjInfo.avg_num_points_prlp * (num_disj - 1) + prlp->numPoints) / num_disj;
+  disjInfo.avg_num_rays_prlp += (disjInfo.avg_num_rays_prlp * (num_disj - 1) + prlp->numRays) / num_disj;
+  try {
+    const PartialBBDisjunction* const partialDisj =
+        dynamic_cast<const PartialBBDisjunction* const >(disj);
+    disjInfo.avg_explored_nodes += (disjInfo.avg_explored_nodes * (num_disj - 1) + partialDisj->data.num_nodes_on_tree) / num_disj;
+    disjInfo.avg_pruned_nodes += (disjInfo.avg_pruned_nodes * (num_disj - 1) + partialDisj->data.num_pruned_nodes) / num_disj;
+    disjInfo.avg_min_depth += (disjInfo.avg_min_depth * (num_disj - 1) + partialDisj->data.min_node_depth) / num_disj;
+    disjInfo.avg_max_depth += (disjInfo.avg_max_depth * (num_disj - 1) + partialDisj->data.max_node_depth) / num_disj;
+  } catch (std::exception& e) {
+
+  }
+} /* updateDisjInfo */
