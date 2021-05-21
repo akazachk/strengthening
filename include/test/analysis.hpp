@@ -17,7 +17,11 @@ namespace StrengtheningParameters {
   struct Parameters;
 }
 
+class Disjunction; // Disjunction.hpp
 struct SummaryBBInfo; // BBHelper.hpp
+
+/// [term][Farkas multiplier]
+using CutCertificate = std::vector<std::vector<double> >;
 
 /// @brief Information about objective value at various points in the solution process
 /// @details Gives objective for the LP and IP, and after adding GMICs, L&PCs, VPCs, and combinations of these cuts
@@ -70,7 +74,10 @@ struct SummaryCutInfo {
   std::vector<int> numFails;
 }; /* SummaryCutInfo */
 
+/// @brief Container for types of statistics we want to keep
 enum class Stat { total = 0, avg, stddev, min, max, num_stats };
+
+/// @brief Summary statistics for what attempts at strengthening did
 struct SummaryStrengtheningInfo {
   /// number of cuts affected by strengthening
   int num_str_cuts = 0;
@@ -82,6 +89,8 @@ struct SummaryStrengtheningInfo {
   int num_irreg_more = 0;
   /// number of coefficients changed (one entry for each index in #Stat -- total, avg, stddev, min, max)
   std::vector<double> num_coeffs_strengthened = std::vector<double>(static_cast<int>(Stat::num_stats), 0.);
+  /// number of times a certificate uses nonzero multipliers on both the upper and lower bounds on a variable
+  int num_unmatched_bounds = 0;
 }; /* SummaryStrengtheningInfo */
 
 void printHeader(const StrengtheningParameters::Parameters& params,
@@ -124,3 +133,6 @@ double getNumGomoryRounds(const StrengtheningParameters::Parameters& params,
 void updateCutInfo(SummaryCutInfo& cutInfo, const CglAdvCut* const gen);
 void setCutInfo(SummaryCutInfo& cutInfo, const int num_rounds, const SummaryCutInfo* const oldCutInfos);
 
+/// @brief Find |K| (number of nonzero multipliers) and info about the implied convex cgs for this cut
+void setStrInfo(SummaryStrengtheningInfo& info, const Disjunction* const disj,
+    const std::vector<CutCertificate>& v, const int num_str_cuts);

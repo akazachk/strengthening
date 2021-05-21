@@ -51,6 +51,9 @@ using namespace StrengtheningParameters;
 #include "debug.hpp"
 #endif
 
+/// [term][Farkas multiplier]
+using CutCertificate = std::vector<std::vector<double> >;
+
 enum OverallTimeStats {
   INIT_SOLVE_TIME,
   CUT_TIME,
@@ -322,7 +325,8 @@ int main(int argc, char** argv) {
     // Get Farkas certificate and do strengthening
     OsiCuts origCurrCuts(currCuts);
     if (params.get(STRENGTHEN) == 1 && disj && disj->terms.size() > 0 && currCuts.sizeCuts() > 0) {
-      std::vector<std::vector<std::vector<double> > > v(currCuts.sizeCuts()); // [cut][term][Farkas multiplier] in the end, per term, this will be of dimension rows + disj term ineqs + cols
+      //std::vector<std::vector<std::vector<double> > > v(currCuts.sizeCuts()); // [cut][term][Farkas multiplier] in the end, per term, this will be of dimension rows + disj term ineqs + cols
+      std::vector<CutCertificate> v(currCuts.sizeCuts()); // [cut][term][Farkas multiplier] in the end, per term, this will be of dimension rows + disj term ineqs + cols
       for (int cut_ind = 0; cut_ind < currCuts.sizeCuts(); cut_ind++) {
         v[cut_ind].resize(disj->num_terms);
       }
@@ -340,7 +344,7 @@ int main(int argc, char** argv) {
           // we need to explicitly add the constraint(s) defining the disjunctive term
           const CoinPackedVector lhs = disjCut->row();
 
-          getCertificate(v[cut_ind][term_ind], lhs.getNumElements(), lhs.getIndices(), lhs.getElements(), termSolver);
+          getCertificate(v[cut_ind][term_ind], lhs.getNumElements(), lhs.getIndices(), lhs.getElements(), termSolver, params.logfile);
         } // loop over cuts
 
         if (termSolver) { delete termSolver; }
@@ -349,8 +353,6 @@ int main(int argc, char** argv) {
       //====================================================================================================//
       // Do strengthening
       printf("\n## Strengthening disjunctive cuts: (# cuts = %d). ##\n", (int) currCuts.sizeCuts());
-      //enum class Stat { total = 0, avg, stddev, min, max, num_stats };
-      //std::vector<double> strInfo.num_coeffs_strengthened((int) Stat::num_stats, 0.); // total,avg,stddev,min,max
       strInfo.num_coeffs_strengthened.resize(static_cast<int>(Stat::num_stats), 0.); // total,avg,stddev,min,max
       strInfo.num_coeffs_strengthened[(int) Stat::min] = std::numeric_limits<int>::max();
       for (int cut_ind = 0; cut_ind < currCuts.sizeCuts(); cut_ind++) {

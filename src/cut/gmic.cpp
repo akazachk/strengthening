@@ -101,7 +101,7 @@ void generateGomoryCuts(
           const double el = -1.;
           solver0->addRow(1, &var, &el, -1. * std::floor(val), solver->getInfinity());
 
-          getCertificate(v[0], lhs.getNumElements(), lhs.getIndices(), lhs.getElements(), solver0);
+          getCertificate(v[0], lhs.getNumElements(), lhs.getIndices(), lhs.getElements(), solver0, logfile);
 
           if (solver0) delete solver0;
         } // check first side of the split
@@ -112,7 +112,7 @@ void generateGomoryCuts(
           const double el = 1.;
           solver1->addRow(1, &var, &el, std::ceil(val), solver->getInfinity());
 
-          getCertificate(v[1], lhs.getNumElements(), lhs.getIndices(), lhs.getElements(), solver1);
+          getCertificate(v[1], lhs.getNumElements(), lhs.getIndices(), lhs.getElements(), solver1, logfile);
 
           if (solver1) delete solver1;
         } // check second side of the split

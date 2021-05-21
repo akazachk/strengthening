@@ -215,7 +215,9 @@ void getCertificate(
     /// [in] nonzero cut coefficients
     const double* const coeff,
     // [in] LP solver corresponding to disjunctive term
-    OsiSolverInterface* const solver) {
+    OsiSolverInterface* const solver,
+    /// [in] logfile for error printing
+    FILE* logfile) {
   v.clear();
   v.resize(solver->getNumCols() + solver->getNumRows(), 0.0);
 
@@ -338,7 +340,7 @@ void getCertificate(
   }*/ // DEBUG
 #endif // USE_EIGEN
 
-#ifdef TRACE
+//#ifdef TRACE
   // Obtain the cut that the certificate yields (should be the same as the original cut)
   std::vector<double> new_coeff(solver->getNumCols());
   getCutFromCertificate(new_coeff, v, solver);
@@ -354,8 +356,8 @@ void getCertificate(
     }
   }
   if (num_errors > 0) {
-    fprintf(stderr, 
-        "*** ERROR: Number of differences between true and calculated cuts: %d. Total difference: %g. Exiting.\n",
+    error_msg(errorstring,
+        "Number of differences between true and calculated cuts: %d. Total difference: %g. Exiting.\n",
         num_errors, total_diff);
     fprintf(stderr, "x:\n");
     for (int i = 0; i < solver->getNumCols(); i++) {
@@ -369,10 +371,11 @@ void getCertificate(
     for (int i = 0; i < (int) v.size(); i++) {
       fprintf(stderr, "v[%d] = %f\n", i, v[i]);
     }
+    writeErrorToLog(errorstring, logfile);
     exit(1);
   }
   //else printf("No errors found.\n");
-#endif
+//#endif
 
   solver->disableFactorization();
 } /* getCertificate */
@@ -472,7 +475,7 @@ void getCertificateForTerm(
 #endif
   } // check that objective value matches
 
-  getCertificate(v, num_elem, ind, coeff, termSolver);
+  getCertificate(v, num_elem, ind, coeff, termSolver, logfile);
   if (termSolver) { delete termSolver; }
 } /* getCertificateForTerm */
 

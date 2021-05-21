@@ -13,6 +13,7 @@
 // Project files
 #include "CglAdvCut.hpp"
 #include "BBHelper.hpp"
+#include "Disjunction.hpp"
 #include "SolverHelper.hpp"
 #include "Parameters.hpp"
 using namespace StrengtheningParameters;
@@ -1218,3 +1219,31 @@ void setCutInfo(SummaryCutInfo& cutInfo, const int num_rounds,
     }
   }
 } /* setCutInfo (merge from multiple rounds) */
+
+/// @details Count number of nonzero multipliers,
+/// and also find number of distinct facets of the convex cut-generating set
+/// defined by these multipliers (applied to \p disj)
+void setStrInfo(SummaryStrengtheningInfo& info,
+    const Disjunction* const disj,
+    const std::vector<CutCertificate>& v,
+    const int num_str_cuts) {
+  if (disj) { return; }
+  const int num_cols = 0;
+  const int num_terms = disj->num_terms;
+  std::vector<int> K(0);
+  int num_nonzero_coeff = 0;
+
+  info.num_irreg_less += (num_nonzero_coeff < num_cols);
+  info.num_irreg_more += (num_nonzero_coeff > num_cols);
+
+  // Compute the convex set S using the multipliers on the disjunctive term ineqs
+
+  // Count how many distinct facets there are
+  int num_facets = 0;
+  info.avg_num_cgs_facets += (double) num_facets / num_str_cuts;
+
+
+  // Update number of unmatched bounds (times both a lower and upper bound on a variable have
+  // nonzero multipliers, which can be detected by the sign on the corresponding bound in v)
+  info.num_unmatched_bounds += 0;
+} /* setStrInfo */
