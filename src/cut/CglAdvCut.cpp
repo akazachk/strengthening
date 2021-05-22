@@ -618,7 +618,7 @@ bool CglAdvCut::reachedFailureLimit(const int num_cuts, const int num_fails, //c
   }
   if (reached_limit) {
 //    this->exitReason = CglAdvCut::ExitReason::FAIL_LIMIT_EXIT;
-    printf("Reached failure limit with %d cuts and %d fails.\n", num_cuts, num_fails);
+    printf("CglAvCut: Reached failure limit with %d cuts and %d fails.\n", num_cuts, num_fails);
   }
   return reached_limit;
 } /* reachedFailureLimit */
@@ -626,10 +626,10 @@ bool CglAdvCut::reachedFailureLimit(const int num_cuts, const int num_fails, //c
 void CglAdvCut::finish(CglAdvCut::ExitReason exitReason) {
   const std::string timeName = CutTimeStatsName[static_cast<int>(CutTimeStats::TOTAL_TIME)];
   if (exitReason == CglAdvCut::ExitReason::TIME_LIMIT_EXIT) {
-    printf("Reached %s time limit %f < current time %f.\n",
+    printf("CglAdvCut: Reached %s time limit %f < current time %f.\n",
         timeName.c_str(), params.get(TIMELIMIT), timer.get_total_time(timeName));
   } else if (exitReason == CglAdvCut::ExitReason::CUT_LIMIT_EXIT) {
-    printf("Reached cut limit %d.\n", getCutLimit());
+    printf("CglAdvCut: Reached cut limit %d.\n", getCutLimit());
   } else if (exitReason == CglAdvCut::ExitReason::FAIL_LIMIT_EXIT) {
     // printed when reachedFailureLimit() is called
   }
