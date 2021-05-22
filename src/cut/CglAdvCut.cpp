@@ -216,6 +216,7 @@ void CglAdvCut::generateCuts(const OsiSolverInterface& si, OsiCuts& cuts, const 
   vpc_params.set(VPCParametersNamespace::USE_TIGHT_POINTS, 0);
   vpc_params.set(VPCParametersNamespace::USE_TIGHT_RAYS, 0);
   vpc_params.set(VPCParametersNamespace::USE_UNIT_VECTORS, 0);
+  vpc_params.set(VPCParametersNamespace::VERBOSITY, this->params.get(StrengtheningParameters::VERBOSITY));
 
   this->gen.setParams(vpc_params);
 
