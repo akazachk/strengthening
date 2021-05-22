@@ -186,13 +186,20 @@ int main(int argc, char** argv) {
   // Get IP solution if requested
   timer.end_timer(OverallTimeStats::TOTAL_TIME);
   std::vector<double> ip_solution;
-#ifdef USE_GUROBI
   if (params.get(TEMP) == static_cast<int>(TempOptions::CHECK_CUTS_AGAINST_BB_OPT)) {
+    printf("\n## Try to find optimal IP solution to compare against. ##\n");
     BBInfo tmp_bb_info;
-    doBranchAndBoundWithGurobi(params, params.get(BB_STRATEGY),
-        params.get(stringParam::FILENAME).c_str(), tmp_bb_info, boundInfo.ip_obj, &ip_solution);
-  } // get ip opt
+#ifdef USE_GUROBI
+    int strategy = params.get(BB_STRATEGY);
+    // If optfile provided, enable use_bound
+    if (!params.get(OPTFILE).empty() && !use_bb_option(strategy, BB_Strategy_Options::use_best_bound)) {
+      enable_bb_option(strategy, BB_Strategy_Options::use_best_bound);
+    }
+    doBranchAndBoundWithGurobi(params, strategy,
+        params.get(stringParam::FILENAME).c_str(),
+        tmp_bb_info, boundInfo.ip_obj, &ip_solution);
 #endif
+  } // get ip opt
   timer.start_timer(OverallTimeStats::TOTAL_TIME);
 
   //====================================================================================================//
