@@ -55,6 +55,6 @@ while read line; do
   OUT_DIR=${RESULTS_DIR}/$STUB/str$DEPTH/${CASE_NUM}
   echo "Preparing command to run instance $line (task $TASK_ID) at `date`"
   echo "mkdir -p ${OUT_DIR}" >> job_list_strengthen.txt
-  echo "nohup /usr/bin/time -v ${PROJ_DIR}/Release/main -f ${INSTANCE_DIR}/$line.mps --log=${OUT_DIR}/vpc-str.csv --optfile=${VPC_DIR}/data/ip_obj.csv $PARAMS 2>&1" >> job_list_strengthen.txt
+  echo "nohup /usr/bin/time -v ${PROJ_DIR}/Release/main -f ${INSTANCE_DIR}/$line.mps --log=${OUT_DIR}/vpc-str.csv --optfile=${VPC_DIR}/data/ip_obj.csv $PARAMS >> ${OUT_DIR}/log.out 2>&1" >> job_list_strengthen.txt
 done < ${INSTANCE_LIST}
 
