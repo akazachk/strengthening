@@ -4,7 +4,6 @@
  * @date 2018-Dec-24
  */
 #include "utility.hpp"
-#include "utility.hpp"
 #include "SolverHelper.hpp"
 
 #include <algorithm> // tolower
@@ -16,8 +15,38 @@
 #include <CoinPackedVector.hpp>
 #include <CoinPackedMatrix.hpp>
 
-/** Separate filename into the directory, instance name, and extension */
-int parseFilename(std::string& dir, std::string& instname, std::string& in_file_ext, const std::string& fullfilename, FILE* logfile) {
+/**
+ * @details Creates temporary file (in /tmp) so that it can be accessed later.
+ * It does not delete the file.
+ */
+void createTmpFilename(std::string& f_name,
+    const std::string add_ext) {
+//  if (f_name.empty()) {
+    // Generate temporary file name
+    char template_name[] = "/tmp/tmpvpcXXXXXX";
+
+    mkstemp(template_name);
+    f_name = template_name;
+    if (f_name.empty()) {
+      error_msg(errorstring, "Could not generate temp file.\n");
+      throw errorstring;
+    }
+    f_name += add_ext;
+//  }
+} /* createTmpFilename */
+
+/// \return 0 if successful, 1 if error
+int parseFilename(
+    /// [out] parent directory
+    std::string& dir,
+    /// [out] stub of filename without extension
+    std::string& instname,
+    /// [out] only the extension (after stripping gz/bz2)
+    std::string& in_file_ext,
+    /// [in] filename to be parsed
+    const std::string& fullfilename,
+    /// [in] where to write errors
+    FILE* logfile) {
   // Get file name stub
   size_t found_dot = fullfilename.find_last_of(".");
   std::string filename = fullfilename.substr(0, found_dot);

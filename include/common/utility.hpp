@@ -24,6 +24,7 @@ class CoinPackedMatrix;
 #define macro_to_string(s) #s
 #define x_macro_to_string(s) macro_to_string(s)
 
+/// @brief overload << operator for vector of ints
 inline std::ostream& operator<<(std::ostream& os, const std::vector<int> &input) {
   os << "{";
   for (unsigned tmp_i = 0; tmp_i < input.size(); tmp_i++) {
@@ -34,6 +35,7 @@ inline std::ostream& operator<<(std::ostream& os, const std::vector<int> &input)
   return os;
 } /* overload << operator for vector of ints */
 
+/// @brief overload << operator for vector of doubles
 inline std::ostream& operator<<(std::ostream& os, const std::vector<double> &input) {
   os << "{";
   for (unsigned tmp_i = 0; tmp_i < input.size(); tmp_i++) {
@@ -44,40 +46,46 @@ inline std::ostream& operator<<(std::ostream& os, const std::vector<double> &inp
   return os;
 } /* overload << operator for vector of doubles */
 
-/**
- * NOTE: the below sorting functions will only work when the index list given is {0,...,size}
- * (not necessarily in that order)
- * because the index list is used to access elements of arr
- *
- * If you want to, say, sort [10,1,2] by [0.5,20.5,10.0], the below would not work
- * Typically you need to use a struct then combining the data together
- */
+///@{
+/// @name Sorting functions
+// @defgroup Sorting Sorting functions
+/// @details NOTE: the below sorting functions will only work when the index list given is {0,...,size}
+/// (not necessarily in that order)
+/// because the index list is used to access elements of arr
+///
+/// If you want to, say, sort [10,1,2] by [0.5,20.5,10.0], the below would not work
+/// Typically you need to use a struct then combining the data together
+
+// @addtogroup Sorting
+/// @brief In descending order
 template<class T> struct index_cmp_dsc {
 
-  const T arr; // array used to be sorted
+  const T arr; ///< array used to be sorted
 
-  // Constructor
+  /// Constructor
   index_cmp_dsc(const T _arr) :
       arr(_arr) {
   }
 
-  // Comparator
+  /// Comparator
   bool operator()(const size_t a, const size_t b) const {
     //return arr[a] > arr[b] + param.getEPS();
     return arr[a] > arr[b];
   }
 };
 
+// @addtogroup Sorting
+/// @brief In ascending order
 template<class T> struct index_cmp_asc {
 
-  const T arr; // array used to be sorted
+  const T arr; ///< array used to be sorted
 
-  // Constructor
+  /// Constructor
   index_cmp_asc(const T _arr) :
       arr(_arr) {
   }
 
-  // Comparator
+  /// Comparator
   bool operator()(const size_t a, const size_t b) const {
     //return arr[a] < arr[b] - param.getEPS();
     return arr[a] < arr[b];
@@ -127,6 +135,9 @@ inline void writeErrorToLog(std::string text, FILE *myfile) {
   fprintf(myfile, "||%c%s", ',', text.c_str());
   fclose(myfile);
 }
+
+/** @brief Create temporary filename */
+void createTmpFilename(std::string& f_name, const std::string add_ext = "");
 
 /** @brief Separate filename into the directory, instance name, and extension */
 int parseFilename(std::string& dir, std::string& instname, std::string& in_file_ext, const std::string& fullfilename, FILE* logfile);

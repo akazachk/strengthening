@@ -23,7 +23,7 @@ export INSTANCE_LIST=${SCRIPT_DIR}/small_presolved.instances
 export RESULTS_DIR=${PROJ_DIR}/results
 export RESULTS_DIR=/local1/$USER/results
 
-DEPTH="-d2"
+DEPTH="-d8"
 PARAMS="$DEPTH"
 PARAMS="$PARAMS -t 3600"
 PARAMS="$PARAMS --rounds=1"
@@ -41,7 +41,7 @@ PARAMS="$PARAMS --bb_strategy=536"
 PARAMS="$PARAMS --temp=1"
 
 TASK_ID=0
-> job_list_strengthen.txt
+#> job_list_strengthen.txt
 while read line; do
   TASK_ID=$((TASK_ID+1))
 

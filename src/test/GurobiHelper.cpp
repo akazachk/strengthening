@@ -1,16 +1,18 @@
-// Name:     GurobiHelper.cpp
-// Author:   A. M. Kazachkov
-// Date:     2019-Feb-28
-//-----------------------------------------------------------------------------
+/**
+ * @file GurobiHelper.cpp
+ * @author A. M. Kazachkov
+ * @date 2019-Feb-28
+ */
 #include "GurobiHelper.hpp"
 
-#include <cstdio> // for tmpnam
+//#include <cstdio> // for tmpnam
 
 // Project files
 #include "BBHelper.hpp"
 #include "CutHelper.hpp" // applyCuts
 #include "SolverHelper.hpp"
 #include "Parameters.hpp"
+#include "utility.hpp" // createTmpFilename
 using namespace StrengtheningParameters;
 
 // COIN-OR
@@ -19,26 +21,27 @@ using namespace StrengtheningParameters;
 
 // Gurobi
 #ifdef USE_GUROBI
-#include "gurobi_c++.h"
+#include <gurobi_c++.h>
 
 /**
  * Creates temporary file (in /tmp) so that it can be read by a different solver
  * It does not delete the file
  */
-void createTmpFileCopy(const Parameters& params, GRBModel& model, std::string& f_name) {
+void createTmpFileCopy(const Parameters& params, GRBModel& model, std::string& f_name, const std::string add_ext = ".mps.gz") {
   if (f_name.empty()) {
-    // Generate temporary file name
-    char template_name[] = "/tmp/tmpmpsXXXXXX";
-
-    mkstemp(template_name);
-    f_name = template_name;
-    if (f_name.empty()) {
-      error_msg(errorstring, "Could not generate temp file.\n");
+    try {
+      createTmpFilename(f_name, add_ext);
+    } catch (const std::exception &e) {
+      error_msg(errorstring, "Could not generate temp file: %s.\n", e.what());
       writeErrorToLog(errorstring, params.logfile);
       exit(1);
     }
+  } else {
+    // Ensure f_name has proper extension
+    if (!add_ext.empty() && f_name.compare(f_name.size()-add_ext.size(), add_ext.size(), add_ext) != 0) {
+      f_name += add_ext;
+    }
   }
-  f_name += ".mps.gz"; // if something is given, it should be given as a stub
   model.write(f_name.c_str());
 } /* createTmpFileCopy (Gurobi) */
 
@@ -48,17 +51,23 @@ void setStrategyForBBTestGurobi(const Parameters& params, const int strategy,
   // Parameters that should always be set
   model.set(GRB_DoubleParam_TimeLimit, params.get(doubleConst::BB_TIMELIMIT)); // time limit
   model.set(GRB_IntParam_Threads, 1); // single-threaded
-  model.set(GRB_IntParam_Seed, seed); // random seed
+  if (seed >= 0) {
+    model.set(GRB_IntParam_Seed, seed); // random seed
+  }
 //  model.set(GRB_DoubleParam_MIPGap, param.getEPS()); // I guess the default 1e-4 is okay, though it messes up for large objective values
 
-  if (params.get(VERBOSITY) == 0)
+  if (params.get(VERBOSITY) == 0) {
     model.set(GRB_IntParam_OutputFlag, 0); // turn off output
+  } else {
+    model.set(GRB_IntParam_OutputFlag, 1); // turn on output
+    model.set(GRB_IntParam_DisplayInterval, 1); // set display frequency
+  }
 
   if (strategy <= 0) {
     // Default strategy
   } else {
     if (use_bb_option(strategy, BB_Strategy_Options::user_cuts)) {
-      model.set(GRB_IntParam_DualReductions, 0); // disable dual reductions
+      //model.set(GRB_IntParam_DualReductions, 0); // disable dual reductions
       model.set(GRB_IntParam_PreCrush, 1); // must be enabled when using user cuts
     }
 
@@ -82,8 +91,26 @@ void setStrategyForBBTestGurobi(const Parameters& params, const int strategy,
     // Feed the solver the best bound provided
     if (use_bb_option(strategy, BB_Strategy_Options::use_best_bound)) {
       if (!isInfinity(std::abs(best_bound))) {
-//        model.set(GRB_DoubleParam_BestObjStop, best_bound + 1e-3); // give the solver the best IP objective value (it is a minimization problem) with a tolerance
+        // BestObjStop: stop when primal bound <= z
+        // BestBdStop: stop when dual bound >= z
+        // Cutoff: prune subtrees with objective value > z
+        //model.set(GRB_DoubleParam_BestObjStop, best_bound + 1e-3); // give the solver the best IP objective value (it is a minimization problem) with a tolerance
         model.set(GRB_DoubleParam_BestBdStop, best_bound - 1e-7); // give the solver the best IP objective value (it is a minimization problem) with a tolerance
+        //model.set(GRB_DoubleParam_Cutoff, best_bound + 1e-3); // give the solver the best IP objective value (it is a minimization problem) with a tolerance
+      }
+      // Check if user provides mip start or solution file
+      std::string optfile = params.get(stringParam::OPTFILE);
+      std::string ext1 = "_gurobi.sol.gz";
+      std::string ext2 = "_gurobi.sol";
+      std::string ext3 = "_gurobi.mst.gz";
+      std::string ext4 = "_gurobi.mst";
+      bool user_provides_start = false;
+      user_provides_start |= (optfile.size() > ext1.size()) && (optfile.compare(optfile.size() - ext1.size(), ext1.size(), ext1) == 0);
+      user_provides_start |= (optfile.size() > ext2.size()) && (optfile.compare(optfile.size() - ext2.size(), ext2.size(), ext2) == 0);
+      user_provides_start |= (optfile.size() > ext3.size()) && (optfile.compare(optfile.size() - ext3.size(), ext3.size(), ext3) == 0);
+      user_provides_start |= (optfile.size() > ext4.size()) && (optfile.compare(optfile.size() - ext4.size(), ext4.size(), ext4) == 0);
+      if (user_provides_start) {
+        model.read(optfile);
       }
     }
   } /* strategy > 0 */
@@ -117,6 +144,7 @@ class GurobiUserCutCallback : public GRBCallback {
       this->info.root_passes = 0;
       this->info.first_cut_pass = -1 * params.get(doubleConst::INF);
       this->info.last_cut_pass = -1 * params.get(doubleConst::INF);
+      this->info.root_iters = 0;
       this->info.root_time = 0.;
       this->info.last_sol_time = 0.;
 //      this->numTimesApplied = 0;
@@ -152,7 +180,15 @@ class GurobiUserCutCallback : public GRBCallback {
             this->info.last_sol_time = GRBCallback::getDoubleInfo(GRB_CB_RUNTIME);
             this->info.obj = obj;
           }
-        } else if (where == GRB_CB_MIPNODE) {
+        }
+        else if (where == GRB_CB_MIP) {
+          const int num_nodes = GRBCallback::getDoubleInfo(GRB_CB_MIP_NODCNT);
+          if (num_nodes > 0) {
+            return;
+          }
+          this->info.root_iters = GRBCallback::getDoubleInfo(GRB_CB_MIP_ITRCNT);
+        }
+        else if (where == GRB_CB_MIPNODE) {
           const int num_nodes = GRBCallback::getDoubleInfo(GRB_CB_MIPNODE_NODCNT);
           if (num_nodes > 0) {
             return;
@@ -222,8 +258,9 @@ class GurobiUserCutCallback : public GRBCallback {
     } /* callback */
 }; /* class GurobiUserCutCallback */
 
-void presolveModelWithGurobi(const Parameters& params, int strategy, GRBModel& model,
-    double& presolved_opt, std::string& presolved_name, const double best_bound) {
+void presolveModelWithGurobi(const Parameters& params, int strategy, 
+    GRBModel& model, double& presolved_lp_opt, std::string& presolved_name,
+    const double best_bound) {
 //#ifdef TRACE
   printf("\n## Gurobi: Presolving model ##\n");
 //#endif
@@ -239,15 +276,17 @@ void presolveModelWithGurobi(const Parameters& params, int strategy, GRBModel& m
     strategy = static_cast<int>(BB_Strategy_Options::presolve_on);
     setStrategyForBBTestGurobi(params, strategy, presolved_model, best_bound);
 
+    printf("Solving Gurobi-presolved model to get new LP optimum value.\n");
     presolved_model.optimize();
 
     // Save optimal value
     int optimstatus = presolved_model.get(GRB_IntAttr_Status);
     if (optimstatus == GRB_OPTIMAL) {
-        presolved_opt = presolved_model.get(GRB_DoubleAttr_ObjVal);
+        presolved_lp_opt = presolved_model.get(GRB_DoubleAttr_ObjVal);
         size_t slashindex = presolved_name.find_last_of("/\\");
         presolved_model_mip.set(GRB_StringAttr_ModelName, presolved_name.substr(slashindex+1));
-        createTmpFileCopy(params, presolved_model_mip, presolved_name);
+        printf("Saving Gurobi-presolved model to \"%s.mps.gz\".\n", presolved_name.c_str());
+        createTmpFileCopy(params, presolved_model_mip, presolved_name, ".mps.gz"); // adds .mps.gz ext
         if (vars) {
           delete[] vars;
         }
@@ -268,11 +307,11 @@ void presolveModelWithGurobi(const Parameters& params, int strategy, GRBModel& m
 } /* presolveModelWithGurobi (GRBModel) */
 
 void presolveModelWithGurobi(const Parameters& params, int strategy, const char* f_name,
-    double& presolved_opt, std::string& presolved_name, const double best_bound) {
+    double& presolved_lp_opt, std::string& presolved_name, const double best_bound) {
   try {
     GRBEnv env = GRBEnv();
     GRBModel model = GRBModel(env, f_name);
-    presolveModelWithGurobi(params, strategy, model, presolved_opt, presolved_name, best_bound);
+    presolveModelWithGurobi(params, strategy, model, presolved_lp_opt, presolved_name, best_bound);
   } catch (GRBException& e) {
     error_msg(errorstring, "Gurobi: Exception caught: %s\n", e.getMessage().c_str());
     writeErrorToLog(errorstring, params.logfile);
@@ -285,18 +324,19 @@ void presolveModelWithGurobi(const Parameters& params, int strategy, const char*
 } /* presolveModelWithGurobi (filename) */
 
 void presolveModelWithGurobi(const Parameters& params, int strategy,
-    const OsiSolverInterface* const solver, double& presolved_opt,
+    const OsiSolverInterface* const solver, double& presolved_lp_opt,
     std::string& presolved_name, const double best_bound) {
-  std::string f_name;
+  std::string f_name = "";
   createTmpFileCopy(params, solver, f_name);
-  presolveModelWithGurobi(params, strategy, f_name.c_str(), presolved_opt, presolved_name, best_bound);
+  presolveModelWithGurobi(params, strategy, f_name.c_str(), presolved_lp_opt, presolved_name, best_bound);
   remove(f_name.c_str()); // remove temporary file
 } /* presolveModelWithGurobi (Osi) */
 
-void doBranchAndBoundWithGurobi(const Parameters& params, int strategy, GRBModel& model,
-    BBInfo& info, const double best_bound, std::vector<double>* const solution = NULL) {
+void doBranchAndBoundWithGurobi(const Parameters& params, int strategy,
+    GRBModel& model, BBInfo& info, const double best_bound, 
+    std::vector<double>* const solution = NULL) {
 //#ifdef TRACE
-  printf("\n## Running B&B with Gurobi. Strategy: %d. Random seed: %d. ##\n",
+  printf("\tRunning B&B with Gurobi. Strategy: %d. Random seed: %d.\n",
       strategy, params.get(intParam::RANDOM_SEED));
 //#endif
   try {
@@ -351,8 +391,8 @@ void doBranchAndBoundWithGurobi(const Parameters& params, int strategy, GRBModel
     info.time = model.get(GRB_DoubleAttr_Runtime);
 
 #ifdef TRACE
-    printf("Gurobi: Solution value: %1.6f.\n", info.obj);
-    printf("Gurobi: Best bound: %1.6f.\n", info.bound);
+    printf("Gurobi: Solution value: %s.\n", stringValue(info.obj, "%1.6f").c_str());
+    printf("Gurobi: Best bound: %s.\n", stringValue(info.bound, "%1.6f").c_str());
     printf("Gurobi: Number iterations: %ld.\n", info.iters);
     printf("Gurobi: Number nodes: %ld.\n", info.nodes);
     printf("Gurobi: Time: %f.\n", info.time);
@@ -369,6 +409,17 @@ void doBranchAndBoundWithGurobi(const Parameters& params, int strategy, GRBModel
      }
      if (vars) {
        delete[] vars;
+     }
+   }
+
+   if (use_temp_option(params.get(intParam::TEMP), TempOptions::SAVE_IP_OPT)) {
+     std::string dir, instname, in_file_ext;
+     std::string filename = params.get(stringParam::FILENAME);
+     parseFilename(dir, instname, in_file_ext, filename, params.logfile);
+     std::string f_name = dir + "/" + instname + "_gurobi.mst.gz";
+     if (!fexists(f_name.c_str())) {
+       printf("Saving Gurobi MIP start file to \"%s\".\n", f_name.c_str());
+       model.write(f_name);
      }
    }
   } catch(GRBException& e) {
@@ -420,13 +471,25 @@ void doBranchAndBoundWithUserCutsGurobi(const Parameters& params,
     if (info.root_passes > 0) {
       info.first_cut_pass = cb.info.first_cut_pass; // second because first is lp opt val
       info.last_cut_pass = cb.info.last_cut_pass;
+      info.root_iters = cb.info.root_iters;
       info.root_time = cb.info.root_time;
       info.last_sol_time = cb.info.last_sol_time;
     } else {
-      info.first_cut_pass = info.obj;
-      info.last_cut_pass = info.obj;
-      info.root_time = info.time; // all time was spent at the root
-      info.last_sol_time = cb.info.last_sol_time; // roughly the same as total time in this case
+      // I guess this can happen if we solve during presolve,
+      // or if we do no root passes of cuts
+      if (info.nodes == 0) {
+        info.first_cut_pass = info.obj;
+        info.last_cut_pass = info.obj;
+        info.root_iters = info.iters; // all iters were at the root
+        info.root_time = info.time; // all time was spent at the root
+        info.last_sol_time = cb.info.last_sol_time; // roughly the same as total time in this case
+      } else {
+        info.first_cut_pass = cb.first_lp_opt;
+        info.last_cut_pass = cb.first_lp_opt;
+        info.root_iters = cb.info.root_iters;
+        info.root_time = cb.info.root_time; // all time was spent at the root
+        info.last_sol_time = cb.info.last_sol_time; // roughly the same as total time in this case
+      }
     }
 //#ifdef TRACE
 //    printf("Gurobi: Times cuts applied: %d.\n", cb.numTimesApplied);

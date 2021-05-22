@@ -102,10 +102,41 @@ enum class doubleConst {
   NUM_DOUBLE_CONST
 }; /* doubleConst */
 
+#define ENUM_OPTION_0 1
+#define ENUM_OPTION_1 2
+#define ENUM_OPTION_2 4
+#define ENUM_OPTION_3 8
+#define ENUM_OPTION_4 16
+#define ENUM_OPTION_5 32
+#define ENUM_OPTION_6 64
+#define ENUM_OPTION_7 128
+#define ENUM_OPTION_8 256
+#define ENUM_OPTION_9 512
+#define ENUM_OPTION_10 1024
+#define ENUM_OPTION_11 2048
+#define ENUM_OPTION_12 4096
+#define ENUM_OPTION_13 8192
+#define ENUM_OPTION_14 16384
+#define ENUM_OPTION_15 32768
+
 enum class TempOptions {
-  NONE = 0,
-  CHECK_CUTS_AGAINST_BB_OPT = 1,
+  NONE = 0, ///< default
+  CHECK_CUTS_AGAINST_BB_OPT = ENUM_OPTION_3, ///< if integer optimal solution is available, check if it violates any cuts
+  SAVE_IP_OPT = ENUM_OPTION_5, ///< save IP optimum solution
 };
+
+/// Shortcut for checking if a bit is enabled
+inline bool use_temp_option(const int strategy, const TempOptions option) {
+  return strategy & static_cast<int>(option);
+}
+/// Shortcut for bitwise enabling an option
+inline int enable_temp_option(const int strategy, const TempOptions option) {
+  return strategy | static_cast<int>(option);
+}
+/// Shortcut for bitwise disabling an option
+inline int disable_temp_option(const int strategy, const TempOptions option) {
+  return strategy & ~static_cast<int>(option);
+}
 
 /********** DEFINITIONS **********/
 //template <class T> class Parameter;
