@@ -397,11 +397,16 @@ void getCertificateForTerm(
     const double DIFFEPS,
     /// [in] logfile for error printing
     FILE* logfile) {
+  error_msg(errorstring, "Currently implemented incorrectly (missing common_changed_var effect).\n");
+  writeErrorToLog(errorstring, logfile);
+  exit(1);
+
   OsiSolverInterface* termSolver = solver->clone();
   const int curr_num_changed_bounds = term->changed_var.size();
   std::vector < std::vector<int> > commonTermIndices(curr_num_changed_bounds);
   std::vector < std::vector<double> > commonTermCoeff(curr_num_changed_bounds);
   std::vector<double> commonTermRHS(curr_num_changed_bounds);
+
   for (int i = 0; i < curr_num_changed_bounds; i++) {
     const int col = term->changed_var[i];
     const double coeff = (term->changed_bound[i] <= 0) ? 1. : -1.;
@@ -891,8 +896,9 @@ bool strengthenCutCoefficient(
   const double mult = (lt_zero_ind != -1) ? -1 : 1.;
   // Can it happen that one of the multipliers is on the lower bound, and one is on the upper bound?
   if (lt_zero_ind != -1 && gt_zero_ind != -1) {
-    const double uk0 = v[lt_zero_ind][solver->getNumRows() + disj->terms[lt_zero_ind].changed_var.size() + var];
-    const double uk1 = v[gt_zero_ind][solver->getNumRows() + disj->terms[gt_zero_ind].changed_var.size() + var];
+    const int num_common = (int) disj->common_changed_var.size();
+    const double uk0 = v[lt_zero_ind][solver->getNumRows() + num_common + disj->terms[lt_zero_ind].changed_var.size() + var];
+    const double uk1 = v[gt_zero_ind][solver->getNumRows() + num_common + disj->terms[gt_zero_ind].changed_var.size() + var];
     if (!isZero(uk0) && !isZero(uk1)) {
       warning_msg(warnstring,
           "CHECK: The u^t_k multipliers on variable k = %d are of different signs: u^{%d}_k = %.6e, u^{%d}_k = %.6e."

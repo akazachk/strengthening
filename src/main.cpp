@@ -199,6 +199,19 @@ int main(int argc, char** argv) {
         params.get(stringParam::FILENAME).c_str(),
         tmp_bb_info, boundInfo.ip_obj, &ip_solution);
 #endif
+#ifdef TRACE
+    /*{/// DEBUG
+    bool first = true;
+    for (int i = 0; i < (int) ip_solution.size(); i++) {
+      const double val = ip_solution[i];
+      if (isZero(val)) continue;
+      if (!first) printf(", ");
+      else first = false;
+      printf("(%d,%g)", i, val);
+    }
+    printf("\n");
+    }*/ /// DEBUG
+#endif
   } // get ip opt
   timer.start_timer(OverallTimeStats::TOTAL_TIME);
 
@@ -849,8 +862,7 @@ void initializeSolver(OsiSolverInterface* &solver) {
     for (int col = 0; col < solver->getNumCols(); col++) {
       solver->setObjCoeff(col, -1. * obj[col]);
     }
-    double objOffset = 0.;
-    solver->getDblParam(OsiDblParam::OsiObjOffset, objOffset);
+    double objOffset = getObjOffset(solver);
     if (objOffset != 0.) {
       solver->setDblParam(OsiDblParam::OsiObjOffset, -1. * objOffset);
     }
