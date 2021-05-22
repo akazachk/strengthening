@@ -356,11 +356,11 @@ void getCertificate(
     }
   }
   if (num_errors > 0) {
-    const bool should_continue = isZero(total_diff);
+    const bool should_continue = isZero(total_diff, 1e-3);
     if (should_continue) {
       // Send warning
       warning_msg(warnstring,
-          "Number of differences between true and calculated cuts: %d. Total difference: %g. Exiting.\n",
+          "Number of differences between true and calculated cuts: %d. Total difference: %g. Small enough difference that we will try to continue, but beware of numerical issues.\n",
           num_errors, total_diff);
     } else {
       // Exit
