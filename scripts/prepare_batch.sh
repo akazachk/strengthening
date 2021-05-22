@@ -38,7 +38,7 @@ PARAMS="$PARAMS --bb_strategy=536"
 #PARAMS="$PARAMS --use_tight_points=0"
 #PARAMS="$PARAMS --use_tight_rays=0"
 #PARAMS="$PARAMS --use_unit_vectors=0"
-PARAMS="$PARAMS --temp=1"
+PARAMS="$PARAMS --temp=8"
 
 TASK_ID=0
 #> job_list_strengthen.txt
