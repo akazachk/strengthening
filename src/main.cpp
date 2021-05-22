@@ -328,7 +328,11 @@ int main(int argc, char** argv) {
     OsiCuts origCurrCuts(currCuts);
     std::vector<int> str_cut_ind; // indices of cuts that were strengthened
     std::vector<CutCertificate> v; // [cut][term][Farkas multiplier] in the end, per term, this will be of dimension rows + disj term ineqs + cols
-    if (params.get(STRENGTHEN) == 1 && disj && disj->terms.size() > 0 && currCuts.sizeCuts() > 0) {
+    bool do_strengthening = params.get(STRENGTHEN) == 1;
+    do_strengthening = do_strengthening && disj && disj->terms.size() > 0;
+    do_strengthening = do_strengthening && currCuts.sizeCuts() > 0;
+    do_strengthening = do_strengthening && disj->integer_sol.size() == 0; // TODO right now (2021-05-22) we cannot handle integer-feasible solutions found during branching
+    if (do_strengthening) {
       v.resize(currCuts.sizeCuts());
       for (int cut_ind = 0; cut_ind < currCuts.sizeCuts(); cut_ind++) {
         v[cut_ind].resize(disj->num_terms);
