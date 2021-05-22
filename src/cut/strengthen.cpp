@@ -586,14 +586,20 @@ int strengthenCutS(
   std::vector<double> lb_term(num_terms, 0.0); // u^t_0 (D^t_0 - \ell^t)
   for (int term_ind = 0; term_ind < num_terms; term_ind++) {
     const DisjunctiveTerm& term = disj->terms[term_ind];
-    const int num_disj_ineqs = (int) term.changed_var.size();
+    const int num_common = (int) disj->common_changed_var.size();
+    const int num_disj_ineqs = num_common + term.changed_var.size();
     // Resize current term vector
     disj_lb_diff[term_ind].resize(num_disj_ineqs, 0.0);
 
     for (int bound_ind = 0; bound_ind < num_disj_ineqs; bound_ind++) {
-      const int var = term.changed_var[bound_ind];
-      const double mult = (term.changed_bound[bound_ind] <= 0) ? 1.0 : -1.0;
-      const double bd = (term.changed_bound[bound_ind] <= 0) ? solver->getColLower()[var] : solver->getColUpper()[var];
+      const std::vector<int>& changed_var = (bound_ind < num_common) ? disj->common_changed_var : term.changed_var;
+      const std::vector<int>& changed_bound = (bound_ind < num_common) ? disj->common_changed_bound : term.changed_bound;
+      const std::vector<double>& changed_value = (bound_ind < num_common) ? disj->common_changed_value : term.changed_value;
+      const int real_bound_ind = (bound_ind < num_common) ? bound_ind : bound_ind - num_common;
+      const int var = changed_var[real_bound_ind];
+      const double mult = (changed_bound[real_bound_ind] <= 0) ? 1.0 : -1.0;
+      const double bd = (changed_bound[real_bound_ind] <= 0) ? solver->getColLower()[var] : solver->getColUpper()[var];
+      const double val = changed_value[real_bound_ind];
       double lb = mult * bd;
       if (isInfinity(std::abs(lb))) {
         {
@@ -612,12 +618,12 @@ int strengthenCutS(
         if (isInfinity(std::abs(lb))) {
           warning_msg(warnstring,
               "Cannot strengthen cut using this disjunction because variable %d is missing its %s bound.\n",
-              var, term.changed_bound[bound_ind] <= 0 ? "lower" : "upper");
+              var, mult > 0 ? "lower" : "upper");
           return 0;
         }
       } // check if lb is infinite
 
-      disj_lb_diff[term_ind][bound_ind] = mult * term.changed_value[bound_ind] - lb;
+      disj_lb_diff[term_ind][bound_ind] = mult * val - lb;
 #ifdef TRACE
       assert(disj_lb_diff[term_ind][bound_ind] > -1e-3);
 #endif
@@ -739,14 +745,20 @@ int strengthenCut(
   std::vector<double> lb_term(disj->num_terms, 0.0); // u^t_0 (D^t_0 - ell^t)
   for (int term_ind = 0; term_ind < disj->num_terms; term_ind++) {
     const DisjunctiveTerm& term = disj->terms[term_ind];
-    const int num_disj_ineqs = (int) term.changed_var.size();
+    const int num_common = (int) disj->common_changed_var.size();
+    const int num_disj_ineqs = num_common + term.changed_var.size();
     // Resize current term vector
     disj_lb_diff[term_ind].resize(num_disj_ineqs, 0.0);
 
     for (int bound_ind = 0; bound_ind < num_disj_ineqs; bound_ind++) {
-      const int var = term.changed_var[bound_ind];
-      const double mult = (term.changed_bound[bound_ind] <= 0) ? 1.0 : -1.0;
-      const double bd = (term.changed_bound[bound_ind] <= 0) ? solver->getColLower()[var] : solver->getColUpper()[var];
+      const std::vector<int>& changed_var = (bound_ind < num_common) ? disj->common_changed_var : term.changed_var;
+      const std::vector<int>& changed_bound = (bound_ind < num_common) ? disj->common_changed_bound : term.changed_bound;
+      const std::vector<double>& changed_value = (bound_ind < num_common) ? disj->common_changed_value : term.changed_value;
+      const int real_bound_ind = (bound_ind < num_common) ? bound_ind : bound_ind - num_common;
+      const int var = changed_var[real_bound_ind];
+      const double mult = (changed_bound[real_bound_ind] <= 0) ? 1.0 : -1.0;
+      const double bd = (changed_bound[real_bound_ind] <= 0) ? solver->getColLower()[var] : solver->getColUpper()[var];
+      const double val = changed_value[real_bound_ind];
       double lb = mult * bd;
       if (isInfinity(std::abs(lb))) {
         {
@@ -765,18 +777,17 @@ int strengthenCut(
         if (isInfinity(std::abs(lb))) {
           warning_msg(warnstring,
               "Cannot strengthen cut using this disjunction because variable %d is missing its %s bound.\n",
-              var, term.changed_bound[bound_ind] <= 0 ? "lower" : "upper");
+              var, mult > 0 ? "lower" : "upper");
           return 0;
         }
       } // check if lb is infinite
 
-      disj_lb_diff[term_ind][bound_ind] = mult * term.changed_value[bound_ind] - lb;
+      disj_lb_diff[term_ind][bound_ind] = mult * val - lb;
 #ifdef TRACE
       assert(disj_lb_diff[term_ind][bound_ind] > -1e-3);
 #endif
-      const double uk0 = v[term_ind][solver->getNumRows() + bound_ind];
-      if (!isZero(uk0) && !isZero(disj_lb_diff[term_ind][bound_ind])) {
-        lb_term[term_ind] += uk0 * disj_lb_diff[term_ind][bound_ind];
+      if (!isZero(v[term_ind][solver->getNumRows() + bound_ind]) && !isZero(disj_lb_diff[term_ind][bound_ind])) {
+        lb_term[term_ind] += v[term_ind][solver->getNumRows() + bound_ind] * disj_lb_diff[term_ind][bound_ind];
         if (isZero(lb_term[term_ind])) {
           lb_term[term_ind] = 0.;
         }
@@ -868,7 +879,7 @@ bool strengthenCutCoefficient(
   int lt_zero_ind = -1, gt_zero_ind = -1;
   for (int term_ind = 0; term_ind < disj->num_terms; term_ind++) {
     const DisjunctiveTerm& term = disj->terms[term_ind];
-    const int num_disj_ineqs = (int) term.changed_var.size();
+    const int num_disj_ineqs = (int) disj->common_changed_var.size() + term.changed_var.size();
     const double ukt = v[term_ind][solver->getNumRows() + num_disj_ineqs + var];
     if (lessThanVal(ukt, 0)) {
       if (lt_zero_ind == -1) lt_zero_ind = term_ind;
@@ -876,7 +887,7 @@ bool strengthenCutCoefficient(
       if (gt_zero_ind == -1) gt_zero_ind = term_ind;
     }
     if (lt_zero_ind != -1 && gt_zero_ind != -1) break;
-  }
+  } // loop over terms
   const double mult = (lt_zero_ind != -1) ? -1 : 1.;
   // Can it happen that one of the multipliers is on the lower bound, and one is on the upper bound?
   if (lt_zero_ind != -1 && gt_zero_ind != -1) {
@@ -913,7 +924,7 @@ bool strengthenCutCoefficient(
       double max_term_val = std::numeric_limits<double>::lowest(); 
       for (int term_ind = 0; term_ind < num_terms; term_ind++) {
         const DisjunctiveTerm& term = disj->terms[term_ind];
-        const int num_disj_ineqs = (int) term.changed_var.size();
+        const int num_disj_ineqs = (int) disj->common_changed_var.size() + term.changed_var.size();
         const double utk = std::abs(v[term_ind][solver->getNumRows() + num_disj_ineqs + var]);
         const double curr_val = -utk + lb_term[term_ind] * m[term_ind];
         if (curr_val > max_term_val) {
@@ -1024,7 +1035,7 @@ void setupMonoidalIP(
     el_ind++;
 
     const DisjunctiveTerm& term = disj->terms[t];
-    const int num_disj_ineqs = (int) term.changed_var.size();
+    const int num_disj_ineqs = (int) disj->common_changed_var.size() + term.changed_var.size();
     const double utk = std::abs(v[t][solver->getNumRows() + num_disj_ineqs + var]);
     rowLB[row_ind] = -utk;
 
@@ -1093,7 +1104,7 @@ void updateMonoidalIP(
   if (!disj) { return; }
   for (int t = 0; t < disj->num_terms; t++) {
     const DisjunctiveTerm& term = disj->terms[t];
-    const int num_disj_ineqs = (int) term.changed_var.size();
+    const int num_disj_ineqs = (int) disj->common_changed_var.size() + term.changed_var.size();
     const double utk = std::abs(v[t][solver->getNumRows() + num_disj_ineqs + var]);
     mono->setRowLower(t, -utk);
   }
@@ -1156,7 +1167,7 @@ int BalJer79_Algorithm2(
   double sum_gamma_t0 = 0., sum_gamma_tk = 0.;
   for (int t = 0; t < num_terms; t++) {
     const DisjunctiveTerm& term = disj->terms[t];
-    const int num_disj_ineqs = (int) term.changed_var.size();
+    const int num_disj_ineqs = (int) disj->common_changed_var.size() + term.changed_var.size();
 
     // TODO get this to work with general inequalities not just bound changes
     for (int bound_ind = 0; bound_ind < num_disj_ineqs; bound_ind++) {
