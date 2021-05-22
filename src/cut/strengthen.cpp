@@ -350,29 +350,40 @@ void getCertificate(
   for (int i = 0; i < solver->getNumCols(); i++) {
     const double diff = cut_coeff[i] - new_coeff[i];
     if (greaterThanVal(std::abs(diff), 0.0)) {
-      fprintf(stderr, "%d: cut: %.6f\tcalc: %.6f\tdiff: %g\n", i, cut_coeff[i], new_coeff[i], diff);
+      fprintf(stderr, "%d: cut: %g\tcalc: %g\tdiff: %g\n", i, cut_coeff[i], new_coeff[i], diff);
       num_errors++;
       total_diff += std::abs(diff);
     }
   }
   if (num_errors > 0) {
-    error_msg(errorstring,
-        "Number of differences between true and calculated cuts: %d. Total difference: %g. Exiting.\n",
-        num_errors, total_diff);
+    const bool should_continue = isZero(total_diff);
+    if (should_continue) {
+      // Send warning
+      warning_msg(warnstring,
+          "Number of differences between true and calculated cuts: %d. Total difference: %g. Exiting.\n",
+          num_errors, total_diff);
+    } else {
+      // Exit
+      error_msg(errorstring,
+          "Number of differences between true and calculated cuts: %d. Total difference: %g. Exiting.\n",
+          num_errors, total_diff);
+      writeErrorToLog(errorstring, logfile);
+    }
     fprintf(stderr, "x:\n");
     for (int i = 0; i < solver->getNumCols(); i++) {
-      fprintf(stderr, "x[%d] = %f\n", i, x(i));
+      fprintf(stderr, "x[%d] = %g\n", i, x(i));
     }
     fprintf(stderr, "b:\n");
     for (int i = 0; i < solver->getNumCols(); i++) {
-      fprintf(stderr, "b[%d] = %f\n", i, b(i));
+      fprintf(stderr, "b[%d] = %g\n", i, b(i));
     }
     fprintf(stderr, "v:\n");
     for (int i = 0; i < (int) v.size(); i++) {
-      fprintf(stderr, "v[%d] = %f\n", i, v[i]);
+      fprintf(stderr, "v[%d] = %g\n", i, v[i]);
     }
-    writeErrorToLog(errorstring, logfile);
-    exit(1);
+    if (!should_continue) {
+      exit(1);
+    }
   }
   //else printf("No errors found.\n");
 //#endif
