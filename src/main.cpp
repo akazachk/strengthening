@@ -184,6 +184,7 @@ int main(int argc, char** argv) {
 
   //====================================================================================================//
   // Get IP solution if requested
+  timer.end_timer(OverallTimeStats::TOTAL_TIME);
   std::vector<double> ip_solution;
 #ifdef USE_GUROBI
   if (params.get(TEMP) == static_cast<int>(TempOptions::CHECK_CUTS_AGAINST_BB_OPT)) {
@@ -192,6 +193,7 @@ int main(int argc, char** argv) {
         params.get(stringParam::FILENAME).c_str(), tmp_bb_info, boundInfo.ip_obj, &ip_solution);
   } // get ip opt
 #endif
+  timer.start_timer(OverallTimeStats::TOTAL_TIME);
 
   //====================================================================================================//
   // Save original solver in case we wish to come back to it later
@@ -316,7 +318,7 @@ int main(int argc, char** argv) {
         const double activity = dotProduct(num_el, ind, el, ip_solution.data());
 
         if (lessThanVal(activity, rhs)) {
-          warning_msg(warnstring, "Cut %d removes optimal solution. Activity: %.10f. Rhs: %.10f.\n", cut_ind, activity, rhs);
+          warning_msg(warnstring, "Unstrengthened cut %d removes optimal solution. Activity: %.10f. Rhs: %.10f.\n", cut_ind, activity, rhs);
         }
       } // loop over cuts
     } // check cuts against ip solution

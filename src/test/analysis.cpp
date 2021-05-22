@@ -121,12 +121,12 @@ void printHeader(const StrengtheningParameters::Parameters& params,
   } // BOUND INFO
   { // GAP INFO
     int count = 0;
-    fprintf(logfile, "%s%c", "GMIC %% GAP CLOSED", SEP); count++; // 1
-    fprintf(logfile, "%s%c", "L&PC %% GAP CLOSED", SEP); count++; // 2
-    fprintf(logfile, "%s%c", "MYCUTS %% GAP CLOSED", SEP); count++; // 3
-    fprintf(logfile, "%s%c", "GMIC+MYCUTS %% GAP CLOSED", SEP); count++; // 4
-    fprintf(logfile, "%s%c", "UNSTR MYCUTS %% GAP CLOSED", SEP); count++; // 5
-    fprintf(logfile, "%s%c", "UNSTR GMIC+MYCUTS %% GAP CLOSED", SEP); count++; // 6
+    fprintf(logfile, "%s%c", "GMIC % GAP CLOSED", SEP); count++; // 1
+    fprintf(logfile, "%s%c", "L&PC % GAP CLOSED", SEP); count++; // 2
+    fprintf(logfile, "%s%c", "MYCUTS % GAP CLOSED", SEP); count++; // 3
+    fprintf(logfile, "%s%c", "GMIC+MYCUTS % GAP CLOSED", SEP); count++; // 4
+    fprintf(logfile, "%s%c", "UNSTR MYCUTS % GAP CLOSED", SEP); count++; // 5
+    fprintf(logfile, "%s%c", "UNSTR GMIC+MYCUTS % GAP CLOSED", SEP); count++; // 6
     assert(count == countGapInfoEntries);
   } // GAP INFO
   { // BB INFO

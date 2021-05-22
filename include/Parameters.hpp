@@ -306,7 +306,7 @@ struct Parameters {
     // BB_STRATEGY: see BBHelper.hpp; 10776 = 010101000011000 => gurobi: 1, user_cuts: 1, presolve_off: 1, heuristics_off: 1, use_best_bound: 1
     {intParam::BB_STRATEGY,
         IntParameter(intParam::BB_STRATEGY, "BB_STRATEGY",
-            10776, std::numeric_limits<int>::min(), std::numeric_limits<int>::max())},
+            536, std::numeric_limits<int>::min(), std::numeric_limits<int>::max())},
     {intParam::BB_RUNS,
         IntParameter(intParam::BB_RUNS, "BB_RUNS",
             0, std::numeric_limits<int>::min(), std::numeric_limits<int>::max())},

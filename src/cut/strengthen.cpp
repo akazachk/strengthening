@@ -572,12 +572,12 @@ int strengthenCutS(
     const std::vector<double>& ip_solution) {
   const int num_cuts = cuts.sizeCuts();
   if (num_cuts == 0) { return 0; }
-  for (int i = 0; i < num_cuts; i++) {
-    str_cuts.insert(cuts.rowCut(i));
-  }
   if (!disj) { return 0; }
   const int num_terms = disj->num_terms;
   if (num_terms < 2) { return 0; }
+  for (int i = 0; i < num_cuts; i++) {
+    str_cuts.insert(cuts.rowCut(i));
+  }
 
   // Get globally lower bound for each of the disjunctive terms
   // and use this to set up term-by-term coefficients for strengthening
@@ -610,10 +610,10 @@ int strengthenCutS(
           if (tmpSolver) { delete tmpSolver; }
         }
         if (isInfinity(std::abs(lb))) {
-          fprintf(stderr,
-              "*** ERROR: Cannot strengthen cut using this disjunction because variable %d is missing its %s bound.\n",
+          warning_msg(warnstring,
+              "Cannot strengthen cut using this disjunction because variable %d is missing its %s bound.\n",
               var, term.changed_bound[bound_ind] <= 0 ? "lower" : "upper");
-          exit(1);
+          return 0;
         }
       } // check if lb is infinite
 
@@ -763,10 +763,10 @@ int strengthenCut(
           if (tmpSolver) { delete tmpSolver; }
         }
         if (isInfinity(std::abs(lb))) {
-          fprintf(stderr,
-              "*** ERROR: Cannot strengthen cut using this disjunction because variable %d is missing its %s bound.\n",
+          warning_msg(warnstring,
+              "Cannot strengthen cut using this disjunction because variable %d is missing its %s bound.\n",
               var, term.changed_bound[bound_ind] <= 0 ? "lower" : "upper");
-          exit(1);
+          return 0;
         }
       } // check if lb is infinite
 
@@ -935,7 +935,8 @@ bool strengthenCutCoefficient(
     model.setModelOwnsSolver(false);
     model.branchAndBound();
     if (model.status() != 0) {
-      fprintf(stderr, "*** ERROR: Failed to optimize monoidal strengthening solver for var %d.\n", var);
+      error_msg(errorstring, "Failed to optimize monoidal strengthening solver for var %d.\n", var);
+      writeErrorToLog(errorstring, logfile);
       exit(1);
     }
     str_coeff += model.getObjValue();
