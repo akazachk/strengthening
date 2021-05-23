@@ -904,7 +904,7 @@ bool strengthenCutCoefficient(
     }
     if (lt_zero_ind != -1 && gt_zero_ind != -1) break;
   } // loop over terms
-  const double mult = (lt_zero_ind != -1) ? -1 : 1.;
+  const double mult = (gt_zero_ind == -1) ? -1 : 1.;
   // Can it happen that one of the multipliers is on the lower bound, and one is on the upper bound?
   if (lt_zero_ind != -1 && gt_zero_ind != -1) {
     const int num_common = (int) disj->common_changed_var.size();
@@ -915,8 +915,8 @@ bool strengthenCutCoefficient(
           "CHECK: The u^t_k multipliers on variable k = %d are of different signs: u^{%d}_k = %.6e, u^{%d}_k = %.6e."
           " This is strange and may not be handled correctly in the code.\n",
           var, lt_zero_ind, uk0, gt_zero_ind, uk1);
-      str_coeff = coeff;
-      return false;
+      //str_coeff = coeff;
+      //return false;
     }
   }
   str_coeff = mult * coeff;
@@ -942,8 +942,9 @@ bool strengthenCutCoefficient(
       for (int term_ind = 0; term_ind < num_terms; term_ind++) {
         const DisjunctiveTerm& term = disj->terms[term_ind];
         const int num_disj_ineqs = (int) disj->common_changed_var.size() + term.changed_var.size();
-        const double utk = std::abs(v[term_ind][solver->getNumRows() + num_disj_ineqs + var]);
-        const double curr_val = -utk + lb_term[term_ind] * m[term_ind];
+        const double utk = v[term_ind][solver->getNumRows() + num_disj_ineqs + var];
+        // TODO figure out safe floating point comparison
+        const double curr_val = ((mult > 0 && utk < 0) ? 0. : -utk * mult) + lb_term[term_ind] * m[term_ind];
         if (curr_val > max_term_val) {
           max_term_val = curr_val;
         }
@@ -953,7 +954,7 @@ bool strengthenCutCoefficient(
       }
     } // loop over monoid options
 
-    if (!isZero(min_max_term_val)) {
+    if (!isZero(min_max_term_val) && !isInfinity(min_max_term_val)) {
       str_coeff += min_max_term_val;
     }
   } // if mono solver not given
