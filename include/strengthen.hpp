@@ -111,16 +111,20 @@ bool strengthenCutCoefficient(
     OsiSolverInterface* const mono,
     FILE* logfile);
 
+/// @brief Creates monoidal strengthening IP
 void setupMonoidalIP(
     OsiSolverInterface* const mono,
     const int var,
     const Disjunction* const disj,
     const std::vector<double>& lb_term,
     const std::vector<std::vector<double> >& v, 
-    const OsiSolverInterface* const solver);
+    const OsiSolverInterface* const solver,
+    const double mult);
+/// @brief Change relevant rhs for rows of monoidal IP set up as in setupMonoidalIP
 void updateMonoidalIP(
     OsiSolverInterface* const mono,
     const int var,
     const Disjunction* const disj,
     const std::vector<std::vector<double> >& v, 
-    const OsiSolverInterface* const solver);
+    const OsiSolverInterface* const solver,
+    const double mult);

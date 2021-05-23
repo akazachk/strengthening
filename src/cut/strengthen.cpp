@@ -657,11 +657,27 @@ int strengthenCutS(
   int num_coeffs_changed = 0;
   for (int col = 0; col < solver->getNumCols(); col++) {
     if (!solver->isInteger(col)) continue;
+
+    // Check if both lower and upper bound have positive multipliers across all terms
+    int lt_zero_ind = -1, gt_zero_ind = -1;
+    for (int term_ind = 0; term_ind < disj->num_terms; term_ind++) {
+      const DisjunctiveTerm& term = disj->terms[term_ind];
+      const int num_disj_ineqs = (int) disj->common_changed_var.size() + term.changed_var.size();
+      const double ukt = v[term_ind][solver->getNumRows() + num_disj_ineqs + col];
+      if (lessThanVal(ukt, 0)) {
+        if (lt_zero_ind == -1) lt_zero_ind = term_ind;
+      } else if (greaterThanVal(ukt, 0)) {
+        if (gt_zero_ind == -1) gt_zero_ind = term_ind;
+      }
+      if (lt_zero_ind != -1 && gt_zero_ind != -1) break;
+    } // loop over terms
+    const double mult = (gt_zero_ind == -1) ? -1 : 1.;
+
     if (!mono && num_terms > 2) {
       mono = new SolverInterface;
-      setupMonoidalIP(mono, col, disj, lb_term, v, solver);
+      setupMonoidalIP(mono, col, disj, lb_term, v, solver, mult);
     } else if (mono != NULL) {
-      updateMonoidalIP(mono, col, disj, v, solver);
+      updateMonoidalIP(mono, col, disj, v, solver, mult);
     }
 
     // Now try to strengthen the coefficients on the integer-restricted variables
@@ -818,11 +834,27 @@ int strengthenCut(
   int num_coeffs_changed = 0;
   for (int col = 0; col < solver->getNumCols(); col++) {
     if (!solver->isInteger(col)) continue;
+
+    // Check if both lower and upper bound have positive multipliers across all terms
+    int lt_zero_ind = -1, gt_zero_ind = -1;
+    for (int term_ind = 0; term_ind < disj->num_terms; term_ind++) {
+      const DisjunctiveTerm& term = disj->terms[term_ind];
+      const int num_disj_ineqs = (int) disj->common_changed_var.size() + term.changed_var.size();
+      const double ukt = v[term_ind][solver->getNumRows() + num_disj_ineqs + col];
+      if (lessThanVal(ukt, 0)) {
+        if (lt_zero_ind == -1) lt_zero_ind = term_ind;
+      } else if (greaterThanVal(ukt, 0)) {
+        if (gt_zero_ind == -1) gt_zero_ind = term_ind;
+      }
+      if (lt_zero_ind != -1 && gt_zero_ind != -1) break;
+    } // loop over terms
+    const double mult = (gt_zero_ind == -1) ? -1 : 1.;
+
     if (!mono && disj->num_terms > 2) {
       mono = new SolverInterface;
-      setupMonoidalIP(mono, col, disj, lb_term, v, solver);
+      setupMonoidalIP(mono, col, disj, lb_term, v, solver, mult);
     } else if (mono != NULL) {
-      updateMonoidalIP(mono, col, disj, v, solver);
+      updateMonoidalIP(mono, col, disj, v, solver, mult);
     }
 
     if (strengthenCutCoefficient(str_coeff[col], str_rhs, col, str_coeff[col], disj, lb_term, v, solver, mono, logfile)) {
@@ -998,7 +1030,7 @@ bool strengthenCutCoefficient(
 /**
  * @brief Creates monoidal strengthening IP
  *
- * Let d_t := u^t_0 (D^t_0 - \ell^t)
+ * @details Let d_t := u^t_0 (D^t_0 - \ell^t)
  *
  * min_{\gamma_k, m \in \Z^T} \gamma_k + \alpha_k (we leave out \alpha_k in the formulation as it is a constant)
  *    - d_t m_t + gamma \ge -u^t_k    for all t
@@ -1017,7 +1049,9 @@ void setupMonoidalIP(
     /// [in] Farkas multipliers for each of the terms of the disjunction (each is a vector of length m + n)
     const std::vector<std::vector<double> >& v, 
     /// [in] original solver
-    const OsiSolverInterface* const solver) {
+    const OsiSolverInterface* const solver,
+    /// [in] multiplier on utk (negative 1 if the upper bound is being used for all terms, so we will later complement)
+    const double mult) {
   if (!disj) return;
   if (!mono) {
     fprintf(stderr,
@@ -1054,11 +1088,14 @@ void setupMonoidalIP(
 
     const DisjunctiveTerm& term = disj->terms[t];
     const int num_disj_ineqs = (int) disj->common_changed_var.size() + term.changed_var.size();
-    const double utk = std::abs(v[t][solver->getNumRows() + num_disj_ineqs + var]);
-    rowLB[row_ind] = -utk;
+    //const double utk = std::abs(v[t][solver->getNumRows() + num_disj_ineqs + var]);
+    const double utk = v[t][solver->getNumRows() + num_disj_ineqs + var];
+    // TODO figure out safe floating point comparison
+    const double curr_val = ((mult > 0 && utk < 0) ? 0. : -utk * mult);
+    rowLB[row_ind] = curr_val;
 
     row_ind++;
-  }
+  } // loop over terms
 
   // \sum_t m_t \ge 0
   rowStarts[row_ind] = el_ind;
@@ -1105,9 +1142,6 @@ void setupMonoidalIP(
   setLPSolverParameters(mono, solver->messageHandler()->logLevel());
 } /* setupMonoidalIP */
 
-/**
- * @brief Change relevant rhs for rows of monoidal IP set up as in setupMonoidalIP
- */
 void updateMonoidalIP(
     /// [in/out] monoidal solver (assumed to already be set up)
     OsiSolverInterface* const mono,
@@ -1118,14 +1152,19 @@ void updateMonoidalIP(
     /// [in] Farkas multipliers for each of the terms of the disjunction (each is a vector of length m + n)
     const std::vector<std::vector<double> >& v, 
     /// [in] original solver
-    const OsiSolverInterface* const solver) {
+    const OsiSolverInterface* const solver,
+    /// [in] multiplier on utk (negative 1 if the upper bound is being used for all terms, so we will later complement)
+    const double mult) {
   if (!disj) { return; }
   for (int t = 0; t < disj->num_terms; t++) {
     const DisjunctiveTerm& term = disj->terms[t];
     const int num_disj_ineqs = (int) disj->common_changed_var.size() + term.changed_var.size();
-    const double utk = std::abs(v[t][solver->getNumRows() + num_disj_ineqs + var]);
-    mono->setRowLower(t, -utk);
-  }
+    //const double utk = std::abs(v[t][solver->getNumRows() + num_disj_ineqs + var]);
+    const double utk = v[t][solver->getNumRows() + num_disj_ineqs + var];
+    // TODO figure out safe floating point comparison
+    const double curr_val = ((mult > 0 && utk < 0) ? 0. : -utk * mult);
+    mono->setRowLower(t, curr_val);
+  } // loop over terms
 } /* updateMonoidalIP */
 
 /**
