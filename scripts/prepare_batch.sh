@@ -87,7 +87,7 @@ while read line; do
   fi
 
   # Finally, write command we will call to a file
-  echo "mkdir -p ${OUT_DIR}" >> ${JOB_LIST}
+  echo -n "mkdir -p ${OUT_DIR}; " >> ${JOB_LIST}
   echo "nohup /usr/bin/time -v ${PROJ_DIR}/Release/main -f ${INSTANCE_DIR}/$line.mps --log=${OUT_DIR}/vpc-str.csv --optfile=${OPTFILE} $SOLPARAM $PARAMS >> ${OUT_DIR}/log.out 2>&1" >> ${JOB_LIST}
 done < ${INSTANCE_LIST}
 
