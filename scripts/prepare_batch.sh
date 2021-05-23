@@ -15,6 +15,8 @@ then
   fi
 fi
 
+SILENT=1
+
 export PROJ_DIR=`realpath -s ${PROJ_DIR}`
 export VPC_DIR=`realpath -s ${PROJ_DIR}/../vpc`
 export INSTANCE_DIR=${VPC_DIR}/data/instances
@@ -60,7 +62,11 @@ while read line; do
   CASE_NUM=`printf %03d $TASK_ID`
   STUB=`date +%F`
   OUT_DIR=${RESULTS_DIR}/$STUB/str$DEPTH/${CASE_NUM}
-  echo "Preparing command to run instance $line (task $TASK_ID) at `date`"
+  if [ $SILENT != 1 ]; then
+    echo "Preparing command to run instance $line (task $TASK_ID) at `date`"
+  else
+    echo -n "."
+  fi
 
   # Check if solution exists
   arrIN=(${line//\// })
@@ -71,7 +77,9 @@ while read line; do
   done
   SOLFILE="${SOLFILE}_gurobi.mst.gz"
   if test -f "$SOLFILE"; then
-    echo "$SOLFILE exists"
+    if [ $SILENT != 1 ]; then
+      echo "$SOLFILE exists"
+    fi
     SOLPARAM="--solfile=${SOLFILE}"
   else
     echo "*** WARNING: Could not find $SOLFILE"
@@ -83,3 +91,4 @@ while read line; do
   echo "nohup /usr/bin/time -v ${PROJ_DIR}/Release/main -f ${INSTANCE_DIR}/$line.mps --log=${OUT_DIR}/vpc-str.csv --optfile=${OPTFILE} $SOLPARAM $PARAMS >> ${OUT_DIR}/log.out 2>&1" >> ${JOB_LIST}
 done < ${INSTANCE_LIST}
 
+echo "Done preparing $JOB_LIST"
