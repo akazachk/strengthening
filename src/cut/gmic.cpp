@@ -346,8 +346,10 @@ void generateGomoryCuts(
     }
   } // test closed-form strengthening for GMICs
 
+  // Finish stddev calculation = sqrt(E[X^2] - E[X]^2)
   num_coeffs_strengthened[(int) Stat::stddev] -= num_coeffs_strengthened[(int) Stat::avg] * num_coeffs_strengthened[(int) Stat::avg];
-  fprintf(stdout, "\nFinished strengthening GMICs (%d cuts affected).\n", num_cuts_strengthened);
+  num_coeffs_strengthened[(int) Stat::stddev] = (num_coeffs_strengthened[(int) Stat::stddev] > 0) ? std::sqrt(num_coeffs_strengthened[(int) Stat::stddev]) : 0.;
+  fprintf(stdout, "\nFinished strengthening GMICs (%d / %d cuts affected).\n", num_cuts_strengthened, currGMICs.sizeCuts());
   fprintf(stdout, "Number coeffs changed:\n");
   fprintf(stdout, "\ttotal: %g\n", num_coeffs_strengthened[(int) Stat::total]);
   fprintf(stdout, "\tavg: %g\n", num_coeffs_strengthened[(int) Stat::avg]);

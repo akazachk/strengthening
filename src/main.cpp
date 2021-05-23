@@ -421,8 +421,10 @@ int main(int argc, char** argv) {
           str_cut_ind.push_back(cut_ind);
         }
       } // loop over cuts
+      // Finish stddev calculation = sqrt(E[X^2] - E[X]^2)
       strInfo.num_coeffs_strengthened[(int) Stat::stddev] -= strInfo.num_coeffs_strengthened[(int) Stat::avg] * strInfo.num_coeffs_strengthened[(int) Stat::avg];
-      fprintf(stdout, "\nFinished strengthening (%d cuts affected).\n", boundInfo.num_str_cuts);
+      strInfo.num_coeffs_strengthened[(int) Stat::stddev] = (strInfo.num_coeffs_strengthened[(int) Stat::stddev] > 0) ? std::sqrt(strInfo.num_coeffs_strengthened[(int) Stat::stddev]) : 0.;
+      fprintf(stdout, "\nFinished strengthening (%d / %d cuts affected).\n", boundInfo.num_str_cuts, boundInfo.num_mycut);
       fprintf(stdout, "Number coeffs changed:\n");
       fprintf(stdout, "\ttotal: %g\n", strInfo.num_coeffs_strengthened[(int) Stat::total]);
       fprintf(stdout, "\tavg: %g\n", strInfo.num_coeffs_strengthened[(int) Stat::avg]);
