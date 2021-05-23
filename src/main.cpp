@@ -193,7 +193,7 @@ int main(int argc, char** argv) {
     int strategy = params.get(BB_STRATEGY);
     // If optfile provided, enable use_bound
     if (!params.get(OPTFILE).empty() && !use_bb_option(strategy, BB_Strategy_Options::use_best_bound)) {
-      enable_bb_option(strategy, BB_Strategy_Options::use_best_bound);
+      strategy = enable_bb_option(strategy, BB_Strategy_Options::use_best_bound);
     }
     doBranchAndBoundWithGurobi(params, strategy,
         params.get(stringParam::FILENAME).c_str(),
