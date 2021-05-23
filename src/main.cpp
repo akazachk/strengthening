@@ -212,6 +212,13 @@ int main(int argc, char** argv) {
     printf("\n");
     }*/ /// DEBUG
 #endif
+    if (isInfinity(std::abs(boundInfo.ip_obj)) && ip_solution.size() > 0) {
+      boundInfo.ip_obj = dotProduct(ip_solution.data(), solver->getObjCoefficients(), solver->getNumCols());
+      params.set(doubleParam::IP_OBJ, boundInfo.ip_obj);
+#ifdef TRACE
+      fprintf(stdout, "Best known objective value is %s.\n", stringValue(boundInfo.ip_obj, "%g").c_str());
+#endif
+    }
   } // get ip opt
   timer.start_timer(OverallTimeStats::TOTAL_TIME);
 

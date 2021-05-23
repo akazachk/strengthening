@@ -110,6 +110,7 @@ void setStrategyForBBTestGurobi(const Parameters& params, const int strategy,
       user_provides_start |= (optfile.size() > ext3.size()) && (optfile.compare(optfile.size() - ext3.size(), ext3.size(), ext3) == 0);
       user_provides_start |= (optfile.size() > ext4.size()) && (optfile.compare(optfile.size() - ext4.size(), ext4.size(), ext4) == 0);
       if (user_provides_start) {
+        printf("Gurobi: Reading optimal solution from %s.\n", optfile.c_str());
         model.read(optfile);
       }
     }
@@ -412,10 +413,16 @@ void doBranchAndBoundWithGurobi(const Parameters& params, int strategy,
      if (vars) {
        delete[] vars;
      }
-     if (!isVal(obj, info.obj)) {
-       error_msg(errorstring, "Gurobi: %.6e, computed objective value from solution, does not match solver's obj value %.6e.\n", obj, info.obj);
+     const bool add_same = isVal(obj, info.obj, 1e-3);
+     const bool mult_same = ( (isZero(obj) || isZero(info.obj)) && add_same )
+       || ( (obj/info.obj > 0) && isVal(std::abs(obj/info.obj), 1., .01) ); 
+     if (!add_same && !mult_same) {
+       error_msg(errorstring, "Gurobi: %g, computed objective value from solution, does not match solver's obj value %g.\n", obj, info.obj);
        writeErrorToLog(errorstring, params.logfile);
        exit(1);
+     }
+     if (!isVal(obj, info.obj)) {
+       warning_msg(warnstring, "Gurobi: %g, computed objective value from solution, does not match solver's obj value %g.\n", obj, info.obj);
      }
    } // save ip solution
 
