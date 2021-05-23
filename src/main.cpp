@@ -191,8 +191,8 @@ int main(int argc, char** argv) {
     BBInfo tmp_bb_info;
 #ifdef USE_GUROBI
     int strategy = params.get(BB_STRATEGY);
-    // If optfile provided, enable use_bound
-    if (!params.get(OPTFILE).empty() && !use_bb_option(strategy, BB_Strategy_Options::use_best_bound)) {
+    // If solfile provided, enable use_bound
+    if (!params.get(SOLFILE).empty() && !use_bb_option(strategy, BB_Strategy_Options::use_best_bound)) {
       strategy = enable_bb_option(strategy, BB_Strategy_Options::use_best_bound);
     }
     doBranchAndBoundWithGurobi(params, strategy,
@@ -212,12 +212,13 @@ int main(int argc, char** argv) {
     printf("\n");
     }*/ /// DEBUG
 #endif
-    if (isInfinity(std::abs(boundInfo.ip_obj)) && ip_solution.size() > 0) {
-      boundInfo.ip_obj = dotProduct(ip_solution.data(), solver->getObjCoefficients(), solver->getNumCols());
-      params.set(doubleParam::IP_OBJ, boundInfo.ip_obj);
-#ifdef TRACE
-      fprintf(stdout, "Best known objective value is %s.\n", stringValue(boundInfo.ip_obj, "%g").c_str());
-#endif
+    if (ip_solution.size() > 0) {
+      if (isInfinity(std::abs(boundInfo.ip_obj))) {
+        const double ip_obj = dotProduct(ip_solution.data(), solver->getObjCoefficients(), solver->getNumCols());
+        boundInfo.ip_obj = ip_obj;
+        params.set(doubleParam::IP_OBJ, boundInfo.ip_obj);
+        fprintf(stdout, "Best known IP objective value is %s.\n", stringValue(boundInfo.ip_obj, "%g").c_str());
+      }
     }
   } // get ip opt
   timer.start_timer(OverallTimeStats::TOTAL_TIME);
@@ -646,14 +647,10 @@ int startUp(int argc, char** argv) {
     if (optfile.size() > csvext.size() && optfile.compare(optfile.size()-csvext.size(), csvext.size(), csvext) == 0) {
   #ifdef TRACE
       fprintf(stdout, "Reading objective information from \"%s\".\n", optfile.c_str());
-      //std::cout << "Reading objective information from \"" + params.get(stringParam::OPTFILE) + "\"" << std::endl;
   #endif
       boundInfo.ip_obj = getObjValueFromFile(optfile, params.get(stringParam::FILENAME), params.logfile);
       params.set(doubleParam::IP_OBJ, boundInfo.ip_obj);
-  #ifdef TRACE
-      fprintf(stdout, "Best known objective value is %s.\n", stringValue(boundInfo.ip_obj, "%f").c_str());
-      //std::cout << "Best known objective value is " << boundInfo.ip_obj << std::endl;
-  #endif
+      fprintf(stdout, "Best known IP objective value is %s.\n", stringValue(boundInfo.ip_obj, "%f").c_str());
       if (isInfinity(boundInfo.ip_obj)) {
         warning_msg(warnstring, "Did not find objective value.\n");
       }
@@ -904,6 +901,7 @@ int processArgs(int argc, char** argv) {
       {"mode",                  required_argument, 0, 'm'},
       {"optfile",               required_argument, 0, 'o'},
       {"rounds",                required_argument, 0, 'r'},
+      {"solfile",               required_argument, 0, 's'*'1'},
       {"strengthen",            required_argument, 0, 's'},
       {"temp",                  required_argument, 0, 't'*'1'},
       {"timelimit",             required_argument, 0, 't'},
@@ -1027,6 +1025,10 @@ int processArgs(int argc, char** argv) {
                    params.set(param, val);
                    break;
                  }
+      case 's'*'1': {
+                  params.set(stringParam::SOLFILE, optarg);
+                  break;
+                }
       case 't'*'1': {
                       int val;
                       intParam param = intParam::TEMP;
@@ -1072,6 +1074,7 @@ int processArgs(int argc, char** argv) {
                 helpstring += "-i val, --ip_obj=val\n\tValue of integer optimum for this instance (takes precedence over -o/--optfile).\n";
                 helpstring += "-l logfile, --logfile=logfile\n\tWhere to print log messages.\n";
                 helpstring += "-o optfile, --optfile=optfile\n\tWhere to find integer optimum value information (a csv file formatted as \"instance_name,value\" on each row).\n";
+                helpstring += "--solfile=solfile\n\tWhere to find integer optimum solution information (e.g., a mst/sol file produced by Gurobi/CPLEX/etc).\n";
                 helpstring += "-v level, --verbosity=level\n\tVerbosity level (0: print little, 1: let solver output be visible).\n";
                 helpstring += "\n# General cut options #\n";
                 helpstring += "-c num cuts, --cutlimit=num cuts\n\tMaximum number of cuts to generate (0+ = as given, -k = k * # fractional variables at root).\n";

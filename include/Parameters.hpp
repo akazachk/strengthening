@@ -72,6 +72,7 @@ enum stringParam {
   FILENAME,
   LOGFILE,
   OPTFILE,
+  SOLFILE,
 //  OUTDIR,
   NUM_STRING_PARAMS
 }; /* stringParam */
@@ -391,6 +392,8 @@ struct Parameters {
   }; /* doubleParamValues */
   std::unordered_map<stringParam, StringParameter, EnumClassHash> stringParamValues {
 //    {stringParam::OUTDIR, StringParameter("OUTDIR", "")},
+    {stringParam::SOLFILE,
+      StringParameter(stringParam::SOLFILE, "SOLFILE", "")},
     {stringParam::OPTFILE,
       StringParameter(stringParam::OPTFILE, "OPTFILE", "")},
     {stringParam::LOGFILE,

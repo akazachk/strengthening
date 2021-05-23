@@ -24,6 +24,7 @@ export INSTANCE_LIST=${SCRIPT_DIR}/small_presolved.instances
 export RESULTS_DIR=${PROJ_DIR}/results
 export RESULTS_DIR=/local1/$USER/results
 export JOB_LIST="job_list_strengthen.txt"
+export OPTFILE="${VPC_DIR}/data/ip_obj.csv"
 
 if [ -z $1 ]; then
   DEPTH="-d2"
@@ -64,20 +65,21 @@ while read line; do
   # Check if solution exists
   arrIN=(${line//\// })
   arrIN[0]=""
-  OPTFILE="$SOL_DIR"
+  SOLFILE="$SOL_DIR"
   for entry in ${arrIN[@]}; do
-    OPTFILE="${OPTFILE}/${entry}"
+    SOLFILE="${SOLFILE}/${entry}"
   done
-  OPTFILE="${OPTFILE}_gurobi.mst.gz"
-  if test -f "$OPTFILE"; then
-    echo "$OPTFILE exists"
+  SOLFILE="${SOLFILE}_gurobi.mst.gz"
+  if test -f "$SOLFILE"; then
+    echo "$SOLFILE exists"
+    SOLPARAM="--solfile=${SOLFILE}"
   else
-    echo "Could not find $OPTFILE"
-    OPTFILE="${VPC_DIR}/data/ip_obj.csv"
+    echo "*** WARNING: Could not find $SOLFILE"
+    SOLPARAM=""
   fi
 
   # Finally, write command we will call to a file
   echo "mkdir -p ${OUT_DIR}" >> ${JOB_LIST}
-  echo "nohup /usr/bin/time -v ${PROJ_DIR}/Release/main -f ${INSTANCE_DIR}/$line.mps --log=${OUT_DIR}/vpc-str.csv --optfile=${OPTFILE} $PARAMS >> ${OUT_DIR}/log.out 2>&1" >> ${JOB_LIST}
+  echo "nohup /usr/bin/time -v ${PROJ_DIR}/Release/main -f ${INSTANCE_DIR}/$line.mps --log=${OUT_DIR}/vpc-str.csv --optfile=${OPTFILE} $SOLPARAM $PARAMS >> ${OUT_DIR}/log.out 2>&1" >> ${JOB_LIST}
 done < ${INSTANCE_LIST}
 
