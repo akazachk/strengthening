@@ -16,6 +16,8 @@ then
 fi
 
 SILENT=1
+MODE="str"
+MODE="gmic"
 
 export PROJ_DIR=`realpath -s ${PROJ_DIR}`
 export VPC_DIR=`realpath -s ${PROJ_DIR}/../vpc`
@@ -27,6 +29,7 @@ export RESULTS_DIR=${PROJ_DIR}/results
 export RESULTS_DIR=/local1/$USER/results
 export JOB_LIST="job_list_strengthen.txt"
 export OPTFILE="${VPC_DIR}/data/ip_obj.csv"
+EXECUTABLE="${PROJ_DIR}/Release/main"
 
 if [ -z $1 ]; then
   DEPTH="-d2"
@@ -36,19 +39,24 @@ else
 fi
 PARAMS="-t 3600"
 PARAMS="$PARAMS --rounds=1"
-PARAMS="$PARAMS --strengthen=1"
-PARAMS="$PARAMS --gomory=-1"
-PARAMS="$PARAMS --bb_runs=0"
-PARAMS="$PARAMS --bb_mode=10"
-PARAMS="$PARAMS --bb_strategy=536"
+if [ $MODE = "gmic" ]; then
+  PARAMS="$PARAMS --gomory=2"
+else
+  PARAMS="$PARAMS --strengthen=1"
+  PARAMS="$PARAMS --gomory=-1"
+  PARAMS="$PARAMS --bb_runs=0"
+  PARAMS="$PARAMS --bb_mode=10"
+  PARAMS="$PARAMS --bb_strategy=536"
+fi
+PARAMS="$PARAMS --temp=8"
+PARAMS="$PARAMS $DEPTH"
+
 #PARAMS="$PARAMS --use_all_ones=1"
 #PARAMS="$PARAMS --use_iter_bilinear=1"
 #PARAMS="$PARAMS --use_disj_lb=1"
 #PARAMS="$PARAMS --use_tight_points=0"
 #PARAMS="$PARAMS --use_tight_rays=0"
 #PARAMS="$PARAMS --use_unit_vectors=0"
-PARAMS="$PARAMS --temp=8"
-PARAMS="$PARAMS $DEPTH"
 
 TASK_ID=0
 while read line; do
@@ -61,7 +69,11 @@ while read line; do
 
   CASE_NUM=`printf %03d $TASK_ID`
   STUB=`date +%F`
-  OUT_DIR=${RESULTS_DIR}/$STUB/str$DEPTH/${CASE_NUM}
+  if [ $MODE = "gmic" ]; then
+    OUT_DIR=${RESULTS_DIR}/$STUB/str-$MODE/${CASE_NUM}
+  else
+    OUT_DIR=${RESULTS_DIR}/$STUB/str$DEPTH/${CASE_NUM}
+  fi
   if [ $SILENT != 1 ]; then
     echo "Preparing command to run instance $line (task $TASK_ID) at `date`"
   else
@@ -88,7 +100,12 @@ while read line; do
 
   # Finally, write command we will call to a file
   echo -n "mkdir -p ${OUT_DIR}; " >> ${JOB_LIST}
-  echo "nohup /usr/bin/time -v ${PROJ_DIR}/Release/main -f ${INSTANCE_DIR}/$line.mps --log=${OUT_DIR}/vpc-str.csv --optfile=${OPTFILE} $SOLPARAM $PARAMS >> ${OUT_DIR}/log.out 2>&1" >> ${JOB_LIST}
+  if [ $MODE = "gmic" ]; then
+    echo -n "nohup /usr/bin/time -v $EXECUTABLE -f ${INSTANCE_DIR}/$line.mps --log=${OUT_DIR}/vpc-$MODE --optfile=${OPTFILE} $SOLPARAM $PARAMS --strengthen=0 >> ${OUT_DIR}/log.out 2>&1; " >> ${JOB_LIST}
+    echo "nohup /usr/bin/time -v $EXECUTABLE -f ${INSTANCE_DIR}/$line.mps --log=${OUT_DIR}/vpc-$MODE --optfile=${OPTFILE} $SOLPARAM $PARAMS --strengthen=1 >> ${OUT_DIR}/log.out 2>&1" >> ${JOB_LIST}
+  else
+    echo "nohup /usr/bin/time -v $EXECUTABLE -f ${INSTANCE_DIR}/$line.mps --log=${OUT_DIR}/vpc-$MODE --optfile=${OPTFILE} $SOLPARAM $PARAMS >> ${OUT_DIR}/log.out 2>&1" >> ${JOB_LIST}
+  fi
 done < ${INSTANCE_LIST}
 
 echo "Done preparing $JOB_LIST"
