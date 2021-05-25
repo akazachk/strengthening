@@ -40,6 +40,7 @@ fi
 PARAMS="-t 3600"
 PARAMS="$PARAMS --rounds=1"
 if [ $MODE = "gmic" ]; then
+  DEPTH="-d0"
   PARAMS="$PARAMS --gomory=2"
 else
   PARAMS="$PARAMS --strengthen=1"
@@ -69,11 +70,7 @@ while read line; do
 
   CASE_NUM=`printf %03d $TASK_ID`
   STUB=`date +%F`
-  if [ $MODE = "gmic" ]; then
-    OUT_DIR=${RESULTS_DIR}/$STUB/str-$MODE/${CASE_NUM}
-  else
-    OUT_DIR=${RESULTS_DIR}/$STUB/str$DEPTH/${CASE_NUM}
-  fi
+  OUT_DIR=${RESULTS_DIR}/$STUB/str$DEPTH/${CASE_NUM}
   if [ $SILENT != 1 ]; then
     echo "Preparing command to run instance $line (task $TASK_ID) at `date`"
   else
