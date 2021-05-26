@@ -20,6 +20,12 @@ namespace StrengtheningParameters {
 class Disjunction; // Disjunction.hpp
 struct SummaryBBInfo; // BBHelper.hpp
 
+// Defined here
+struct SummaryBoundInfo; // analysis.hpp
+struct SummaryDisjunctionInfo; // analysis.hpp
+struct SummaryCutInfo; // analysis.hpp
+struct SummaryStrengtheningInfo; // analysis.hpp
+
 /// [term][Farkas multiplier]
 using CutCertificate = std::vector<std::vector<double> >;
 
@@ -117,6 +123,16 @@ void printCutInfo(const SummaryCutInfo& cutInfoGMICs,
     const SummaryCutInfo& cutInfo, const SummaryCutInfo& cutInfoUnstr,
     FILE* logfile, const char SEP = ',');
 
+/// @brief Check cut density and update min/max support in \p cutInfo
+int checkCutDensity(SummaryCutInfo& cutInfo,
+    const OsiRowCut* const cut, const double EPS = 1e-14);
+
+/// @brief Check cut activity in solver and report cut density
+bool checkCutActivity(
+  const OsiSolverInterface* const solver,
+  const OsiRowCut* const cut);
+
+/// @brief Compute gap closed and active cuts
 void analyzeStrength(const StrengtheningParameters::Parameters& params, 
     const OsiSolverInterface* const solver_gmic,
     const OsiSolverInterface* const solver_mycut,
@@ -124,13 +140,17 @@ void analyzeStrength(const StrengtheningParameters::Parameters& params,
     SummaryCutInfo& cutInfoGMICs, SummaryCutInfo& cutInfo, 
     const OsiCuts* const gmics, const OsiCuts* const mycuts,
     const SummaryBoundInfo& boundInfo, std::string& output);
+/// @brief Prepare summary of #SummaryBBInfo
 void analyzeBB(const StrengtheningParameters::Parameters& params, SummaryBBInfo& info_nocuts,
     SummaryBBInfo& info_mycuts, SummaryBBInfo& info_allcuts, std::string& output);
+/// @brief Get number rounds of SICs needed to meet bound from VPCs+SICs
 double getNumGomoryRounds(const StrengtheningParameters::Parameters& params,
     const OsiSolverInterface* const origSolver,
     const OsiSolverInterface* const postCutSolver);
 
+/// @brief Add to cut information after a round, such as number of cuts, objectives, failures, etc.
 void updateCutInfo(SummaryCutInfo& cutInfo, const CglAdvCut* const gen);
+/// @brief Use this to merge cut info from multiple rounds
 void setCutInfo(SummaryCutInfo& cutInfo, const int num_rounds, const SummaryCutInfo* const oldCutInfos);
 
 /// @brief Find |K| (number of nonzero multipliers in \p v) and info about the implied convex cgs for this cut

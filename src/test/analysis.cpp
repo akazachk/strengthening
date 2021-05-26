@@ -792,23 +792,39 @@ void printCutInfo(const SummaryCutInfo& cutInfoGMICs,
   fflush(logfile);
 } /* printCutInfo */
 
-/// @brief Check cut activity in solver and report cut density
-bool checkCutDensityAndActivity(
-  SummaryCutInfo& cutInfo,
-  const OsiSolverInterface* const solver,
-  const OsiRowCut* const cut) {
-  const int num_elem = cut->row().getNumElements();
+/// @details Gets cut support size and updates min/max component of \p cutInfo
+int checkCutDensity(
+    /// [in,out] Where to save min and max support
+    SummaryCutInfo& cutInfo,
+    /// [in] Row that we want to check
+    const OsiRowCut* const cut,
+    /// [in] What counts as a zero coefficient
+    const double EPS) {
+  int num_elem = cut->row().getNumElements();
+  const double* el = cut->row().getElements();
+  for (int i = 0; i < cut->row().getNumElements(); i++) {
+    if (isZero(el[i], EPS)) {
+      num_elem--;
+    }
+  }
   if (num_elem < cutInfo.min_support)
     cutInfo.min_support = num_elem;
   if (num_elem > cutInfo.max_support)
     cutInfo.max_support = num_elem;
+  return num_elem;
+} // checkCutDensity
+
+/// @brief Check cut activity in solver and report cut density
+bool checkCutActivity(
+  const OsiSolverInterface* const solver,
+  const OsiRowCut* const cut) {
   if (solver && solver->isProvenOptimal()) {
     const double activity = dotProduct(cut->row(), solver->getColSolution());
     return isVal(activity, cut->rhs());
   } else {
     return false;
   }
-} /* checkCutDensityAndActivity */
+} /* checkCutActivity */
 
 /**
  * The cut properties we want to look at are:
@@ -836,17 +852,17 @@ void analyzeStrength(
     int total_support = 0;
     for (int cut_ind = 0; cut_ind < num_mycuts; cut_ind++) {
       const OsiRowCut* const cut = mycuts->rowCutPtr(cut_ind);
-      if (checkCutDensityAndActivity(cutInfo, solver_gmic, cut)) {
+      if (checkCutActivity(solver_gmic, cut)) {
         cutInfo.num_active_gmic++;
       }
-      if (checkCutDensityAndActivity(cutInfo, solver_mycut, cut)) {
+      if (checkCutActivity(solver_mycut, cut)) {
         cutInfo.num_active_mycut++;
         cutInfo.numActiveFromHeur[static_cast<int>(cutInfo.objType[cut_ind])]++;
       }
-      if (checkCutDensityAndActivity(cutInfo, solver_all, cut)) {
+      if (checkCutActivity(solver_all, cut)) {
         cutInfo.num_active_all++;
       }
-      total_support += cut->row().getNumElements();
+      total_support += checkCutDensity(cutInfo, cut, params.get(EPS) / 2.);
     }
     cutInfo.avg_support = (double) total_support / num_mycuts;
   }
@@ -856,16 +872,16 @@ void analyzeStrength(
     int total_support = 0;
     for (int cut_ind = 0; cut_ind < num_gmics; cut_ind++) {
       const OsiRowCut* const cut = gmics->rowCutPtr(cut_ind);
-      if (checkCutDensityAndActivity(cutInfoGMICs, solver_gmic, cut)) {
+      if (checkCutActivity(solver_gmic, cut)) {
         cutInfoGMICs.num_active_gmic++;
       }
-      if (checkCutDensityAndActivity(cutInfoGMICs, solver_mycut, cut)) {
+      if (checkCutActivity(solver_mycut, cut)) {
         cutInfoGMICs.num_active_mycut++;
       }
-      if (checkCutDensityAndActivity(cutInfoGMICs, solver_all, cut)) {
+      if (checkCutActivity(solver_all, cut)) {
         cutInfoGMICs.num_active_all++;
       }
-      total_support += cut->row().getNumElements();
+      total_support += checkCutDensity(cutInfoGMICs, cut, params.get(EPS) / 2.);
     }
     cutInfoGMICs.avg_support = (double) total_support / num_gmics;
   }
