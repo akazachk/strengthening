@@ -280,7 +280,8 @@ ifeq ($(USE_COIN),1)
 	APPLLIB += -L$(CBClib)
   CXXLINKFLAGS += -Wl,-rpath $(CBClib)
 	ifeq ($(USE_CBC),1)
-		APPLLIB += -lCbcSolver -lCbc
+		#APPLLIB += -lCbcSolver
+		APPLLIB += -lCbc
 	endif
   ifeq ($(USE_CLP),1)
     APPLLIB += -lOsiClp
