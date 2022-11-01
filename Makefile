@@ -36,7 +36,7 @@ ifeq (${COIN_OR_HOME},)
 else
 	COIN_OR = ${COIN_OR_HOME}
 endif
-EIG_LIB = $(PROJ_DIR)/lib
+EIG_LIB = $(REPOS_DIR)/eigen
 VPC_DIR = ${REPOS_DIR}/vpc
 
 ifeq ($(USER),otherperson)
@@ -63,11 +63,17 @@ endif
 ifeq ($(USER),akazachkov)
   ifeq ($(UNAME),Linux)
 	  COIN_OR = ${HOME}/repos/coin-or/Cbc-$(COIN_VERSION)
-    GUROBI_LINK = gurobi91
-    GUROBI_DIR = ${GUROBI_HOME}
+    GUROBI_LINK = gurobi95
+    GUROBI_DIR = ${GUROBI_LOCAL}
 		CPLEX_DIR = ${CPLEX_HOME}
 		CONDA_LIB = ${HOME}/.conda/envs/vpc/lib
 	endif
+	# MacStudio
+  ifeq ($(UNAME),Darwin)
+    GUROBI_LINK = gurobi95
+    GUROBI_DIR = ${GUROBI_HOME}
+    CPLEX_DIR = ${CPLEX_HOME}
+  endif
 endif
 
 ifeq ($(USER),akazachk)
@@ -94,7 +100,7 @@ USE_CLP    = 1
 USE_EIGEN  = 1
 USE_CBC    = 1
 USE_GUROBI = 1
-USE_CPLEX  = 1
+USE_CPLEX  = 0
 USE_CLP_SOLVER = 1
 USE_CPLEX_SOLVER = 0
 
