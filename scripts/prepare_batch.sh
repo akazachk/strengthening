@@ -132,7 +132,9 @@ for d in ${depthList[*]}; do
       fi
       SOLPARAM="--solfile=${SOLFILE}"
     else
-      echo "*** WARNING: Could not find $SOLFILE"
+      if [ $SILENT != 1 ]; then
+        echo "*** WARNING: Could not find $SOLFILE"
+      fi
       SOLPARAM=""
     fi
 
@@ -145,11 +147,11 @@ for d in ${depthList[*]}; do
       # Finally, write command we will call to a file
       echo -n "mkdir -p ${OUT_DIR}; " >> ${JOB_LIST}
       if [ $MODE = "gmic" ]; then
-        echo -n "nohup /usr/bin/time -v $EXECUTABLE -f ${INSTANCE_DIR}/$line.mps --log=${OUT_DIR}/vpc-$MODE $SOLPARAM $PARAMS --strengthen=0 -d$d >> ${OUT_DIR}/log.out 2>&1; " >> ${JOB_LIST}
-        echo "nohup /usr/bin/time -v $EXECUTABLE -f ${INSTANCE_DIR}/$line.mps --log=${OUT_DIR}/vpc-$MODE $SOLPARAM $PARAMS --strengthen=1 -d$d >> ${OUT_DIR}/log.out 2>&1" >> ${JOB_LIST}
+        echo -n "/usr/bin/time -v $EXECUTABLE -f ${INSTANCE_DIR}/$line.mps --log=${OUT_DIR}/vpc-$MODE $SOLPARAM $PARAMS --strengthen=0 -d$d >> ${OUT_DIR}/log.out 2>&1; " >> ${JOB_LIST}
+        echo "/usr/bin/time -v $EXECUTABLE -f ${INSTANCE_DIR}/$line.mps --log=${OUT_DIR}/vpc-$MODE $SOLPARAM $PARAMS --strengthen=1 -d$d >> ${OUT_DIR}/log.out 2>&1" >> ${JOB_LIST}
       else
         #echo "nohup /usr/bin/time -v $EXECUTABLE -f ${INSTANCE_DIR}/$line.mps --log=${OUT_DIR}/vpc-$MODE --optfile=${OPTFILE} $SOLPARAM $PARAMS >> ${OUT_DIR}/log.out 2>&1" >> ${JOB_LIST}
-        echo "nohup /usr/bin/time -v $EXECUTABLE -f ${FILE} --log=${OUT_DIR}/vpc-${MODE}.csv $SOLPARAM $PARAMS -d$d >> ${OUT_DIR}/log.out 2>&1" >> ${JOB_LIST}
+        echo "/usr/bin/time -v $EXECUTABLE -f ${FILE} --log=${OUT_DIR}/vpc-${MODE}.csv $SOLPARAM $PARAMS -d$d >> ${OUT_DIR}/log.out 2>&1" >> ${JOB_LIST}
       fi
     fi
   done < ${INSTANCE_LIST}
