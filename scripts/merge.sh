@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Arguments: results directory, run type (test, bb, bb0, or preprocess), [optional: batch mode flag (0 or 1)]
-# Example: ./merge.sh ${VPC_DIR}/scripts/results_test test 1
+# Example: ./merge.sh ${PROJ_DIR}/scripts/results_test test 1
 #
 # The first argument is the (full) directory containing the results or batch folders containing results
 # The second argument indicates the results are contained in vpc-test.csv, vpc-bb.csv, etc.
@@ -50,9 +50,6 @@ elif [ ! -z $3 ]; then
 fi
 
 TMPNAME="${CUT_TYPE}-${RUN_TYPE_STUB}.csv"
-if [ "$RUN_TYPE_STUB" = "preprocess" ]
-  then TMPNAME="cleaning_log.csv"
-fi
 OUTNAME="${RESULTS_DIR}/${TMPNAME}"
 ERR_OUTNAME="${RESULTS_DIR}/errors_${TMPNAME}"
 
