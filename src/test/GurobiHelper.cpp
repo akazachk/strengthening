@@ -426,7 +426,7 @@ void doBranchAndBoundWithGurobi(const Parameters& params, int strategy,
      }
    } // save ip solution
 
-   if (use_temp_option(params.get(intParam::TEMP), TempOptions::SAVE_IP_OPT)) {
+   if (use_temp_option(params.get(intParam::TEMP), TempOptions::SAVE_IP_OPT) && params.get(stringParam::SOLFILE).empty()) {
      std::string dir, instname, in_file_ext;
      std::string filename = params.get(stringParam::FILENAME);
      parseFilename(dir, instname, in_file_ext, filename, params.logfile);

@@ -74,6 +74,7 @@ else
   exit
 fi
 PARAMS="$PARAMS --temp=8"
+PARAMS="$PARAMS --temp=40" # save IP sol
 
 #PARAMS="$PARAMS --use_all_ones=1"
 #PARAMS="$PARAMS --use_iter_bilinear=1"
