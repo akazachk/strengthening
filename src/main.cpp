@@ -191,6 +191,14 @@ int main(int argc, char** argv) {
     BBInfo tmp_bb_info;
 #ifdef USE_GUROBI
     int strategy = params.get(BB_STRATEGY);
+    // If no solfile provided, check if we can find it in the same directory as the instance
+    if (params.get(SOLFILE).empty()) {
+      std::string f_name = dir + "/" + instname + "_gurobi.mst.gz";
+      if (fexists(f_name.c_str())) {
+        printf("No solution provided, but solution file found at %s.\n", f_name.c_str());
+        params.set(SOLFILE, f_name);
+      }
+    }
     // If solfile provided, enable use_bound
     if (!params.get(SOLFILE).empty() && !use_bb_option(strategy, BB_Strategy_Options::use_best_bound)) {
       strategy = enable_bb_option(strategy, BB_Strategy_Options::use_best_bound);
