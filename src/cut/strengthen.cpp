@@ -369,6 +369,7 @@ void getCertificate(
           num_errors, total_diff);
       writeErrorToLog(errorstring, logfile);
     }
+#ifdef USE_EIGEN
     fprintf(stderr, "x:\n");
     for (int i = 0; i < solver->getNumCols(); i++) {
       fprintf(stderr, "x[%d] = %g\n", i, x(i));
@@ -377,6 +378,7 @@ void getCertificate(
     for (int i = 0; i < solver->getNumCols(); i++) {
       fprintf(stderr, "b[%d] = %g\n", i, b(i));
     }
+#endif
     fprintf(stderr, "v:\n");
     for (int i = 0; i < (int) v.size(); i++) {
       fprintf(stderr, "v[%d] = %g\n", i, v[i]);
