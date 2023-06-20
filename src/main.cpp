@@ -58,6 +58,12 @@ enum OverallTimeStats {
   INIT_SOLVE_TIME,
   CUT_TOTAL_TIME,
   CUT_GEN_VPC_TIME,
+  VPC_INIT_SOLVE_TIME,
+  VPC_DISJ_SETUP_TIME,
+  VPC_DISJ_GEN_TIME,
+  VPC_PRLP_SETUP_TIME,
+  VPC_PRLP_SOLVE_TIME,
+  VPC_GEN_CUTS_TIME,
   STRENGTHENING_TOTAL_TIME,
   STRENGTHENING_CALC_CERTIFICATE_TIME,
   BB_TIME,
@@ -69,6 +75,12 @@ const std::vector<std::string> OverallTimeStatsName {
   "INIT_SOLVE_TIME",
   "CUT_TOTAL_TIME",
   "CUT_GEN_VPC_TIME",
+  "VPC_INIT_SOLVE_TIME",
+  "VPC_DISJ_SETUP_TIME",
+  "VPC_DISJ_GEN_TIME",
+  "VPC_PRLP_SETUP_TIME",
+  "VPC_PRLP_SOLVE_TIME",
+  "VPC_GEN_CUTS_TIME",
   "STRENGTHENING_TOTAL_TIME",
   "STRENGTHENING_CALC_CERTIFICATE_TIME",
   "BB_TIME",
@@ -311,6 +323,37 @@ int main(int argc, char** argv) {
     gen.generateCuts(*solver, currCuts);
     timer.end_timer(OverallTimeStats::CUT_GEN_VPC_TIME);
 
+    // Update timing from underlying generator
+    CglVPC* vpc = &(gen.gen);
+    TimeStats vpctimer = vpc->timer;
+    std::vector<CglVPC::VPCTimeStats> vpc_stats = {
+      CglVPC::VPCTimeStats::INIT_SOLVE_TIME,
+      CglVPC::VPCTimeStats::DISJ_SETUP_TIME,
+      CglVPC::VPCTimeStats::DISJ_GEN_TIME,
+      CglVPC::VPCTimeStats::PRLP_SETUP_TIME,
+      CglVPC::VPCTimeStats::PRLP_SOLVE_TIME,
+      CglVPC::VPCTimeStats::GEN_CUTS_TIME,
+    };
+    std::vector<OverallTimeStats> overall_stats = {
+      OverallTimeStats::VPC_INIT_SOLVE_TIME,
+      OverallTimeStats::VPC_DISJ_SETUP_TIME,
+      OverallTimeStats::VPC_DISJ_GEN_TIME,
+      OverallTimeStats::VPC_PRLP_SETUP_TIME,
+      OverallTimeStats::VPC_PRLP_SOLVE_TIME,
+      OverallTimeStats::VPC_GEN_CUTS_TIME
+    };
+    for (int i = 0; i < (int) vpc_stats.size(); i++) {
+      const CglVPC::VPCTimeStats stat = vpc_stats[i];
+      const OverallTimeStats overall_stat = overall_stats[i];
+      const clock_t currtimevalue = vpctimer.get_value(CglVPC::VPCTimeStatsName[static_cast<int>(stat)]);
+      timer.add_value(overall_stat, currtimevalue);
+    }
+
+    // timer.add_value(
+    //     CglAdvCut::CutTimeStatsName[static_cast<int>(CglVPC::VPCTimeStats::DISJ_SETUP_TIME)],
+    //     vpc->timer.get_value(CglVPC::VPCTimeStats::DISJ_SETUP_TIME));
+
+    // Update statistics about the disjunction objective value and cuts
     Disjunction* disj = gen.gen.disj();
     exitReason = gen.exitReason;
     if (disj) {
