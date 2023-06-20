@@ -56,7 +56,10 @@ using CutCertificate = std::vector<std::vector<double> >;
 
 enum OverallTimeStats {
   INIT_SOLVE_TIME,
-  CUT_TIME,
+  CUT_TOTAL_TIME,
+  CUT_GEN_VPC_TIME,
+  STRENGTHENING_TOTAL_TIME,
+  STRENGTHENING_CALC_CERTIFICATE_TIME,
   BB_TIME,
   APPLY_TIME,
   TOTAL_TIME,
@@ -64,7 +67,10 @@ enum OverallTimeStats {
 }; /* OverallTimeStats */
 const std::vector<std::string> OverallTimeStatsName {
   "INIT_SOLVE_TIME",
-  "CUT_TIME",
+  "CUT_TOTAL_TIME",
+  "CUT_GEN_VPC_TIME",
+  "STRENGTHENING_TOTAL_TIME",
+  "STRENGTHENING_CALC_CERTIFICATE_TIME",
   "BB_TIME",
   "APPLY_TIME",
   "TOTAL_TIME"
@@ -261,7 +267,7 @@ int main(int argc, char** argv) {
     if (num_rounds > 1) {
       printf("\n## Starting round %d/%d. ##\n", round_ind+1, num_rounds);
     }
-    timer.start_timer(OverallTimeStats::CUT_TIME);
+    timer.start_timer(OverallTimeStats::CUT_TOTAL_TIME);
 
     //====================================================================================================//
     // Generate Gomory cuts
@@ -301,7 +307,10 @@ int main(int argc, char** argv) {
         timer.get_value(OverallTimeStats::INIT_SOLVE_TIME));
 
     // Generate disjunctive cuts
+    timer.start_timer(OverallTimeStats::CUT_GEN_VPC_TIME);
     gen.generateCuts(*solver, currCuts);
+    timer.end_timer(OverallTimeStats::CUT_GEN_VPC_TIME);
+
     Disjunction* disj = gen.gen.disj();
     exitReason = gen.exitReason;
     if (disj) {
@@ -368,7 +377,13 @@ int main(int argc, char** argv) {
     do_strengthening = do_strengthening && disj && disj->terms.size() > 0;
     do_strengthening = do_strengthening && currCuts.sizeCuts() > 0;
     do_strengthening = do_strengthening && disj->integer_sol.size() == 0; // TODO right now (2021-05-22) we cannot handle integer-feasible solutions found during branching
+
     if (do_strengthening) {
+      printf("\n## Strengthening disjunctive cuts: (# cuts = %d). ##\n", (int) currCuts.sizeCuts());
+      timer.start_timer(OverallTimeStats::STRENGTHENING_TOTAL_TIME);
+      
+      // First, retrieve the certificate
+      timer.start_timer(OverallTimeStats::STRENGTHENING_CALC_CERTIFICATE_TIME);
       v.resize(currCuts.sizeCuts());
       for (int cut_ind = 0; cut_ind < currCuts.sizeCuts(); cut_ind++) {
         v[cut_ind].resize(disj->num_terms);
@@ -391,11 +406,12 @@ int main(int argc, char** argv) {
         } // loop over cuts
 
         if (termSolver) { delete termSolver; }
-      } // loop over disjunctive terms
+
+        timer.end_timer(OverallTimeStats::STRENGTHENING_CALC_CERTIFICATE_TIME);
+      } // loop over disjunctive terms to retrieve certificate
 
       //====================================================================================================//
       // Do strengthening
-      printf("\n## Strengthening disjunctive cuts: (# cuts = %d). ##\n", (int) currCuts.sizeCuts());
       strInfo.num_coeffs_strengthened.resize(static_cast<int>(Stat::num_stats), 0.); // total,avg,stddev,min,max
       strInfo.num_coeffs_strengthened[(int) Stat::min] = std::numeric_limits<int>::max();
       str_cut_ind.reserve(currCuts.sizeCuts());
@@ -450,10 +466,11 @@ int main(int argc, char** argv) {
       }
       fprintf(stdout, "Finished printing strengthened custom cuts.\n\n");
 #endif
-    } // check that disj exists and cuts were generated
+      timer.end_timer(OverallTimeStats::STRENGTHENING_TOTAL_TIME);
+    } // if (do_strengthening) --- check that disj exists and cuts were generated
     setStrInfo(strInfo, disj, v, solver->getNumRows(), solver->getNumCols(), str_cut_ind, gen.probData.EPS);
 
-    timer.end_timer(OverallTimeStats::CUT_TIME);
+    timer.end_timer(OverallTimeStats::CUT_TOTAL_TIME);
 
     //====================================================================================================//
     // Apply cuts
