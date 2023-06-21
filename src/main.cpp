@@ -450,8 +450,8 @@ int main(int argc, char** argv) {
 
         if (termSolver) { delete termSolver; }
 
-        timer.end_timer(OverallTimeStats::STRENGTHENING_CALC_CERTIFICATE_TIME);
       } // loop over disjunctive terms to retrieve certificate
+      timer.end_timer(OverallTimeStats::STRENGTHENING_CALC_CERTIFICATE_TIME);
 
       //====================================================================================================//
       // Do strengthening
