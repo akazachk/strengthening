@@ -224,7 +224,7 @@ void CglAdvCut::generateCuts(const OsiSolverInterface& si, OsiCuts& cuts, const 
   this->gen.generateCuts(*mysolver, tmpcuts);
 
   // Save stats
-  this->timer = this->gen.timer;
+  // this->timer = this->gen.timer;
   this->num_obj_tried = this->gen.num_obj_tried;
   this->num_failures = this->gen.num_failures;
 
