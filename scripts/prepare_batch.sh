@@ -39,6 +39,11 @@ export INSTANCE_DIR=/blue/akazachkov/${USER}/instances/vpc
 export RESULTS_DIR=/blue/akazachkov/$USER/results
 export INSTANCE_LIST=${SCRIPT_DIR}/presolved.instances
 
+if [ "$(uname)" == "Darwin" ]; then
+  # MBP19
+  export INSTANCE_DIR=${REPOS_DIR}/instances
+fi
+
 # Accept user options for instance list, results directory, and mode
 if [ ! -z $1 ]; then
   INSTANCE_LIST=$1
@@ -147,12 +152,17 @@ for d in ${depthList[*]}; do
     else
       # Finally, write command we will call to a file
       echo -n "mkdir -p ${OUT_DIR}; " >> ${JOB_LIST}
-      if [ $MODE = "gmic" ]; then
-        echo -n "/usr/bin/time -v $EXECUTABLE -f ${INSTANCE_DIR}/$line.mps --log=${OUT_DIR}/vpc-$MODE.csv $SOLPARAM $PARAMS --strengthen=0 -d$d >> ${OUT_DIR}/log.out 2>&1; " >> ${JOB_LIST}
-        echo "/usr/bin/time -v $EXECUTABLE -f ${INSTANCE_DIR}/$line.mps --log=${OUT_DIR}/vpc-$MODE.csv $SOLPARAM $PARAMS --strengthen=1 -d$d >> ${OUT_DIR}/log.out 2>&1" >> ${JOB_LIST}
+      if [ $(uname) == "Darwin" ]; then
+        echo -n "nohup /usr/bin/time " >> ${JOB_LIST}
       else
-        #echo "nohup /usr/bin/time -v $EXECUTABLE -f ${INSTANCE_DIR}/$line.mps --log=${OUT_DIR}/vpc-$MODE --optfile=${OPTFILE} $SOLPARAM $PARAMS >> ${OUT_DIR}/log.out 2>&1" >> ${JOB_LIST}
-        echo "/usr/bin/time -v $EXECUTABLE -f ${FILE} --log=${OUT_DIR}/vpc-${MODE}.csv $SOLPARAM $PARAMS -d$d >> ${OUT_DIR}/log.out 2>&1" >> ${JOB_LIST}
+        echo -n "nohup /usr/bin/time -v " >> ${JOB_LIST}
+      fi
+      if [ $MODE = "gmic" ]; then
+        echo -n "$EXECUTABLE -f ${INSTANCE_DIR}/$line.mps --log=${OUT_DIR}/vpc-$MODE.csv $SOLPARAM $PARAMS --strengthen=0 -d$d >> ${OUT_DIR}/log.out 2>&1; " >> ${JOB_LIST}
+        echo "$EXECUTABLE -f ${INSTANCE_DIR}/$line.mps --log=${OUT_DIR}/vpc-$MODE.csv $SOLPARAM $PARAMS --strengthen=1 -d$d >> ${OUT_DIR}/log.out 2>&1" >> ${JOB_LIST}
+      else
+        #echo "nohup $EXECUTABLE -f ${INSTANCE_DIR}/$line.mps --log=${OUT_DIR}/vpc-$MODE --optfile=${OPTFILE} $SOLPARAM $PARAMS >> ${OUT_DIR}/log.out 2>&1" >> ${JOB_LIST}
+        echo "$EXECUTABLE -f ${FILE} --log=${OUT_DIR}/vpc-${MODE}.csv $SOLPARAM $PARAMS -d$d >> ${OUT_DIR}/log.out 2>&1" >> ${JOB_LIST}
       fi
     fi
   done < ${INSTANCE_LIST}
