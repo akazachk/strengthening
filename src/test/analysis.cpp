@@ -1266,7 +1266,8 @@ void setStrInfo(
     const double EPS) {
   if (!disj) { return; }
 
-  std::vector<int> K(num_rows + num_cols, 0);
+  const int num_common_rows = disj->common_changed_bound.size();
+  std::vector<int> K(num_rows + num_common_rows + num_cols, 0);
   int num_nonzero_coeff = 0;
 
   // Compute the convex set S using the multipliers on the disjunctive term ineqs
@@ -1280,7 +1281,7 @@ void setStrInfo(
     const int num_disj_ineqs = (int) term.changed_var.size();
 
     // For each original inequality, check whether it has a nonzero multiplier
-    for (int row = 0; row < num_rows; row++) {
+    for (int row = 0; row < num_rows + num_common_rows; row++) {
       const double ukt = v[term_ind][row];
       if (!isZero(ukt, EPS)) {
         if (K[row] == 0) num_nonzero_coeff++;
@@ -1296,7 +1297,7 @@ void setStrInfo(
     elements.reserve(num_disj_ineqs);
     double rhs = 0.;
     for (int bound_ind = 0; bound_ind < num_disj_ineqs; bound_ind++) {
-      const double uk0 = v[term_ind][num_rows + bound_ind];
+      const double uk0 = v[term_ind][num_rows + num_common_rows + bound_ind];
       if (isZero(uk0, EPS)) continue;
 
       const int var = term.changed_var[bound_ind];
@@ -1377,7 +1378,7 @@ void setStrInfo(
     int lt_zero_ind = -1, gt_zero_ind = -1;
     for (int term_ind = 0; term_ind < disj->num_terms; term_ind++) {
       const int num_disj_ineqs = (int) disj->terms[term_ind].changed_var.size();
-      const double ukt = v[term_ind][num_rows + num_disj_ineqs + var];
+      const double ukt = v[term_ind][num_rows + num_common_rows + num_disj_ineqs + var];
       if (lessThanVal(ukt, 0, EPS)) {
         if (lt_zero_ind == -1) lt_zero_ind = term_ind;
       } else if (greaterThanVal(ukt, 0, EPS)) {
@@ -1386,8 +1387,8 @@ void setStrInfo(
       if (lt_zero_ind != -1 && gt_zero_ind != -1) break;
 
       if (!isZero(ukt, EPS)) {
-        if (K[num_rows + var] == 0) num_nonzero_coeff++;
-        K[num_rows + var]++;
+        if (K[num_rows + num_common_rows + var] == 0) num_nonzero_coeff++;
+        K[num_rows + num_common_rows + var]++;
       }
     } // loop over terms
     info.num_unmatched_bounds += (lt_zero_ind != -1 && gt_zero_ind != -1);
