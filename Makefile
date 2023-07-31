@@ -235,8 +235,12 @@ APPLINCLS = -Iinclude -Iinclude/common -Iinclude/test
 APPLINCLS += -I${VPC_DIR}/include
 
 APPLLIB = -lm -lz -lbz2 -lreadline
-ifeq ($(USER),akazachkov)
-	APPLLIB += -L${CONDA_LIB}
+ifeq ($(UNAME),Linux)
+	ifeq ($(USER),akazachkov)
+		ifneq (${CONDA_LIB},)
+			APPLLIB += -L${CONDA_LIB}
+	  endif
+	endif
 endif
 
 # Linker
