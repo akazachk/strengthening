@@ -396,19 +396,8 @@ int main(int argc, char** argv) {
 #endif
 
     if (params.get(TEMP) == static_cast<int>(TempOptions::CHECK_CUTS_AGAINST_BB_OPT) && !ip_solution.empty()) {
-      // Check cuts
-      for (int cut_ind = 0; cut_ind < currCuts.sizeCuts(); cut_ind++) {
-        OsiRowCut currCut = currCuts.rowCut(cut_ind);
-        const double rhs = currCut.rhs();
-        const int num_el = currCut.row().getNumElements();
-        const int* ind = currCut.row().getIndices();
-        const double* el = currCut.row().getElements();
-        const double activity = dotProduct(num_el, ind, el, ip_solution.data());
-
-        if (lessThanVal(activity, rhs)) {
-          warning_msg(warnstring, "Unstrengthened cut %d removes optimal solution. Activity: %.10f. Rhs: %.10f.\n", cut_ind, activity, rhs);
-        }
-      } // loop over cuts
+      const int num_violated = checkCutsAgainstFeasibleSolution(currCuts, ip_solution);
+      printf("\n## Number of cuts violating the IP solution: %d ##\n", num_violated);
     } // check cuts against ip solution
 
     //====================================================================================================//

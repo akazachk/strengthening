@@ -127,10 +127,15 @@ void printCutInfo(const SummaryCutInfo& cutInfoGMICs,
 int checkCutDensity(SummaryCutInfo& cutInfo,
     const OsiRowCut* const cut, const double EPS = 1e-14);
 
-/// @brief Check cut activity in solver and report cut density
+/// @brief Check cut activity in solver and return true if activity of cut equals rhs
 bool checkCutActivity(
-  const OsiSolverInterface* const solver,
-  const OsiRowCut* const cut);
+    const OsiSolverInterface* const solver,
+    const OsiRowCut* const cut);
+
+/// @brief Checks how many cuts remove a given feasible solution
+int checkCutsAgainstFeasibleSolution(
+    const OsiCuts& currCuts,
+    const std::vector<double> ip_solution);
 
 /// @brief Compute gap closed and active cuts
 void analyzeStrength(const StrengtheningParameters::Parameters& params, 

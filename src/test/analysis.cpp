@@ -814,7 +814,6 @@ int checkCutDensity(
   return num_elem;
 } // checkCutDensity
 
-/// @brief Check cut activity in solver and report cut density
 bool checkCutActivity(
   const OsiSolverInterface* const solver,
   const OsiRowCut* const cut) {
@@ -826,8 +825,30 @@ bool checkCutActivity(
   }
 } /* checkCutActivity */
 
+/// @details Returns how many cuts are violated by a given integer-feasible solution
+int checkCutsAgainstFeasibleSolution(
+    const OsiCuts& currCuts, ///< [in] Cuts to check
+    const std::vector<double> ip_solution ///< [in] Feasible solution
+) {
+  int num_violated = 0;
+  for (int cut_ind = 0; cut_ind < currCuts.sizeCuts(); cut_ind++) {
+    OsiRowCut currCut = currCuts.rowCut(cut_ind);
+    const double rhs = currCut.rhs();
+    const int num_el = currCut.row().getNumElements();
+    const int* ind = currCut.row().getIndices();
+    const double* el = currCut.row().getElements();
+    const double activity = dotProduct(num_el, ind, el, ip_solution.data());
+
+    if (lessThanVal(activity, rhs)) {
+      num_violated++;
+      warning_msg(warnstring, "Unstrengthened cut %d removes optimal solution. Activity: %.10f. Rhs: %.10f.\n", cut_ind, activity, rhs);
+    }
+  } // loop over cuts
+  return num_violated;
+} /* checkCutsAgainstFeasibleSolution */
+
 /**
- * The cut properties we want to look at are:
+ * @details The cut properties we want to look at are:
  * 1. Gap closed
  * 2. Activity (after adding cuts)
  * 3. Density
@@ -1133,7 +1154,7 @@ double getNumGomoryRounds(const StrengtheningParameters::Parameters& params,
 /**
  * @brief Use this to add to cutInfo
  *
- * Use this to add to cutInfo (but within one round,
+ * @details Use this to add to cutInfo (but within one round,
  * because the cutType and objType vectors are cleared in gen in each round
  * (so tracking that based on isSetupForRepeatedUse does not work,
  * and the old cutType and objType stored in cutInfo would be overwritten)
@@ -1267,6 +1288,10 @@ void setStrInfo(
   if (!disj) { return; }
 
   const int num_common_rows = disj->common_changed_bound.size();
+  
+  // K counts the number of nonzero multipliers for each constraint
+  // If the constraints form a basis, then the cut is "regular",
+  // assuming the corresponding point is not feasible for the disjunction
   std::vector<int> K(num_rows + num_common_rows + num_cols, 0);
   int num_nonzero_coeff = 0;
 
