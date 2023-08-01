@@ -366,8 +366,8 @@ int main(int argc, char** argv) {
       }
       boundInfo.num_root_bounds_changed = disj->common_changed_var.size();
       boundInfo.root_obj = disj->root_obj;
-      updateDisjInfo(disjInfo, disjInfo.num_disj, gen.gen);
     }
+    updateDisjInfo(disjInfo, disjInfo.num_disj, gen.gen);
     updateCutInfo(cutInfoVec[round_ind], &gen);
     boundInfo.num_mycut += gen.num_cuts;
 
