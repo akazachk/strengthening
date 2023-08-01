@@ -431,17 +431,18 @@ int main(int argc, char** argv) {
     fprintf(stdout, "Finished printing custom cuts.\n\n");
 #endif
 
+    // Check cuts against ip solution
     if (params.get(TEMP) == static_cast<int>(TempOptions::CHECK_CUTS_AGAINST_BB_OPT) && !ip_solution.empty()) {
       const int num_violated = checkCutsAgainstFeasibleSolution(currCuts, ip_solution);
       printf("\n## Number of cuts violating the IP solution: %d ##\n", num_violated);
-    } // check cuts against ip solution
+    }
 
     //====================================================================================================//
     // Get Farkas certificate and do strengthening
     OsiCuts origCurrCuts(currCuts);
     std::vector<int> str_cut_ind; // indices of cuts that were strengthened
     std::vector<CutCertificate> v; // [cut][term][Farkas multiplier] in the end, per term, this will be of dimension rows + disj term ineqs + cols
-    
+
     strengtheningHelper(currCuts, v, str_cut_ind, strInfo, disj, solver, ip_solution);
     setStrInfo(strInfo, disj, v, solver->getNumRows(), solver->getNumCols(), str_cut_ind, gen.probData.EPS);
 
@@ -1151,7 +1152,7 @@ void strengtheningHelper(
   const int num_cuts = currCuts.sizeCuts();
   printf("\n## Strengthening disjunctive cuts: (# cuts = %d). ##\n", num_cuts);
 
-  // First, retrieve the certificate
+  // Retrieve the certificate
   calcStrengtheningCertificateHelper(currCuts, v, disj, solver);
 
   // Apply the certificate
