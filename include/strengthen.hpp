@@ -120,6 +120,7 @@ void setupMonoidalIP(
     const std::vector<std::vector<double> >& v, 
     const OsiSolverInterface* const solver,
     const double mult);
+    
 /// @brief Change relevant rhs for rows of monoidal IP set up as in setupMonoidalIP
 void updateMonoidalIP(
     OsiSolverInterface* const mono,

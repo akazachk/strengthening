@@ -24,6 +24,14 @@ class CoinPackedMatrix;
 #define macro_to_string(s) #s
 #define x_macro_to_string(s) macro_to_string(s)
 
+/// Templated format string
+template <typename T> inline constexpr const char *outFormat = "%g"; // pick a default.
+template <> inline constexpr const char *outFormat<int> = "%d";
+template <> inline constexpr const char *outFormat<float> = "%g";
+template <> inline constexpr const char *outFormat<double> = "%lf";
+template <> inline constexpr const char *outFormat<long double> = "%Lf";
+template <> inline constexpr const char *outFormat<char> = "%c";
+
 /// @brief overload << operator for vector of ints
 inline std::ostream& operator<<(std::ostream& os, const std::vector<int> &input) {
   os << "{";
@@ -91,6 +99,7 @@ template<class T> struct index_cmp_asc {
     return arr[a] < arr[b];
   }
 };
+///@}
 
 /* #define error_msg(str, fmt) \
   char str[500]; \
@@ -102,10 +111,10 @@ template<class T> struct index_cmp_asc {
   snprintf(str, sizeof(str) / sizeof(char), "*** WARNING: %s:%d: " fmt, __FILE__, __LINE__); \
   std::cerr << str */
 
-#ifdef CODE_VERSION
+#ifdef VPC_VERSION
 #define error_msg(str, fmt, ...) \
   char str[2028]; \
-  snprintf(str, sizeof(str) / sizeof(char), "*** ERROR (version %.8s): %s:%d: " fmt, x_macro_to_string(CODE_VERSION), __FILE__, __LINE__, ##__VA_ARGS__); \
+  snprintf(str, sizeof(str) / sizeof(char), "*** ERROR (version %.8s): %s:%d: " fmt, x_macro_to_string(VPC_VERSION), __FILE__, __LINE__, ##__VA_ARGS__); \
   std::cerr << str
 #else
 #define error_msg(str, fmt, ...) \
@@ -114,10 +123,10 @@ template<class T> struct index_cmp_asc {
   std::cerr << str
 #endif
 
-#ifdef CODE_VERSION
+#ifdef VPC_VERSION
 #define warning_msg(str, fmt, ...) \
   char str[2028]; \
-  snprintf(str, sizeof(str) / sizeof(char), "*** WARNING (version %.8s): %s:%d: " fmt, x_macro_to_string(CODE_VERSION), __FILE__, __LINE__, ##__VA_ARGS__); \
+  snprintf(str, sizeof(str) / sizeof(char), "*** WARNING (version %.8s): %s:%d: " fmt, x_macro_to_string(VPC_VERSION), __FILE__, __LINE__, ##__VA_ARGS__); \
   std::cerr << str
 #else
 #define warning_msg(str, fmt, ...) \
@@ -130,7 +139,7 @@ template<class T> struct index_cmp_asc {
  * @brief Writes error and closes file myfile.
  */
 inline void writeErrorToLog(std::string text, FILE *myfile) {
-  if (myfile == NULL || myfile == stdout)
+  if (myfile == NULL || myfile == stdout || myfile == stderr)
     return;
   fprintf(myfile, "||%c%s", ',', text.c_str());
   fclose(myfile);
@@ -142,104 +151,133 @@ void createTmpFilename(std::string& f_name, const std::string add_ext = "");
 /** @brief Separate filename into the directory, instance name, and extension */
 int parseFilename(std::string& dir, std::string& instname, std::string& in_file_ext, const std::string& fullfilename, FILE* logfile);
 
-/// Get objective value from file \p opt_filename where each line is "instance,value"
+/// @brief Get objective value from file \p opt_filename where each line is "instance,value"
 double getObjValueFromFile(std::string opt_filename, std::string fullfilename, FILE* logfile);
 
-/**
-  * @brief Check if a file exists
-  */
+/// @brief Retrieve solution from a file \p filename.
+void getSolFromFile(const char* filename, std::vector<double>& sol);
+
+/// @brief Check if a file exists
 bool fexists(const char* filename);
 
-/**
- * @brief Parses int from string using strtol
- */
+/// @brief Parses int from string using strtol
 bool parseInt(const char *str, int &val);
 
-/**
- * @brief Parses long int from string using strtol
- */
+/// @brief Parses long int from string using strtol
 bool parseLong(const char *str, long &val);
 
-/**
- * @brief Parses double from string using strtod
- */
+/// @brief Parses double from string using strtod
 bool parseDouble(const char *str, double &val);
 
+/// @brief Converts string to lower case
 std::string lowerCaseString(const std::string& data);
+/// @brief Convert vector of strings to lower case
 std::vector<std::string> lowerCaseStringVector(const std::vector<std::string>& strVec);
+/// @brief Converts string to upper case
 std::string upperCaseString(const std::string& tmpData);
+/// @brief Converts string to upper case and remove underscores (for processing parameters)
 std::string upperCaseStringNoUnderscore(const std::string& tmpData);
 
+/// @brief Check equality within tolerance \p eps
 inline bool isVal(const double val1, const double val2, const double eps = 1e-7) {
   return (std::abs((val1) - (val2)) <= eps);
 } /* isVal */
 
+/// @brief Check equality to zero within tolerance \p eps; calls #isVal
 inline bool isZero(const double val, const double eps = 1e-7) {
   return isVal(val, 0.0, eps);
 } /* isZero */
 
+/// @brief Check whether \p val1 is at least \p eps less than \p val2
 inline bool lessThanVal(const double val1, const double val2, const double eps = 1e-7) {
   return (val1 < (val2 - eps));
 } /* lessThanVal */
 
+/// @brief Check whether \p val1 is at least \p eps greater than \p val2
 inline bool greaterThanVal(const double val1, const double val2, const double eps = 1e-7) {
   return (val1 > (val2 + eps));
 } /* greaterThanVal */
 
+/// @brief Global infinity
 inline double getInfinity() {
   return std::numeric_limits<double>::max();
 }
 
+/// @brief Check whether value is at infinity using #lessThanVal
 inline bool isInfinity(const double val, const double infinity = __DBL_MAX__, const double eps = 1e-7) {
   return !lessThanVal(val, infinity, eps);
 } /* isInfinity */
 
+/// @brief Check whether value is at negative infinity using #greaterThanVal
 inline bool isNegInfinity(const double val, const double neg_infinity = __DBL_MIN__, const double eps = 1e-7) {
   return !greaterThanVal(val, neg_infinity, eps);
 } /* isInfinity */
 
-inline const std::string stringValue(const int value,
-    const char* format = "%d") {
-  if (!lessThanVal(value, std::numeric_limits<int>::max())) {
-    const std::string infty = "\'inf\'";
-    return infty;
-  } else if (!greaterThanVal(value, std::numeric_limits<int>::min())) {
-    const std::string neg_infty = "\'-inf\'";
-    return neg_infty;
-  } else {
-    char temp[500];
-    snprintf(temp, sizeof(temp) / sizeof(char), format, value);
-    std::string tmp(temp);
-    return tmp;
-  }
-} /* stringValue (int) */
+///// @brief Covert an integer into a string, accounting for possible infinite values
+//inline const std::string stringValue(const int value,
+//    const char* format = "%d",
+//    const int MIN = std::numeric_limits<int>::min(),
+//    const int MAX = std::numeric_limits<int>::max()) {
+//  if (!lessThanVal(value, MAX)) {
+//    const std::string infty = "\'inf\'";
+//    return infty;
+//  } else if (!greaterThanVal(value, MIN)) {
+//    const std::string neg_infty = "\'-inf\'";
+//    return neg_infty;
+//  } else {
+//    char temp[500];
+//    snprintf(temp, sizeof(temp) / sizeof(char), format, value);
+//    std::string tmp(temp);
+//    return tmp;
+//  }
+//} /* stringValue (int) */
+//
+///// @brief Covert a long into a string, accounting for possible infinite values
+//inline const std::string stringValue(const long value,
+//    const char* format = "%ld",
+//    const long MIN = std::numeric_limits<long>::min(),
+//    const long MAX = std::numeric_limits<long>::max()) {
+//  if (!lessThanVal(value, MAX)) {
+//    const std::string infty = "\'inf\'";
+//    return infty;
+//  } else if (!greaterThanVal(value, MIN)) {
+//    const std::string neg_infty = "\'-inf\'";
+//    return neg_infty;
+//  } else {
+//    char temp[500];
+//    snprintf(temp, sizeof(temp) / sizeof(char), format, value);
+//    std::string tmp(temp);
+//    return tmp;
+//  }
+//} /* stringValue (long) */
 
-inline const std::string stringValue(const long value,
-    const char* format = "%ld") {
-  if (!lessThanVal(value, std::numeric_limits<long>::max())) {
-    const std::string infty = "\'inf\'";
-    return infty;
-  } else if (!greaterThanVal(value, std::numeric_limits<long>::min())) {
-    const std::string neg_infty = "\'-inf\'";
-    return neg_infty;
+/// @brief Covert a numeric type into a string, accounting for possible infinite values
+template <class T, typename = typename std::enable_if<std::is_arithmetic<T>::value, T>::type>
+inline const std::string stringValue(
+    /// value to be converted
+    const T value,
+    /// formatting to be used (note that outFormat<T> needs to be defined for the specific type T)
+    const char* format = outFormat<T>,
+    /// value of infinity to be used
+    const double INF = std::numeric_limits<T>::max(),
+    /// how many digits before the decimal to print (-1 default implies do not limit)
+    const int NUM_DIGITS_BEFORE_DEC = -1,
+    /// how many digits after the decimal to print (-1 default implies do not limit)
+    const int NUM_DIGITS_AFTER_DEC = -1) {
+  char temp[500];
+  if (!lessThanVal(value, INF)) {
+    if (NUM_DIGITS_BEFORE_DEC == -1) {
+      snprintf(temp, sizeof(temp) / sizeof(char), "%s", "\'inf\'");
+    } else {
+      snprintf(temp, sizeof(temp) / sizeof(char), "%-*s", NUM_DIGITS_BEFORE_DEC, "\'inf\'");
+    }
+  } else if (!greaterThanVal(value, -INF)) {
+    if (NUM_DIGITS_BEFORE_DEC == -1) {
+      snprintf(temp, sizeof(temp) / sizeof(char), "%s", "\'-inf\'");
+    } else {
+      snprintf(temp, sizeof(temp) / sizeof(char), "%-*s", NUM_DIGITS_BEFORE_DEC, "\'-inf\'");
+    }
   } else {
-    char temp[500];
-    snprintf(temp, sizeof(temp) / sizeof(char), format, value);
-    std::string tmp(temp);
-    return tmp;
-  }
-} /* stringValue (long) */
-
-inline const std::string stringValue(const double value, const char* format = "%f",
-    const int NUM_DIGITS_BEFORE_DEC = -1, const int NUM_DIGITS_AFTER_DEC = -1) {
-  if (!lessThanVal(value, std::numeric_limits<double>::max())) {
-    const std::string infty = "\'inf\'";
-    return infty;
-  } else if (!greaterThanVal(value, std::numeric_limits<double>::lowest())) {
-    const std::string neg_infty = "\'-inf\'";
-    return neg_infty;
-  } else {
-    char temp[500];
     if (NUM_DIGITS_BEFORE_DEC == -1 && NUM_DIGITS_AFTER_DEC == -1) {
       snprintf(temp, sizeof(temp) / sizeof(char), format, value);
     } else if (NUM_DIGITS_BEFORE_DEC >= 0 && NUM_DIGITS_AFTER_DEC >= 0) {
@@ -249,17 +287,19 @@ inline const std::string stringValue(const double value, const char* format = "%
     } else {
       snprintf(temp, sizeof(temp) / sizeof(char), format, NUM_DIGITS_AFTER_DEC, value);
     }
-    std::string tmp(temp);
-    return tmp;
   }
-} /* stringValue (double) */
+  std::string tmp(temp);
+  return tmp;
+} /* stringValue (numeric) */
 
-/** @brief The below is mostly for ease of use with params; in the future we may way to format strings though */
+/// @brief Currently returns \p value; mostly for ease of use with params; in the future we may way to format strings though
 inline const std::string stringValue(const std::string value, const char* format = "%s") {
   return value;
 } /* stringValue (string) */
 
+/// @brief Calls #dotProductNoCompensation(int, const int*, const double*, const double*)
 double dotProductNoCompensation(const CoinPackedVector& vec1, const double* vec2);
+/// @brief Calls #dotProductNoCompensation(int, const int*, const double*, const int*, const double*)
 double dotProductNoCompensation(const CoinPackedVector& vec1, const CoinPackedVector& vec2);
 
 /// @brief Compute dot product using compensated summation to have small numerical error.
@@ -309,4 +349,3 @@ double getRowTwoNorm(const int row, const CoinPackedMatrix* const mat);
 void packedSortedVectorSum(CoinPackedVector& sum, const double mult1,
     const CoinPackedVectorBase& vec1, const double mult2,
     const CoinPackedVectorBase& vec2, const double eps); 
-

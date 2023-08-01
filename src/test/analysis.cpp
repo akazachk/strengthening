@@ -20,7 +20,7 @@
 using namespace StrengtheningParameters;
 #include "utility.hpp" // isInfinity, stringValue
 
-const int countBoundInfoEntries = 14;
+const int countBoundInfoEntries = 16;
 const int countGapInfoEntries = 6;
 const int countSummaryBBInfoEntries = 4 * 2;
 const int countFullBBInfoEntries = static_cast<int>(BB_INFO_CONTENTS.size()) * 4 * 2;
@@ -106,16 +106,18 @@ void printHeader(const StrengtheningParameters::Parameters& params,
     fprintf(logfile, "%s%c", "BEST DISJ OBJ", SEP); count++; // 2
     fprintf(logfile, "%s%c", "WORST DISJ OBJ", SEP); count++; // 3
     fprintf(logfile, "%s%c", "IP OBJ", SEP); count++; // 4
-    fprintf(logfile, "%s%c", "NUM GMIC", SEP); count++; // 5
-    fprintf(logfile, "%s%c", "GMIC OBJ", SEP); count++; // 6
-    fprintf(logfile, "%s%c", "NUM L&PC", SEP); count++; // 7
-    fprintf(logfile, "%s%c", "L&PC OBJ", SEP); count++; // 8
-    fprintf(logfile, "%s%c", "NUM MYCUTS", SEP); count++; // 9
-    fprintf(logfile, "%s%c", "MYCUTS OBJ", SEP); count++; // 10
-    fprintf(logfile, "%s%c", "MYCUTS+GMIC BOUND", SEP); count++; // 11
-    fprintf(logfile, "%s%c", "NUM STR MYCUTS", SEP); count++; // 12
-    fprintf(logfile, "%s%c", "UNSTR MYCUTS OBJ", SEP); count++; // 13
-    fprintf(logfile, "%s%c", "UNSTR MYCUTS+GMIC BOUND", SEP); count++; // 14
+    fprintf(logfile, "%s%c", "NUM CHANGED ROOT BOUNDS", SEP); count++; // 5
+    fprintf(logfile, "%s%c", "ROOT OBJ", SEP); count++; // 6
+    fprintf(logfile, "%s%c", "NUM GMIC", SEP); count++; // 7
+    fprintf(logfile, "%s%c", "GMIC OBJ", SEP); count++; // 8
+    fprintf(logfile, "%s%c", "NUM L&PC", SEP); count++; // 9
+    fprintf(logfile, "%s%c", "L&PC OBJ", SEP); count++; // 10
+    fprintf(logfile, "%s%c", "NUM MYCUTS", SEP); count++; // 11
+    fprintf(logfile, "%s%c", "MYCUTS OBJ", SEP); count++; // 12
+    fprintf(logfile, "%s%c", "MYCUTS+GMIC BOUND", SEP); count++; // 13
+    fprintf(logfile, "%s%c", "NUM STR MYCUTS", SEP); count++; // 14
+    fprintf(logfile, "%s%c", "UNSTR MYCUTS OBJ", SEP); count++; // 15
+    fprintf(logfile, "%s%c", "UNSTR MYCUTS+GMIC BOUND", SEP); count++; // 16
     assert(count == countBoundInfoEntries);
   } // BOUND INFO
   { // GAP INFO
@@ -291,6 +293,12 @@ void printBoundAndGapInfo(const SummaryBoundInfo& boundInfo, FILE* logfile, cons
     fprintf(logfile, "%s%c", stringValue(boundInfo.worst_disj_obj, "%2.20f").c_str(), SEP); count++;
     if (!isInfinity(std::abs(boundInfo.ip_obj))) {
       fprintf(logfile, "%s%c", stringValue(boundInfo.ip_obj, "%2.20f").c_str(), SEP); count++;
+    } else {
+      fprintf(logfile, "%c", SEP); count++;
+    }
+    fprintf(logfile, "%s%c", stringValue(boundInfo.num_root_bounds_changed).c_str(), SEP); count++;
+    if (!isInfinity(std::abs(boundInfo.root_obj))) {
+      fprintf(logfile, "%s%c", stringValue(boundInfo.root_obj, "%2.20f").c_str(), SEP); count++;
     } else {
       fprintf(logfile, "%c", SEP); count++;
     }
@@ -911,6 +919,7 @@ void analyzeStrength(
   int NAME_WIDTH = 25;
   int NUM_DIGITS_BEFORE_DEC = 7;
   int NUM_DIGITS_AFTER_DEC = 7;
+  const double INF = std::numeric_limits<double>::max();
   char tmpstring[300];
 
   snprintf(tmpstring, sizeof(tmpstring) / sizeof(char),
@@ -918,14 +927,29 @@ void analyzeStrength(
   output += tmpstring;
   snprintf(tmpstring, sizeof(tmpstring) / sizeof(char), "%-*.*s%s\n",
       NAME_WIDTH, NAME_WIDTH, "LP: ",
-      stringValue(boundInfo.lp_obj, "% -*.*f", NUM_DIGITS_BEFORE_DEC,
-          NUM_DIGITS_AFTER_DEC).c_str());
+      stringValue(boundInfo.lp_obj, "% -*.*g",
+        INF,
+        NUM_DIGITS_BEFORE_DEC,
+        NUM_DIGITS_AFTER_DEC).c_str());
   output += tmpstring;
+  if (!isInfinity(std::abs(boundInfo.root_obj))) {
+    snprintf(tmpstring, sizeof(tmpstring) / sizeof(char),
+        "%-*.*s%s (%d bounds changed)\n", NAME_WIDTH, NAME_WIDTH, "Root: ",
+        stringValue(boundInfo.root_obj, "% -*.*g",
+          INF,
+          NUM_DIGITS_BEFORE_DEC,
+          NUM_DIGITS_AFTER_DEC).c_str(),
+        boundInfo.num_root_bounds_changed);
+    output += tmpstring;
+  }
   if (!isInfinity(std::abs(boundInfo.gmic_obj))) {
     snprintf(tmpstring, sizeof(tmpstring) / sizeof(char),
         "%-*.*s%s (%d cuts", NAME_WIDTH, NAME_WIDTH, "GMICs: ",
-        stringValue(boundInfo.gmic_obj, "% -*.*f", NUM_DIGITS_BEFORE_DEC,
-            NUM_DIGITS_AFTER_DEC).c_str(), boundInfo.num_gmic);
+        stringValue(boundInfo.gmic_obj, "% -*.*g",
+          INF,
+          NUM_DIGITS_BEFORE_DEC,
+          NUM_DIGITS_AFTER_DEC).c_str(),
+        boundInfo.num_gmic);
     output += tmpstring;
     snprintf(tmpstring, sizeof(tmpstring) / sizeof(char),
         ", %d active GMICs", cutInfoGMICs.num_active_gmic);
@@ -938,8 +962,11 @@ void analyzeStrength(
   if (boundInfo.num_str_cuts > 0 && !isInfinity(std::abs(boundInfo.unstr_mycut_obj))) {
     snprintf(tmpstring, sizeof(tmpstring) / sizeof(char),
         "%-*.*s%s (%d cuts", NAME_WIDTH, NAME_WIDTH, "unstr MYCUTs: ",
-        stringValue(boundInfo.unstr_mycut_obj, "% -*.*f", NUM_DIGITS_BEFORE_DEC,
-            NUM_DIGITS_AFTER_DEC).c_str(), boundInfo.num_mycut);
+        stringValue(boundInfo.unstr_mycut_obj, "% -*.*g",
+          INF,
+          NUM_DIGITS_BEFORE_DEC,
+          NUM_DIGITS_AFTER_DEC).c_str(),
+        boundInfo.num_mycut);
     output += tmpstring;
     snprintf(tmpstring, sizeof(tmpstring) / sizeof(char),
         " -> %d strengthened", boundInfo.num_str_cuts);
@@ -949,8 +976,11 @@ void analyzeStrength(
   if (!isInfinity(std::abs(boundInfo.mycut_obj))) {
     snprintf(tmpstring, sizeof(tmpstring) / sizeof(char),
         "%-*.*s%s (%d cuts", NAME_WIDTH, NAME_WIDTH, "MYCUTs: ",
-        stringValue(boundInfo.mycut_obj, "% -*.*f", NUM_DIGITS_BEFORE_DEC,
-            NUM_DIGITS_AFTER_DEC).c_str(), boundInfo.num_mycut);
+        stringValue(boundInfo.mycut_obj, "% -*.*g",
+          INF,
+          NUM_DIGITS_BEFORE_DEC,
+          NUM_DIGITS_AFTER_DEC).c_str(),
+        boundInfo.num_mycut);
     output += tmpstring;
     if (gmics && gmics->sizeCuts() > 0) {
       snprintf(tmpstring, sizeof(tmpstring) / sizeof(char),
@@ -966,8 +996,8 @@ void analyzeStrength(
     if (boundInfo.num_gmic + boundInfo.num_lpc > 0) { // Even if there are no MYCUTs, but not if there are *only* MYCUTs
       snprintf(tmpstring, sizeof(tmpstring) / sizeof(char),
           "%-*.*s%s (%d cuts)\n", NAME_WIDTH, NAME_WIDTH, "unstr All: ",
-          stringValue(boundInfo.unstr_all_cuts_obj, "% -*.*f",
-            NUM_DIGITS_BEFORE_DEC, NUM_DIGITS_AFTER_DEC).c_str(),
+          stringValue(boundInfo.unstr_all_cuts_obj, "% -*.*g",
+            INF, NUM_DIGITS_BEFORE_DEC, NUM_DIGITS_AFTER_DEC).c_str(),
           boundInfo.num_gmic + boundInfo.num_lpc + boundInfo.num_mycut);
       output += tmpstring;
     }
@@ -975,7 +1005,7 @@ void analyzeStrength(
   if (boundInfo.num_gmic + boundInfo.num_lpc > 0) { // Even if there are no MYCUTs, but not if there are *only* MYCUTs
     snprintf(tmpstring, sizeof(tmpstring) / sizeof(char),
         "%-*.*s%s (%d cuts", NAME_WIDTH, NAME_WIDTH, "All: ",
-        stringValue(boundInfo.all_cuts_obj, "% -*.*f", NUM_DIGITS_BEFORE_DEC, NUM_DIGITS_AFTER_DEC).c_str(), 
+        stringValue(boundInfo.all_cuts_obj, "% -*.*g", INF, NUM_DIGITS_BEFORE_DEC, NUM_DIGITS_AFTER_DEC).c_str(), 
         boundInfo.num_gmic + boundInfo.num_lpc + boundInfo.num_mycut);
     output += tmpstring;
     if (gmics && gmics->sizeCuts() > 0) {
@@ -993,22 +1023,28 @@ void analyzeStrength(
   if (!isInfinity(std::abs(boundInfo.best_disj_obj))) {
     snprintf(tmpstring, sizeof(tmpstring) / sizeof(char), "%-*.*s%s\n",
         NAME_WIDTH, NAME_WIDTH, "Disjunctive lb: ",
-        stringValue(boundInfo.best_disj_obj, "% -*.*f", NUM_DIGITS_BEFORE_DEC,
-            NUM_DIGITS_AFTER_DEC).c_str());
+        stringValue(boundInfo.best_disj_obj, "% -*.*g",
+          INF,
+          NUM_DIGITS_BEFORE_DEC,
+          NUM_DIGITS_AFTER_DEC).c_str());
     output += tmpstring;
   }
   if (!isInfinity(std::abs(boundInfo.worst_disj_obj))) {
     snprintf(tmpstring, sizeof(tmpstring) / sizeof(char), "%-*.*s%s\n",
         NAME_WIDTH, NAME_WIDTH, "Disjunctive ub: ",
-        stringValue(boundInfo.worst_disj_obj, "% -*.*f", NUM_DIGITS_BEFORE_DEC,
-            NUM_DIGITS_AFTER_DEC).c_str());
+        stringValue(boundInfo.worst_disj_obj, "% -*.*g",
+          INF,
+          NUM_DIGITS_BEFORE_DEC,
+          NUM_DIGITS_AFTER_DEC).c_str());
     output += tmpstring;
   }
   if (!isInfinity(std::abs(boundInfo.ip_obj))) {
     snprintf(tmpstring, sizeof(tmpstring) / sizeof(char), "%-*.*s%s\n",
         NAME_WIDTH, NAME_WIDTH, "IP: ",
-        stringValue(boundInfo.ip_obj, "% -*.*f", NUM_DIGITS_BEFORE_DEC,
-            NUM_DIGITS_AFTER_DEC).c_str());
+        stringValue(boundInfo.ip_obj, "% -*.*g",
+          INF,
+          NUM_DIGITS_BEFORE_DEC,
+          NUM_DIGITS_AFTER_DEC).c_str());
     output += tmpstring;
   }
 } /* analyzeStrength */

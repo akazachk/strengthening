@@ -358,10 +358,14 @@ int main(int argc, char** argv) {
     exitReason = gen.exitReason;
     if (disj) {
       disjInfo.num_disj++;
-      if (boundInfo.best_disj_obj < disj->best_obj)
+      if (boundInfo.best_disj_obj < disj->best_obj) {
         boundInfo.best_disj_obj = disj->best_obj;
-      if (boundInfo.worst_disj_obj < disj->worst_obj)
+      }
+      if (boundInfo.worst_disj_obj < disj->worst_obj) {
         boundInfo.worst_disj_obj = disj->worst_obj;
+      }
+      boundInfo.num_root_bounds_changed = disj->common_changed_var.size();
+      boundInfo.root_obj = disj->root_obj;
       updateDisjInfo(disjInfo, disjInfo.num_disj, gen.gen);
     }
     updateCutInfo(cutInfoVec[round_ind], &gen);
@@ -405,7 +409,7 @@ int main(int argc, char** argv) {
     OsiCuts origCurrCuts(currCuts);
     std::vector<int> str_cut_ind; // indices of cuts that were strengthened
     std::vector<CutCertificate> v; // [cut][term][Farkas multiplier] in the end, per term, this will be of dimension rows + disj term ineqs + cols
-    bool do_strengthening = params.get(STRENGTHEN) == 1;
+    bool do_strengthening = params.get(STRENGTHEN) >= 1;
     do_strengthening = do_strengthening && disj && disj->terms.size() > 0;
     do_strengthening = do_strengthening && currCuts.sizeCuts() > 0;
     do_strengthening = do_strengthening && disj->integer_sol.size() == 0; // TODO right now (2021-05-22) we cannot handle integer-feasible solutions found during branching
