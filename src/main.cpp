@@ -441,14 +441,8 @@ int main(int argc, char** argv) {
     OsiCuts origCurrCuts(currCuts);
     std::vector<int> str_cut_ind; // indices of cuts that were strengthened
     std::vector<CutCertificate> v; // [cut][term][Farkas multiplier] in the end, per term, this will be of dimension rows + disj term ineqs + cols
-    bool do_strengthening = params.get(STRENGTHEN) >= 1;
-    do_strengthening = do_strengthening && disj && disj->terms.size() > 0;
-    do_strengthening = do_strengthening && currCuts.sizeCuts() > 0;
-    do_strengthening = do_strengthening && disj->integer_sol.size() == 0; // TODO right now (2021-05-22) we cannot handle integer-feasible solutions found during branching
-
-    if (do_strengthening) {
-      strengtheningHelper(currCuts, v, str_cut_ind, strInfo, disj, solver, ip_solution);
-    } // if (do_strengthening) --- check that disj exists and cuts were generated
+    
+    strengtheningHelper(currCuts, v, str_cut_ind, strInfo, disj, solver, ip_solution);
     setStrInfo(strInfo, disj, v, solver->getNumRows(), solver->getNumCols(), str_cut_ind, gen.probData.EPS);
 
     timer.end_timer(OverallTimeStats::CUT_TOTAL_TIME);
@@ -1142,6 +1136,16 @@ void strengtheningHelper(
     const OsiSolverInterface* const solver, ///< [in] The solver that generated the cuts
     const std::vector<double>& ip_solution  ///< [in] Feasible integer solution
 ) {
+  // Check if cuts should be strengthened
+  bool do_strengthening = params.get(intParam::STRENGTHEN) >= 1; // the strengthening parameter is set
+  do_strengthening = do_strengthening && disj && disj->terms.size() > 0; // a disjunction exists, and it has terms
+  do_strengthening = do_strengthening && currCuts.sizeCuts() > 0; // cuts have been generated
+  do_strengthening = do_strengthening && disj->integer_sol.size() == 0; // TODO right now (2021-05-22) we cannot handle integer-feasible solutions found during branching
+
+  if (!do_strengthening) {
+    return;
+  }
+
   timer.start_timer(OverallTimeStats::STRENGTHENING_TOTAL_TIME);
 
   const int num_cuts = currCuts.sizeCuts();
