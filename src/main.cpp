@@ -66,6 +66,7 @@ enum OverallTimeStats {
   VPC_GEN_CUTS_TIME,
   STRENGTHENING_TOTAL_TIME,
   STRENGTHENING_CALC_CERTIFICATE_TIME,
+  STRENGTHENING_APPLY_CERTIFICATE_TIME,
   BB_TIME,
   APPLY_TIME,
   TOTAL_TIME,
@@ -83,6 +84,7 @@ const std::vector<std::string> OverallTimeStatsName {
   "VPC_GEN_CUTS_TIME",
   "STRENGTHENING_TOTAL_TIME",
   "STRENGTHENING_CALC_CERTIFICATE_TIME",
+  "STRENGTHENING_APPLY_CERTIFICATE_TIME",
   "BB_TIME",
   "APPLY_TIME",
   "TOTAL_TIME"
@@ -152,6 +154,36 @@ int wrapUp(int retCode, int argc, char** argv);
 
 /// @brief Update average number of terms, density, rows, cols, points, rays, and partial tree information if applicable
 void updateDisjInfo(SummaryDisjunctionInfo& disjInfo, const int num_disj, const CglVPC& gen);
+
+/// @brief Strengthen \p currCuts using the Farkas multipliers that will be computed and stored in \p v
+void strengtheningHelper(
+    OsiCuts& currCuts,
+    std::vector<CutCertificate>& v,
+    std::vector<int>& str_cut_ind,
+    SummaryStrengtheningInfo& strInfo,
+    const Disjunction* const disj,
+    const OsiSolverInterface* const solver,
+    const std::vector<double>& ip_solution
+);
+
+/// @brief Calculate the strengthening certificate (Farkas multipliers) \p v for \p currCuts
+void calcStrengtheningCertificateHelper(
+    const OsiCuts& currCuts,
+    std::vector<CutCertificate>& v,
+    const Disjunction* const disj,
+    const OsiSolverInterface* const solver
+);
+
+/// @brief Apply the strengthening certificate (Farkas multipliers) \p v to \p currCuts
+void applyStrengtheningCertificateHelper(
+    OsiCuts& currCuts,
+    const std::vector<CutCertificate>& v,
+    std::vector<int>& str_cut_ind,
+    SummaryStrengtheningInfo& strInfo,
+    const Disjunction* const disj,
+    const OsiSolverInterface* const solver,
+    const std::vector<double>& ip_solution
+);
 
 /****************** MAIN FUNCTION **********************/
 int main(int argc, char** argv) {
@@ -415,94 +447,7 @@ int main(int argc, char** argv) {
     do_strengthening = do_strengthening && disj->integer_sol.size() == 0; // TODO right now (2021-05-22) we cannot handle integer-feasible solutions found during branching
 
     if (do_strengthening) {
-      printf("\n## Strengthening disjunctive cuts: (# cuts = %d). ##\n", (int) currCuts.sizeCuts());
-      timer.start_timer(OverallTimeStats::STRENGTHENING_TOTAL_TIME);
-      
-      // First, retrieve the certificate
-      timer.start_timer(OverallTimeStats::STRENGTHENING_CALC_CERTIFICATE_TIME);
-      v.resize(currCuts.sizeCuts());
-      for (int cut_ind = 0; cut_ind < currCuts.sizeCuts(); cut_ind++) {
-        v[cut_ind].resize(disj->num_terms);
-      }
-      for (int term_ind = 0; term_ind < disj->num_terms; term_ind++) {
-        OsiSolverInterface* termSolver;
-        disj->getSolverForTerm(termSolver, term_ind, solver, false, params.get(StrengtheningParameters::doubleConst::DIFFEPS), params.logfile);
-        if (!termSolver) {
-          printf("Disjunctive term %d/%d not created successfully.\n", term_ind+1, disj->num_terms);
-          continue;
-        }
-        for (int cut_ind = 0; cut_ind < currCuts.sizeCuts(); cut_ind++) {
-          OsiRowCut* disjCut = currCuts.rowCutPtr(cut_ind);
-
-          // For each term of the disjunction,
-          // we need to explicitly add the constraint(s) defining the disjunctive term
-          const CoinPackedVector lhs = disjCut->row();
-
-          getCertificate(v[cut_ind][term_ind], lhs.getNumElements(), lhs.getIndices(), lhs.getElements(), termSolver, params.logfile);
-        } // loop over cuts
-
-        if (termSolver) { delete termSolver; }
-
-      } // loop over disjunctive terms to retrieve certificate
-      timer.end_timer(OverallTimeStats::STRENGTHENING_CALC_CERTIFICATE_TIME);
-
-      //====================================================================================================//
-      // Do strengthening
-      strInfo.num_coeffs_strengthened.resize(static_cast<int>(Stat::num_stats), 0.); // total,avg,stddev,min,max
-      strInfo.num_coeffs_strengthened[(int) Stat::min] = std::numeric_limits<int>::max();
-      str_cut_ind.reserve(currCuts.sizeCuts());
-      for (int cut_ind = 0; cut_ind < currCuts.sizeCuts(); cut_ind++) {
-        OsiRowCut* disjCut = currCuts.rowCutPtr(cut_ind);
-        const CoinPackedVector lhs = disjCut->row();
-        const double rhs = disjCut->rhs();
-        std::vector<double> str_coeff;
-        double str_rhs;
-        const int curr_num_coeffs_str = strengthenCut(str_coeff, str_rhs,
-            lhs.getNumElements(), lhs.getIndices(), lhs.getElements(), rhs,
-            disj, v[cut_ind], solver, params.logfile, ip_solution);
-
-        // Update stats
-        boundInfo.num_str_cuts += curr_num_coeffs_str > 0;
-        strInfo.num_str_cuts += curr_num_coeffs_str > 0;
-        strInfo.num_coeffs_strengthened[(int) Stat::total] += curr_num_coeffs_str;
-        strInfo.num_coeffs_strengthened[(int) Stat::avg] += (double) curr_num_coeffs_str / currCuts.sizeCuts();
-        strInfo.num_coeffs_strengthened[(int) Stat::stddev] += (double) curr_num_coeffs_str * curr_num_coeffs_str / currCuts.sizeCuts();
-        if (curr_num_coeffs_str < strInfo.num_coeffs_strengthened[(int) Stat::min]) {
-          strInfo.num_coeffs_strengthened[(int) Stat::min] = curr_num_coeffs_str;
-        }
-        if (curr_num_coeffs_str > strInfo.num_coeffs_strengthened[(int) Stat::max]) {
-          strInfo.num_coeffs_strengthened[(int) Stat::max] = curr_num_coeffs_str;
-        }
-        
-        // Replace row if any coefficients were strengthened
-        if (curr_num_coeffs_str > 0) {
-          CoinPackedVector strCutCoeff(str_coeff.size(), str_coeff.data());
-          disjCut->setRow(strCutCoeff);
-          disjCut->setLb(str_rhs);
-          str_cut_ind.push_back(cut_ind);
-        }
-      } // loop over cuts
-      // Finish stddev calculation = sqrt(E[X^2] - E[X]^2)
-      strInfo.num_coeffs_strengthened[(int) Stat::stddev] -= strInfo.num_coeffs_strengthened[(int) Stat::avg] * strInfo.num_coeffs_strengthened[(int) Stat::avg];
-      strInfo.num_coeffs_strengthened[(int) Stat::stddev] = (strInfo.num_coeffs_strengthened[(int) Stat::stddev] > 0) ? std::sqrt(strInfo.num_coeffs_strengthened[(int) Stat::stddev]) : 0.;
-      fprintf(stdout, "\nFinished strengthening (%d / %d cuts affected).\n", boundInfo.num_str_cuts, boundInfo.num_mycut);
-      fprintf(stdout, "Number coeffs changed:\n");
-      fprintf(stdout, "\ttotal: %g\n", strInfo.num_coeffs_strengthened[(int) Stat::total]);
-      fprintf(stdout, "\tavg: %g\n", strInfo.num_coeffs_strengthened[(int) Stat::avg]);
-      fprintf(stdout, "\tstddev: %g\n", strInfo.num_coeffs_strengthened[(int) Stat::stddev]);
-      fprintf(stdout, "\tmin: %g\n", strInfo.num_coeffs_strengthened[(int) Stat::min]);
-      fprintf(stdout, "\tmax: %g\n", strInfo.num_coeffs_strengthened[(int) Stat::max]);
-      fprintf(stdout, "--------------------------------------------------\n");
-#if 0
-      fprintf(stdout, "\n## Printing strengthened custom cuts ##\n");
-      for (int cut_ind = 0; cut_ind < currCuts.sizeCuts(); cut_ind++) {
-        printf("## Cut %d ##\n", cut_ind);
-        const OsiRowCut* const cut = currCuts.rowCutPtr(cut_ind);
-        cut->print();
-      }
-      fprintf(stdout, "Finished printing strengthened custom cuts.\n\n");
-#endif
-      timer.end_timer(OverallTimeStats::STRENGTHENING_TOTAL_TIME);
+      strengtheningHelper(currCuts, v, str_cut_ind, strInfo, disj, solver, ip_solution);
     } // if (do_strengthening) --- check that disj exists and cuts were generated
     setStrInfo(strInfo, disj, v, solver->getNumRows(), solver->getNumCols(), str_cut_ind, gen.probData.EPS);
 
@@ -1187,3 +1132,137 @@ void updateDisjInfo(SummaryDisjunctionInfo& disjInfo, const int num_disj, const 
 
   }
 } /* updateDisjInfo */
+
+void strengtheningHelper(
+    OsiCuts& currCuts,                      ///< [in/out] The cuts to be strengthened (in place)
+    std::vector<CutCertificate>& v,         ///< [in/out] Certifcate of cuts that, in the end, per term, this will be of dimension rows + disj term ineqs + cols with indices [cut][term][Farkas multiplier]
+    std::vector<int>& str_cut_ind,          ///< [in/out] indices of cuts that were strengthened
+    SummaryStrengtheningInfo& strInfo,      ///< [in/out] The summary info for the strengthening
+    const Disjunction* const disj,          ///< [in] The disjunction that generated the cuts
+    const OsiSolverInterface* const solver, ///< [in] The solver that generated the cuts
+    const std::vector<double>& ip_solution  ///< [in] Feasible integer solution
+) {
+  timer.start_timer(OverallTimeStats::STRENGTHENING_TOTAL_TIME);
+
+  const int num_cuts = currCuts.sizeCuts();
+  printf("\n## Strengthening disjunctive cuts: (# cuts = %d). ##\n", num_cuts);
+
+  // First, retrieve the certificate
+  calcStrengtheningCertificateHelper(currCuts, v, disj, solver);
+
+  // Apply the certificate
+  applyStrengtheningCertificateHelper(currCuts, v, str_cut_ind, strInfo, disj, solver, ip_solution);
+
+  // Print the results
+  fprintf(stdout, "\nFinished strengthening (%d / %d cuts affected).\n", boundInfo.num_str_cuts, boundInfo.num_mycut);
+  fprintf(stdout, "Number coeffs changed:\n");
+  fprintf(stdout, "\ttotal: %g\n", strInfo.num_coeffs_strengthened[(int) Stat::total]);
+  fprintf(stdout, "\tavg: %g\n", strInfo.num_coeffs_strengthened[(int) Stat::avg]);
+  fprintf(stdout, "\tstddev: %g\n", strInfo.num_coeffs_strengthened[(int) Stat::stddev]);
+  fprintf(stdout, "\tmin: %g\n", strInfo.num_coeffs_strengthened[(int) Stat::min]);
+  fprintf(stdout, "\tmax: %g\n", strInfo.num_coeffs_strengthened[(int) Stat::max]);
+  fprintf(stdout, "--------------------------------------------------\n");
+#if 0
+  fprintf(stdout, "\n## Printing strengthened custom cuts ##\n");
+  for (int cut_ind = 0; cut_ind < num_cuts; cut_ind++) {
+    printf("## Cut %d ##\n", cut_ind);
+    const OsiRowCut* const cut = currCuts.rowCutPtr(cut_ind);
+    cut->print();
+  }
+  fprintf(stdout, "Finished printing strengthened custom cuts.\n\n");
+#endif
+
+  timer.end_timer(OverallTimeStats::STRENGTHENING_TOTAL_TIME);
+} /* strengtheningHelper */
+
+void calcStrengtheningCertificateHelper(
+    const OsiCuts& currCuts,                ///< [in] The cuts to be strengthened (in place)
+    std::vector<CutCertificate>& v,         ///< [in/out] Certifcate of cuts that, in the end, per term, this will be of dimension rows + disj term ineqs + cols with indices [cut][term][Farkas multiplier]
+    const Disjunction* const disj,          ///< [in] The disjunction that generated the cuts
+    const OsiSolverInterface* const solver  ///< [in] The solver that generated the cuts
+) {
+  timer.start_timer(OverallTimeStats::STRENGTHENING_CALC_CERTIFICATE_TIME);
+
+  const int num_cuts = currCuts.sizeCuts();
+  v.resize(num_cuts);
+  for (int cut_ind = 0; cut_ind < num_cuts; cut_ind++) {
+    v[cut_ind].resize(disj->num_terms);
+  }
+  for (int term_ind = 0; term_ind < disj->num_terms; term_ind++) {
+    OsiSolverInterface* termSolver;
+    disj->getSolverForTerm(termSolver, term_ind, solver, false, params.get(StrengtheningParameters::doubleConst::DIFFEPS), params.logfile);
+    if (!termSolver) {
+      printf("Disjunctive term %d/%d not created successfully.\n", term_ind+1, disj->num_terms);
+      continue;
+    }
+    for (int cut_ind = 0; cut_ind < num_cuts; cut_ind++) {
+      const OsiRowCut* disjCut = currCuts.rowCutPtr(cut_ind);
+
+      // For each term of the disjunction,
+      // we need to explicitly add the constraint(s) defining the disjunctive term
+      const CoinPackedVector lhs = disjCut->row();
+
+      getCertificate(v[cut_ind][term_ind], lhs.getNumElements(), lhs.getIndices(), lhs.getElements(), termSolver, params.logfile);
+    } // loop over cuts
+
+    if (termSolver) { delete termSolver; }
+
+  } // loop over disjunctive terms to retrieve certificate
+
+  timer.end_timer(OverallTimeStats::STRENGTHENING_CALC_CERTIFICATE_TIME);
+} /* calcStrengtheningCertificateHelper */
+
+void applyStrengtheningCertificateHelper(
+    OsiCuts& currCuts,                      ///< [in/out] The cuts to be strengthened (in place)
+    const std::vector<CutCertificate>& v,   ///< [in] Certifcate of cuts that, in the end, per term, this will be of dimension rows + disj term ineqs + cols with indices [cut][term][Farkas multiplier]
+    std::vector<int>& str_cut_ind,          ///< [in/out] indices of cuts that were strengthened
+    SummaryStrengtheningInfo& strInfo,      ///< [in/out] The summary info for the strengthening
+    const Disjunction* const disj,          ///< [in] The disjunction that generated the cuts
+    const OsiSolverInterface* const solver, ///< [in] The solver that generated the cuts
+    const std::vector<double>& ip_solution  ///< [in] Feasible integer solution
+) {
+  timer.start_timer(OverallTimeStats::STRENGTHENING_APPLY_CERTIFICATE_TIME);
+
+  const int num_cuts = currCuts.sizeCuts();
+  strInfo.num_coeffs_strengthened.resize(static_cast<int>(Stat::num_stats), 0.); // total,avg,stddev,min,max
+  strInfo.num_coeffs_strengthened[(int) Stat::min] = std::numeric_limits<int>::max();
+  str_cut_ind.reserve(num_cuts);
+
+  for (int cut_ind = 0; cut_ind < num_cuts; cut_ind++) {
+    OsiRowCut* disjCut = currCuts.rowCutPtr(cut_ind);
+    const CoinPackedVector lhs = disjCut->row();
+    const double rhs = disjCut->rhs();
+    std::vector<double> str_coeff;
+    double str_rhs;
+    const int curr_num_coeffs_str = strengthenCut(str_coeff, str_rhs,
+        lhs.getNumElements(), lhs.getIndices(), lhs.getElements(), rhs,
+        disj, v[cut_ind], solver, params.logfile, ip_solution);
+
+    // Update stats
+    boundInfo.num_str_cuts += curr_num_coeffs_str > 0;
+    strInfo.num_str_cuts += curr_num_coeffs_str > 0;
+    strInfo.num_coeffs_strengthened[(int) Stat::total] += curr_num_coeffs_str;
+    strInfo.num_coeffs_strengthened[(int) Stat::avg] += (double) curr_num_coeffs_str / num_cuts;
+    strInfo.num_coeffs_strengthened[(int) Stat::stddev] += (double) curr_num_coeffs_str * curr_num_coeffs_str / num_cuts;
+    if (curr_num_coeffs_str < strInfo.num_coeffs_strengthened[(int) Stat::min]) {
+      strInfo.num_coeffs_strengthened[(int) Stat::min] = curr_num_coeffs_str;
+    }
+    if (curr_num_coeffs_str > strInfo.num_coeffs_strengthened[(int) Stat::max]) {
+      strInfo.num_coeffs_strengthened[(int) Stat::max] = curr_num_coeffs_str;
+    }
+    
+    // Replace row if any coefficients were strengthened
+    if (curr_num_coeffs_str > 0) {
+      CoinPackedVector strCutCoeff(str_coeff.size(), str_coeff.data());
+      disjCut->setRow(strCutCoeff);
+      disjCut->setLb(str_rhs);
+      str_cut_ind.push_back(cut_ind);
+    }
+  } // loop over cuts
+
+  // Finish stddev calculation = sqrt(E[X^2] - E[X]^2)
+  strInfo.num_coeffs_strengthened[(int) Stat::stddev] -= strInfo.num_coeffs_strengthened[(int) Stat::avg] * strInfo.num_coeffs_strengthened[(int) Stat::avg];
+  strInfo.num_coeffs_strengthened[(int) Stat::stddev] = (strInfo.num_coeffs_strengthened[(int) Stat::stddev] > 0) ? std::sqrt(strInfo.num_coeffs_strengthened[(int) Stat::stddev]) : 0.;
+  
+  timer.end_timer(OverallTimeStats::STRENGTHENING_APPLY_CERTIFICATE_TIME);
+} /* applyStrengtheningCertificateHelper */
