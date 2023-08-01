@@ -49,8 +49,15 @@ void DisjunctiveTerm::initialize(const DisjunctiveTerm* const source) {
     changed_var = source->changed_var;
     changed_bound = source->changed_bound;
     changed_value = source->changed_value;
+    is_feasible = source->is_feasible;
 #ifdef USE_COIN
-    basis = source->basis->clone();
+    if (basis) {
+      delete basis;
+      basis = NULL;
+    }
+    if (source->basis) {
+      basis = source->basis->clone();
+    }
     ineqs = source->ineqs;
 #endif
   } else {
@@ -59,6 +66,7 @@ void DisjunctiveTerm::initialize(const DisjunctiveTerm* const source) {
     changed_var.resize(0);
     changed_bound.resize(0);
     changed_value.resize(0);
+    is_feasible = false;
 #ifdef USE_COIN
     ineqs.resize(0);
 #endif
@@ -114,6 +122,7 @@ void Disjunction::setupAsNew() {
   this->common_changed_bound.resize(0);
   this->common_changed_value.resize(0);
   this->common_changed_var.resize(0);
+  this->root_obj = std::numeric_limits<double>::max();
 #ifdef USE_COIN
   this->common_ineqs.resize(0);
 #endif
@@ -360,6 +369,7 @@ void Disjunction::initialize(const Disjunction* const source) {
     this->common_changed_bound = source->common_changed_bound;
     this->common_changed_value = source->common_changed_value;
     this->common_changed_var = source->common_changed_var;
+    this->root_obj = source->root_obj;
 #ifdef USE_COIN
     this->common_ineqs = source->common_ineqs;
 #endif
