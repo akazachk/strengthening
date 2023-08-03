@@ -30,6 +30,7 @@
 #include "CutHelper.hpp"
 #include "Disjunction.hpp" // DisjunctiveTerm, Disjunction, getSolverForTerm
 //#include "disjcuts.hpp"
+#include "cglp.hpp"
 #include "gmic.hpp"
 #include "Parameters.hpp"
 using namespace StrengtheningParameters;
@@ -447,6 +448,17 @@ int main(int argc, char** argv) {
     setStrInfo(strInfo, disj, v, solver->getNumRows(), solver->getNumCols(), str_cut_ind, gen.probData.EPS);
 
     timer.end_timer(OverallTimeStats::CUT_TOTAL_TIME);
+
+    //====================================================================================================//
+    // Analyze regularity and irregularity
+    printf("\n## Analyzing regularity of cuts. ##\n");
+    for (int cut_ind = 0; cut_ind < origCurrCuts.sizeCuts(); cut_ind++) {
+      OsiSolverInterface* liftingSolver = new SolverInterface;
+      setLPSolverParameters(liftingSolver, params.get(VERBOSITY));
+
+      const OsiRowCut* disjCut = origCurrCuts.rowCutPtr(cut_ind);
+      genRCVMILPFromCut(liftingSolver, disjCut, disj, solver, params.logfile);
+    }
 
     //====================================================================================================//
     // Apply cuts
