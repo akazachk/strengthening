@@ -121,7 +121,7 @@ SOURCES += \
 		cut/CutHelper.cpp \
     cut/disjcuts.cpp \
     cut/Disjunction.cpp \
-    cut/cglp.cpp \
+    cut/regularity.cpp \
     cut/gmic.cpp \
     cut/strengthen.cpp \
 		utility/SolverHelper.cpp \
