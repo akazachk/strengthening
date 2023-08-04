@@ -1,23 +1,123 @@
 /**
- * @file cglp.cpp
+ * @file regularity.cpp
  * @author A. M. Kazachkov
  * @date 2023-08-02
  */
-#include "cglp.hpp"
+#include "regularity.hpp"
 
-#include <vector>
-
-// COIN-OR
+// COIN-OR files
+#include <CbcModel.hpp>
 #include <CoinPackedMatrix.hpp>
 #include <OsiRowCut.hpp>
+#include <OsiCuts.hpp>
 #include <OsiSolverInterface.hpp>
 
 // Project files
+// #include "analysis.hpp" // cutCertificate
 #include "Disjunction.hpp"
+#include "Parameters.hpp"
+#include "SolverHelper.hpp" // setLPSolverParameters, setIPSolverParameters
+#include "SolverInterface.hpp"
 #include "utility.hpp" // isInfinity, error_msg
 
-// #include "Parameters.hpp" // params.logfile
-// using namespace StrengtheningParameters;
+#ifdef USE_EIGEN
+#include "eigen.hpp"
+#endif
+
+int calculateNumRowsAtilde(
+    /// [in] Disjunction from which to get globally-valid inequalities
+    const Disjunction* const disj,
+    /// [in] Original solver
+    const OsiSolverInterface* const solver) {
+  // Let mprime be the number of rows of Atilde
+  // This is the number of original constraints + number of globally-valid bound changes
+  // We also add the number of lower and upper bounds to mprime
+  int mprime_bounds = 0;
+  for (int col = 0; col < solver->getNumCols(); col++) {
+      const double lb = solver->getColLower()[col];
+      const double ub = solver->getColUpper()[col];
+
+      if (!isInfinity(std::abs(lb))) {
+          mprime_bounds++;
+      }
+      if (!isInfinity(std::abs(ub))) {
+          mprime_bounds++;
+      }
+  }
+  const int num_common_rows = disj->common_changed_var.size() + disj->common_ineqs.size();
+  return solver->getNumRows() + num_common_rows + mprime_bounds;
+} /* calculateNumRowsAtilde */
+
+void prepareAtilde(
+    /// [out] Coefficient matrix with original constraints, globally-valid inequalities, and variable bounds
+    CoinPackedMatrix& Atilde,
+    /// [out] Right-hand side vector with original constraints, globally-valid inequalities, and variable bounds
+    std::vector<double>& btilde,
+    /// [in] Disjunction from which to get globally-valid inequalities
+    const Disjunction* const disj,
+    /// [in] Original solver
+    const OsiSolverInterface* const solver,
+    /// [in] Log where to output error messages
+    FILE* logfile) {
+  Atilde.clear();
+  btilde.clear();
+
+  // Put Ax \ge b into Atilde and btilde
+  Atilde.copyOf(*(solver->getMatrixByCol())); // copy A into mx, col-ordered, dimesions = [num_rows, num_cols]
+  Atilde.reverseOrdering(); // make it row-ordered
+  btilde.assign(solver->getRightHandSide(), solver->getRightHandSide() + solver->getNumRows()); // copy b into btilde
+
+  // Add rows corresponding to globally-valid bound changes to Atilde
+  // All will be stored in >= form
+  const double one = 1.;
+  const double negone = -1.;
+  for (int i = 0; i < (int) disj->common_changed_var.size(); i++) {
+      const int col = disj->common_changed_var[i];
+      const double coeff = (disj->common_changed_bound[i] <= 0) ? one : negone;
+      const double val = disj->common_changed_value[i];
+
+      Atilde.appendRow(1, &col, &coeff);
+      btilde.push_back(coeff * val); // lower bound row
+  }
+
+  // Add rows corresponding to globally-valid common_ineqs to Atilde
+  // We assume these are all >= constraints
+  for (int i = 0; i < (int) disj->common_ineqs.size(); i++) {
+      const OsiRowCut* currCut = &(disj->common_ineqs[i]);
+      Atilde.appendRow(currCut->row().getNumElements(), currCut->row().getIndices(), currCut->row().getElements());
+      btilde.push_back(currCut->rhs());
+  }
+
+  // Add rows corresponding to variable lower bounds to Atilde
+  // These will be stored as x_j \ge lb_j
+  for (int col = 0; col < solver->getNumCols(); col++) {
+      const double val = solver->getColLower()[col];
+      if (!isInfinity(std::abs(val))) {
+          Atilde.appendRow(1, &col, &one);
+          btilde.push_back(val);
+      }
+  }
+
+  // Add rows corresponding to variable upper bounds to Atilde
+  // These will be stored as -x_j \ge -ub_j
+  for (int col = 0; col < solver->getNumCols(); col++) {
+      const double val = solver->getColUpper()[col];
+      if (!isInfinity(std::abs(val))) {
+          Atilde.appendRow(1, &col, &negone);
+          btilde.push_back(negone * val);
+      }
+  }
+
+  // Verify number of rows of Atilde
+  const int mtilde = calculateNumRowsAtilde(disj, solver);
+  if (Atilde.getNumRows() != mtilde) {
+      error_msg(errorstring,
+          "Number of rows of Atilde (%d) does not match expected (%d).\n",
+          Atilde.getNumRows(), mtilde);
+      writeErrorToLog(errorstring, logfile);
+      exit(1);
+  }
+} /* prepareAtilde */
 
 /**
  * @details Generates the cut-generating linear program in the extended formulation space, given a fixed cut.
@@ -69,40 +169,26 @@
  * = 1 + m' + m' * |T| + \sum_{t \in T} m_t.
  */
 void genRCVMILPFromCut(
-    /// [out] cut-generating linear program to be generated
-    OsiSolverInterface* liftingSolver,
-    /// [in] cut \alpha^T x \ge \beta for which we are seeking a certificate
+    /// [out] Cut-generating linear program to be generated
+    OsiSolverInterface* const liftingSolver,
+    /// [in] Cut \alpha^T x \ge \beta for which we are seeking a certificate
     const OsiRowCut* const cut,
-    /// [in] disjunction for which the cut is being generated
+    /// [in] Disjunction for which the cut is being generated
     const Disjunction* const disj,
-    /// [in] original solver
+    /// [in] Original solver for which cuts are valid
     const OsiSolverInterface* const solver,
-    /// [in] logfile
+    /// [in] Log file
     FILE* const logfile,
-    /// [in] whether to use original RCVMILP or one with min sum delta objective and sum delta >= n constraint
+    /// [in] Whether to use original RCVMILP or one with min sum delta objective and sum delta >= n constraint
     const bool use_min_sum_delta) {
-  const int num_terms = disj->num_terms;
+  const int num_terms = disj->terms.size();
   const int num_rows = solver->getNumRows();
-  const int num_common_rows = disj->common_changed_var.size() + disj->common_ineqs.size();
+  // const int num_common_rows = disj->common_changed_var.size() + disj->common_ineqs.size();
   const int num_cols = solver->getNumCols();
-  const double* rhs = solver->getRightHandSide();
-
-  // Let mprime be the number of rows of Atilde
-  // This is the number of original constraints + number of globally-valid bound changes
-  // We also add the number of lower and upper bounds to mprime
-  int mprime_bounds = 0;
-  for (int col = 0; col < num_cols; col++) {
-      const double lb = solver->getColLower()[col];
-      const double ub = solver->getColUpper()[col];
-
-      if (!isInfinity(std::abs(lb))) {
-          mprime_bounds++;
-      }
-      if (!isInfinity(std::abs(ub))) {
-          mprime_bounds++;
-      }
-  }
-  const int mprime = num_rows + num_common_rows + mprime_bounds;
+  // const double* rhs = solver->getRightHandSide();
+  const double one = 1.;
+  const double negone = -1.;
+  const int mprime = calculateNumRowsAtilde(disj, solver);
 
   // Let total_mt be the number of rows of all D^t
   int total_mt = 0;
@@ -123,56 +209,11 @@ void genRCVMILPFromCut(
       delta_i.insert(num_cols + 1 + i, 1.);
       theta_delta.appendCol(delta_i);
   }
-
-  // Prepare block [-Atilde^T; btilde^T, -I_{m'}] repeated for all terms
+  
+  // Prepare block Atilde and btilde
   CoinPackedMatrix Atilde;
   std::vector<double> btilde;
-
-  // Put Ax \ge b into Atilde and btilde
-  Atilde.copyOf(*(solver->getMatrixByCol())); // copy A into mx, col-ordered, dimesions = [num_rows, num_cols]
-  Atilde.reverseOrdering(); // make it row-ordered
-  btilde.assign(rhs, rhs + num_rows); // copy b into btilde
-
-  // Add rows corresponding to globally-valid bound changes to Atilde
-  // All will be stored in >= form
-  const double one = 1.;
-  const double negone = -1.;
-  for (int i = 0; i < (int) disj->common_changed_var.size(); i++) {
-      const int col = disj->common_changed_var[i];
-      const double coeff = (disj->common_changed_bound[i] <= 0) ? one : negone;
-      const double val = disj->common_changed_value[i];
-
-      Atilde.appendRow(1, &col, &coeff);
-      btilde.push_back(coeff * val); // lower bound row
-  }
-
-  // Add rows corresponding to globally-valid common_ineqs to Atilde
-  // We assume these are all >= constraints
-  for (int i = 0; i < (int) disj->common_ineqs.size(); i++) {
-      const OsiRowCut* currCut = &(disj->common_ineqs[i]);
-      Atilde.appendRow(currCut->row().getNumElements(), currCut->row().getIndices(), currCut->row().getElements());
-      btilde.push_back(currCut->rhs());
-  }
-
-  // Add rows corresponding to variable lower bounds to Atilde
-  // These will be stored as x_j \ge lb_j
-  for (int col = 0; col < num_cols; col++) {
-      const double val = solver->getColLower()[col];
-      if (!isInfinity(std::abs(val))) {
-          Atilde.appendRow(1, &col, &one);
-          btilde.push_back(val);
-      }
-  }
-
-  // Add rows corresponding to variable upper bounds to Atilde
-  // These will be stored as -x_j \ge -ub_j
-  for (int col = 0; col < num_cols; col++) {
-      const double val = solver->getColUpper()[col];
-      if (!isInfinity(std::abs(val))) {
-          Atilde.appendRow(1, &col, &negone);
-          btilde.push_back(negone * val);
-      }
-  }
+  prepareAtilde(Atilde, btilde, disj, solver, logfile);
 
   // Create common_mx = [-Atilde^T; btilde^T; -I_{m'}]
   // This is repeated for all terms
@@ -417,3 +458,211 @@ void genRCVMILPFromCut(
     liftingSolver->writeLp(lp_filename.c_str());
   }
 } /* genRCVMILPFromCut */
+
+void updateRCVMILPFromCut(
+    /// [in] RCVMILP to be updated
+    OsiSolverInterface* const liftingSolver,
+    /// [in] Cut to be added to the RCVMILP
+    const OsiRowCut* const cut,
+    /// [in] Disjunction that the cut is from
+    const Disjunction* const disj,
+    /// [in] Original solver
+    const OsiSolverInterface* const solver,
+    /// [in] Log file
+    FILE* const log_file) {
+  const int num_terms = disj->terms.size();
+
+  // The cut goes into column 0 (corresponding to variable \theta)
+  // Let m' be the number of rows of Atilde
+  // Then the cut coefficients are inputted into rows 0,...,n-1, then t*(n+m'+1),...,t*(n+m'+1)+n-1 for t = 0,...,num_terms-1
+  const int theta_col = 0;
+  const int mprime = calculateNumRowsAtilde(disj, solver);
+
+  // 2023-08-04 amk: not sure how to replace column 1, since indices may be different (so CoinPackedMatrix::replaceVector is not an option)
+  // Create new CoinPackedMatrix with new cut column
+  CoinPackedMatrix old_mx(*liftingSolver->getMatrixByCol()); // this is a copy
+  old_mx.deleteCols(1, &theta_col);
+
+  // Prepare rows corresponding to the cut
+  CoinPackedVector alpha_beta; // will be [alpha; beta; 0]
+  alpha_beta.append(cut->row());
+  alpha_beta.insert(solver->getNumCols(), -1. * cut->rhs());
+  
+  // Duplicate this for each term
+  CoinPackedVector alpha_beta_col(alpha_beta);
+  for (int term_ind = 1; term_ind < num_terms; term_ind++) {
+    const int offset = (solver->getNumCols() + mprime + 1);
+    // Modify indices of alpha_beta
+    const int num_el = alpha_beta.getNumElements();
+    int* ind = alpha_beta.getIndices();
+    for (int i = 0; i < num_el; i++) {
+      ind[i] += offset;
+    }
+    alpha_beta_col.append(alpha_beta);
+  }
+  alpha_beta_col.insert(old_mx.getNumRows()-1, 0.);
+
+  // Create new matrix with first column containing the appropriate number of copies of theta_delta
+  // this is not right if theta_col != 0
+  if (theta_col != 0) throw std::logic_error("Value of theta_col has to be 0 for now.");
+  CoinPackedMatrix new_mx;
+  new_mx.setDimensions(old_mx.getNumRows(), 0);
+  new_mx.appendCol(alpha_beta_col);
+  new_mx.rightAppendPackedMatrix(old_mx);
+
+  // Replace matrix in liftingSolver
+  liftingSolver->replaceMatrix(new_mx);
+
+#ifdef TRACE
+  {
+    // Check that all coefficients were correctly set
+    const CoinPackedMatrix* mx = liftingSolver->getMatrixByCol();
+    const CoinShallowPackedVector alpha_beta_col_check = mx->getVector(theta_col);  
+    const CoinPackedVector cut_row = cut->row();
+    const double cut_rhs = cut->rhs();
+    for (int term_ind = 0; term_ind < num_terms; term_ind++) {
+      const int offset = term_ind * (solver->getNumCols() + mprime + 1);
+
+      // Check coefficients of (alpha,-beta) for this term
+      for (int el = 0; el < cut_row.getNumElements(); el++) {
+        const int row_ind = offset + cut_row.getIndices()[el];
+        const double coeff = cut_row.getElements()[el];
+        const double coeff_check = alpha_beta_col_check[row_ind];
+        if (!isVal(coeff, coeff_check)) {
+          error_msg(
+              errorstring,
+              "*** ERROR: Coefficients do not match for term %d, row %d: %f != %f.\n",
+              term_ind, row_ind, coeff, coeff_check);
+          throw std::logic_error(errorstring);
+        }
+      }
+
+      // Check right-hand side row
+      const int row_ind = offset + solver->getNumCols();
+      const double coeff = -1. * cut_rhs;
+      const double coeff_check = alpha_beta_col_check[row_ind];
+      if (!isVal(coeff, coeff_check)) {
+          error_msg(
+              errorstring,
+              "*** ERROR: Constant side do not match for term %d, row %d: %f != %f.\n",
+              term_ind, row_ind, coeff, coeff_check);
+          throw std::logic_error(errorstring);
+      }
+    } // loop over terms
+  } // check that update was performed correctly
+#endif
+} /* updateRCVMILPFromCut */
+
+void analyzeRegularity(
+    /// [out] Certificate of cuts that, in the end, per term, will be of dimension rows + disj term ineqs + cols with indices [cut][term][Farkas multiplier]
+    std::vector<CutCertificate>& v,
+    /// [out] Rank of submatrix associated to the certificate for each cut
+    std::vector<int>& certificate_submx_rank,
+    /// [in] Set of cuts that are to be analyzed for regularity
+    const OsiCuts& cuts,
+    /// [in] Disjunction from which cuts were generated
+    const Disjunction* const disj,
+    /// [in] Solver corresponding to instance for which cuts are valid
+    const OsiSolverInterface* const solver,
+    /// [in] Parameters for setting verbosity and logfile
+    const StrengtheningParameters::Parameters& params) {
+  if (cuts.sizeCuts() == 0) return;
+
+  certificate_submx_rank.clear();
+  certificate_submx_rank.resize(cuts.sizeCuts());
+
+  const int num_nonbound_constr_tilde = solver->getNumRows() + disj->common_changed_var.size() + disj->common_ineqs.size();
+
+  int num_lb = 0, num_ub = 0;
+  for (int col = 0; col < solver->getNumCols(); col++) {
+    const double lb = solver->getColLower()[col];
+    const double ub = solver->getColUpper()[col];
+
+    num_lb += !isInfinity(std::abs(lb));
+    num_ub += !isInfinity(std::abs(ub));
+  }
+
+  CoinPackedMatrix Atilde;
+  std::vector<double> btilde;
+  prepareAtilde(Atilde, btilde, disj, solver, params.logfile);
+
+  // Prepare solver for computing certificate
+  OsiSolverInterface* liftingSolver = new SolverInterface;
+  setLPSolverParameters(liftingSolver, params.get(StrengtheningParameters::VERBOSITY));
+  genRCVMILPFromCut(liftingSolver, cuts.rowCutPtr(0), disj, solver, params.logfile);
+  // cbc_model->setModelOwnsSolver(false);
+  // cbc_model->swapSolver(liftingSolver);
+  // cbc_model->setModelOwnsSolver(true); // solver will be deleted with cbc object
+
+  for (int cut_ind = 0; cut_ind < cuts.sizeCuts(); cut_ind++) {
+    if (cut_ind > 0) {
+      updateRCVMILPFromCut(liftingSolver, cuts.rowCutPtr(cut_ind), disj, solver, params.logfile);
+    }
+
+    // Solve the RCVMILP using Cbc
+    CbcModel cbc_model(*liftingSolver);
+    setIPSolverParameters(&cbc_model, params.get(StrengtheningParameters::VERBOSITY));
+    #ifdef TRACE
+      cbc_model.branchAndBound(3);
+    #else
+      cbc_model.branchAndBound(0);
+    #endif
+
+    if (cbc_model.isProvenOptimal()) {
+      // Retrieve solution for delta variables
+      std::vector<int> rows, cols;
+      std::vector<int> delta;
+      delta.reserve(solver->getNumCols());
+
+      for (int var = 0; var < cbc_model.getNumCols(); var++) {
+        if (!cbc_model.isBinary(var)) {
+          continue;
+        }
+        if (isZero(cbc_model.getColSolution()[var])) {
+          continue;
+        }
+        delta.push_back(var);
+        if (var < solver->getNumRows()) {
+          rows.push_back(var);
+        }
+        else if (var < num_nonbound_constr_tilde) {
+          rows.push_back(var);
+        }
+        else if (var - num_nonbound_constr_tilde < num_lb) {
+          // lower bound
+          const int col = var - num_nonbound_constr_tilde;
+          cols.push_back(col);
+        }
+        else {
+          // upper bound
+          const int col = var - num_nonbound_constr_tilde - num_lb;
+          cols.push_back(-1. * col);
+        }
+      }
+      
+      const int curr_rank = computeRank(&Atilde, delta);
+      certificate_submx_rank[cut_ind] = curr_rank;
+
+      printf("Cut %d has certificate with rank %d.\n", cut_ind, curr_rank);
+    }
+    else if (cbc_model.status() == 1) { // time limit, max nodes, or max iters reached
+      warning_msg(warnstring, "Cbc stopped with status = 1 for cut %d.\n", cut_ind);
+    }
+    else {
+      error_msg(errorstring, "Cbc does not terminate with optimal solution for cut %d.\n", cut_ind);
+      writeErrorToLog(errorstring, params.logfile);
+
+      if (liftingSolver) { delete liftingSolver; }
+      // if (liftingSolver && !cbc_model->modelOwnsSolver()) { delete liftingSolver; }
+      // if (cbc_model) { delete cbc_model; }
+
+      exit(1);
+    }
+
+    // if (cbc_model) { delete cbc_model; }
+  } // loop over cuts
+
+  // if (cbc_model) { delete cbc_model; }
+  // if (liftingSolver && !cbc_model->modelOwnsSolver()) { delete liftingSolver; }
+  if (liftingSolver) { delete liftingSolver; }
+} /* analyzeRegularity */

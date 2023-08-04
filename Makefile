@@ -121,11 +121,13 @@ SOURCES += \
 		cut/CutHelper.cpp \
     cut/disjcuts.cpp \
     cut/Disjunction.cpp \
-    cut/regularity.cpp \
     cut/gmic.cpp \
+    cut/regularity.cpp \
     cut/strengthen.cpp \
+		utility/eigen.cpp \
 		utility/SolverHelper.cpp \
-		utility/utility.cpp
+		utility/utility.cpp \
+		utility/verify.cpp
 
 # VPC directories
 VPC_SRC_DIR = ${VPC_DIR}/src

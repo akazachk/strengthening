@@ -30,8 +30,9 @@
 #include "CutHelper.hpp"
 #include "Disjunction.hpp" // DisjunctiveTerm, Disjunction, getSolverForTerm
 //#include "disjcuts.hpp"
-#include "cglp.hpp"
 #include "gmic.hpp"
+#include "regularity.hpp"
+#include "verify.hpp"
 #include "Parameters.hpp"
 using namespace StrengtheningParameters;
 #include "SolverHelper.hpp"
@@ -452,13 +453,9 @@ int main(int argc, char** argv) {
     //====================================================================================================//
     // Analyze regularity and irregularity
     printf("\n## Analyzing regularity of cuts. ##\n");
-    for (int cut_ind = 0; cut_ind < origCurrCuts.sizeCuts(); cut_ind++) {
-      OsiSolverInterface* liftingSolver = new SolverInterface;
-      setLPSolverParameters(liftingSolver, params.get(VERBOSITY));
-
-      const OsiRowCut* disjCut = origCurrCuts.rowCutPtr(cut_ind);
-      genRCVMILPFromCut(liftingSolver, disjCut, disj, solver, params.logfile);
-    }
+    std::vector<CutCertificate> regular_v; // [cut][term][Farkas multiplier] in the end, per term, this will be of dimension rows + disj term ineqs + cols
+    std::vector<int> certificate_submx_rank; // rank of the submatrix of the certificate
+    analyzeRegularity(regular_v, certificate_submx_rank, origCurrCuts, disj, solver, params);
 
     //====================================================================================================//
     // Apply cuts
@@ -1142,8 +1139,8 @@ void updateDisjInfo(SummaryDisjunctionInfo& disjInfo, const int num_disj, const 
 
 void strengtheningHelper(
     OsiCuts& currCuts,                      ///< [in/out] The cuts to be strengthened (in place)
-    std::vector<CutCertificate>& v,         ///< [in/out] Certifcate of cuts that, in the end, per term, this will be of dimension rows + disj term ineqs + cols with indices [cut][term][Farkas multiplier]
-    std::vector<int>& str_cut_ind,          ///< [in/out] indices of cuts that were strengthened
+    std::vector<CutCertificate>& v,         ///< [out] Certificate of cuts that, in the end, per term, this will be of dimension rows + disj term ineqs + cols with indices [cut][term][Farkas multiplier]
+    std::vector<int>& str_cut_ind,          ///< [in/out] Indices of cuts that were strengthened
     SummaryStrengtheningInfo& strInfo,      ///< [in/out] The summary info for the strengthening
     const Disjunction* const disj,          ///< [in] The disjunction that generated the cuts
     const OsiSolverInterface* const solver, ///< [in] The solver that generated the cuts
@@ -1194,7 +1191,7 @@ void strengtheningHelper(
 
 void calcStrengtheningCertificateHelper(
     const OsiCuts& currCuts,                ///< [in] The cuts to be strengthened (in place)
-    std::vector<CutCertificate>& v,         ///< [in/out] Certifcate of cuts that, in the end, per term, this will be of dimension rows + disj term ineqs + cols with indices [cut][term][Farkas multiplier]
+    std::vector<CutCertificate>& v,         ///< [out] Certifcate of cuts that, in the end, per term, this will be of dimension rows + disj term ineqs + cols with indices [cut][term][Farkas multiplier]
     const Disjunction* const disj,          ///< [in] The disjunction that generated the cuts
     const OsiSolverInterface* const solver  ///< [in] The solver that generated the cuts
 ) {
@@ -1232,7 +1229,7 @@ void calcStrengtheningCertificateHelper(
 void applyStrengtheningCertificateHelper(
     OsiCuts& currCuts,                      ///< [in/out] The cuts to be strengthened (in place)
     const std::vector<CutCertificate>& v,   ///< [in] Certifcate of cuts that, in the end, per term, this will be of dimension rows + disj term ineqs + cols with indices [cut][term][Farkas multiplier]
-    std::vector<int>& str_cut_ind,          ///< [in/out] indices of cuts that were strengthened
+    std::vector<int>& str_cut_ind,          ///< [in/out] Indices of cuts that were strengthened
     SummaryStrengtheningInfo& strInfo,      ///< [in/out] The summary info for the strengthening
     const Disjunction* const disj,          ///< [in] The disjunction that generated the cuts
     const OsiSolverInterface* const solver, ///< [in] The solver that generated the cuts

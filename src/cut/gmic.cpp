@@ -14,6 +14,7 @@
 #include "SolverInterface.hpp"
 #include "strengthen.hpp"
 #include "utility.hpp"
+#include "verify.hpp" // getCutFromCertificate
 
 /** 
  * @brief Generate Gomory cuts based on mode 
