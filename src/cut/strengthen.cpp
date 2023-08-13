@@ -106,7 +106,7 @@ void getCertificate(
   term_solver->disableFactorization();
 
   // Verify certificate results in same cut
-  checkCutHelper(cut_coeff, v, term_solver, NULL, logfile);
+  checkCutHelper(cut_coeff, v, -1, NULL, term_solver, logfile);
 } /* getCertificate */
 
 void getCertificateForTerm(

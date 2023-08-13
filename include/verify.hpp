@@ -24,6 +24,7 @@ void getCutFromCertificate(
 void getCutFromCertificate(
     std::vector<double>& alpha,
     const TermCutCertificate& v,
+    const int term_ind,
     const Disjunction* const disj,
     const OsiSolverInterface* const solver);
 
@@ -32,13 +33,15 @@ void checkCut(
     int& num_errors, double& total_diff,
     const std::vector<double>& cut_coeff,
     const TermCutCertificate& v,
-    const OsiSolverInterface* const solver,
-    const Disjunction* const disj);
+    const int term_ind,
+    const Disjunction* const disj,
+    const OsiSolverInterface* const solver);
 
 /// @brief Verify that the certificate yields the same cut coefficients as the original cut (wrapper for #checkCut)
 int checkCutHelper(
     const std::vector<double>& cut_coeff,
     const TermCutCertificate& v,
+    const int term_ind,
+    const Disjunction* const disj,   
     const OsiSolverInterface* const solver,
-    const Disjunction* const disj,    
     FILE* const logfile);

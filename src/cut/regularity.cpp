@@ -692,14 +692,16 @@ int solveRCVMILP(
 void getCertificateFromRCVMILPSolution(
     /// [out] Certificate of cut (vector of length m + m_t + n)
     CutCertificate& v,
-    /// [in] Solution to the RCVMILP, where order of variables is theta, delta, {u^t}_{t \in T}, {u^t_0}_{t \in T}
+    /// [in] Solution to the RCVMILP, where order of variables is theta, delta (length equal to m' := #calculateNumRowsAtilde), {u^t}_{t \in T}, {u^t_0}_{t \in T}
     const std::vector<double>& solution,
     /// [in] Disjunction from which cuts were generated
     const Disjunction* const disj,
     /// [in] Solver corresponding to instance for which cuts are valid
     const OsiSolverInterface* const solver,
     /// [in] Index of the cut for which we are checking the certificate
-    const int cut_ind) {
+    const int cut_ind,
+    /// [in] Log file
+    FILE* const logfile) {
   std::vector<int> rows, cols;
   std::vector<int> delta;
   delta.reserve(solver->getNumCols());
@@ -771,6 +773,13 @@ void getCertificateFromRCVMILPSolution(
   v.resize(disj->num_terms);
   
   int m_t_previous = 0;
+  const double theta = solution[0];
+  if (!greaterThanVal(theta, 0.)) {
+    error_msg(errorstring,
+      "getCertificateFromRCVMILPSolution: Theta = %e, which is not positive.\n", theta);
+    writeErrorToLog(errorstring, logfile);
+    throw std::logic_error(errorstring);
+  }
   for (int term_ind = 0; term_ind < disj->num_terms; term_ind++) {
     const int num_term_constr = disj->terms[term_ind].changed_var.size();
     const int rcvmilp_term_uvar_start_ind = delta_var_start + mprime + term_ind * mprime;
@@ -785,14 +794,14 @@ void getCertificateFromRCVMILPSolution(
     for (int row_ind = 0; row_ind < num_nonbound_constr_tilde; row_ind++) {
       const int v_ind = row_ind;
       const int var = rcvmilp_term_uvar_start_ind + row_ind;
-      v[term_ind][v_ind] = solution[var];
+      v[term_ind][v_ind] = solution[var] / theta;
     }
 
     // Set multilpliers for term-specific constraints
     for (int row_ind = 0; row_ind < num_term_constr; row_ind++) {
       const int v_ind = num_nonbound_constr_tilde + row_ind;
       const int var = rcvmilp_term_u0var_start_ind + row_ind;
-      v[term_ind][v_ind] = solution[var];
+      v[term_ind][v_ind] = solution[var] / theta;
     }
 
     // Set multipliers for variable bounds
@@ -808,10 +817,10 @@ void getCertificateFromRCVMILPSolution(
         warning_msg(warnstring, "Both lower and upper bound delta variables are nonzero for cut %d, col %d.\n", cut_ind, col_ind);
       }
       else if (lb_nonzero) {
-        v[term_ind][v_ind] = solution[var_lb];
+        v[term_ind][v_ind] = solution[var_lb] / theta;
       }
       else if (ub_nonzero) {
-        v[term_ind][v_ind] = solution[var_ub];
+        v[term_ind][v_ind] = solution[var_ub] / theta;
       }
     }
   } // loop over terms to set CutCertificate
@@ -917,7 +926,7 @@ void analyzeCutRegularity(
     }
 
     // Retrieve certificate from solution
-    getCertificateFromRCVMILPSolution(v[cut_ind], solution, disj, solver, cut_ind);
+    getCertificateFromRCVMILPSolution(v[cut_ind], solution, disj, solver, cut_ind, params.logfile);
 
     // Verify the certificate using dense cut coefficient vector
     const OsiRowCut* cut = cuts.rowCutPtr(cut_ind);
@@ -929,7 +938,7 @@ void analyzeCutRegularity(
       cut_coeff[ind[i]] = coeff[i];
     }
     for (int term_ind = 0; term_ind < disj->num_terms; term_ind++) {
-      checkCutHelper(cut_coeff, v[cut_ind][term_ind], solver, disj, params.logfile);
+      checkCutHelper(cut_coeff, v[cut_ind][term_ind], term_ind, disj, solver, params.logfile);
     }
   } // loop over cuts
 

@@ -91,6 +91,8 @@ void getCutFromCertificate(
     std::vector<double>& alpha,
     /// [in] Farkas multipliers
     const TermCutCertificate& v,
+    /// [in] Index of the term being solved
+    const int term_ind,
     /// [in] Disjunction from which cut was derived
     const Disjunction* const disj,
     /// [in] original MILP instance
@@ -100,18 +102,27 @@ void getCutFromCertificate(
 
   const CoinPackedMatrix* mat = solver->getMatrixByCol();
 
+  const int num_extra_rows = disj->common_changed_var.size();
+  const int num_term_rows = disj->terms[term_ind].changed_var.size();
   for (int col = 0; col < solver->getNumCols(); col++) {
     const int start = mat->getVectorFirst(col);
     alpha[col] += dotProduct(mat->getVectorSize(col), 
         mat->getIndices() + start, mat->getElements() + start, v.data());
-    for (int extra_row_ind = 0; extra_row_ind < disj->common_changed_var.size(); extra_row_ind++) {
+    for (int extra_row_ind = 0; extra_row_ind < num_extra_rows; extra_row_ind++) {
       const int var = disj->common_changed_var[extra_row_ind];
       if (var != col) continue;
       const int row = solver->getNumRows() + extra_row_ind;
       const double coeff = disj->common_changed_bound[extra_row_ind] <= 0 ? 1. : -1.;
       alpha[col] += coeff * v[row];
     }
-    alpha[col] += v[solver->getNumRows() + col]; // for lb or ub multiplier
+    for (int term_row_ind = 0; term_row_ind < num_term_rows; term_row_ind++) {
+      const int var = disj->terms[term_ind].changed_var[term_row_ind];
+      if (var != col) continue;
+      const int row = solver->getNumRows() + num_extra_rows + term_row_ind;
+      const double coeff = disj->terms[term_ind].changed_bound[term_row_ind] <= 0 ? 1. : -1.;
+      alpha[col] += coeff * v[row];
+    }
+    alpha[col] += v[solver->getNumRows() + num_extra_rows + num_term_rows + col]; // for lb or ub multiplier
   }
 } /* getCutFromCertificate (disj, solver) */
 
@@ -126,16 +137,18 @@ void checkCut(
     const std::vector<double>& cut_coeff,
     /// [in] Farkas multipliers
     const TermCutCertificate& v,
-    /// [in] LP solver corresponding to disjunctive term OR the original MILP instance
-    const OsiSolverInterface* const solver,
+    /// [in] Index of the term being solved (may be nonsensical if \p solver is term solver already)
+    const int term_ind,
     /// [in] Disjunction from which cut was derived (if \p solver is the original MILP instance)
-    const Disjunction* const disj) {
+    const Disjunction* const disj,
+    /// [in] LP solver corresponding to disjunctive term OR the original MILP instance
+    const OsiSolverInterface* const solver) {
   // Obtain the cut that the certificate yields (should be the same as the original cut)
   std::vector<double> new_coeff(solver->getNumCols());
   if (disj == NULL) {
     getCutFromCertificate(new_coeff, v, solver);
   } else {
-    getCutFromCertificate(new_coeff, v, disj, solver);
+    getCutFromCertificate(new_coeff, v, term_ind, disj, solver);
   }
 
   num_errors = 0;
@@ -158,15 +171,17 @@ int checkCutHelper(
     const std::vector<double>& cut_coeff,
     /// [in] Farkas multipliers
     const TermCutCertificate& v,
-    /// [in] LP solver corresponding to disjunctive term OR the original MILP instance
-    const OsiSolverInterface* const solver,
+    /// [in] Index of the term being solved (may be nonsensical if \p solver is term solver already)
+    const int term_ind,
     /// [in] Disjunction from which cut was derived (if \p term_solver is the original MILP instance)
     const Disjunction* const disj,
+    /// [in] LP solver corresponding to disjunctive term OR the original MILP instance
+    const OsiSolverInterface* const solver,
     /// [in] Log file
     FILE* const logfile) {
   int num_errors = 0;
   double total_diff = 0;
-  checkCut(num_errors, total_diff, cut_coeff, v, solver, disj);
+  checkCut(num_errors, total_diff, cut_coeff, v, term_ind, disj, solver);
   
   if (num_errors > 0) {
     const bool should_continue = isZero(total_diff, 1e-3);

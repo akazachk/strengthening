@@ -63,7 +63,8 @@ void getCertificateFromRCVMILPSolution(
   const std::vector<double>& solution,
   const Disjunction* const disj,
   const OsiSolverInterface* const solver,
-  const int cut_ind);
+  const int cut_ind,
+  FILE* const logfile);
 
 /// @brief Use existing \p Atilde matrix (or recalculate it) to compute rank of submatrix given by the #CutCertificate \p v
 void analyzeCertificateRegularity(
