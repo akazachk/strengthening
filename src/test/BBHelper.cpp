@@ -364,8 +364,10 @@ void createStringFromBBInfoVec(const std::vector<BBInfo>& vec_info,
  * Creates temporary file (in /tmp) so that it can be read by a different solver
  * It does not delete the file
  */
-void createTmpFileCopy(const Parameters& params,
-    const OsiSolverInterface* const solver, std::string& f_name) {
+void createTmpFileCopy(
+    FILE* const logfile,
+    const OsiSolverInterface* const solver,
+    std::string& f_name) {
   // Generate temporary file name
   char template_name[] = "/tmp/tmpmpsXXXXXX";
 
@@ -373,7 +375,7 @@ void createTmpFileCopy(const Parameters& params,
   f_name = template_name;
   if (f_name.empty()) {
     error_msg(errorstring, "Could not generate temp file.\n");
-    writeErrorToLog(errorstring, params.logfile);
+    writeErrorToLog(errorstring, logfile);
     exit(1);
   }
   solver->writeMps(template_name, "mps", solver->getObjSense());

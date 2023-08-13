@@ -8,20 +8,23 @@
 #include <vector>
 #include <cstdio>
 
+// COIN-OR files
 class OsiSolverInterface;
 class CoinPackedMatrix;
 
+// Project files
+#include "CutCertificate.hpp" // TermCutCertificate and CutCertificate
 class Disjunction;
 class DisjunctiveTerm;
 
-/// @brief Return Farkas certificate given a valid cut (in sparse form) 
+/// @brief Return Farkas certificate for a single term, given a valid cut (in sparse form) 
 /// and a linear program describing the feasible region of a polyhedron
-void getCertificate(std::vector<double>& v, const int num_elem, const int* const ind, 
+void getCertificate(TermCutCertificate& v, const int num_elem, const int* const ind, 
     const double* const coeff, OsiSolverInterface* const solver, FILE* logfile);
 
 /// @brief Not tested
 void getCertificateForTerm(
-    std::vector<double>& v, 
+    TermCutCertificate& v, 
     const int num_elem, 
     const int* const ind, 
     const double* const coeff,
@@ -31,7 +34,7 @@ void getCertificateForTerm(
     FILE* logfile);
 
 /// @brief Not implemented
-void getCertificateTrivial(std::vector<double>& v, const int num_elem, const int* const ind, 
+void getCertificateTrivial(TermCutCertificate& v, const int num_elem, const int* const ind, 
     const double* const coeff, const OsiSolverInterface* const solver, const Disjunction* const disj);
 
 /// @brief Attempt to strengthen coefficients of given cut
@@ -43,7 +46,7 @@ int strengthenCut(
     const double* const coeff,
     const double rhs,
     const Disjunction* const disj,
-    const std::vector<std::vector<double> >& v, 
+    const CutCertificate& v, 
     const OsiSolverInterface* const solver,
     FILE* logfile,
     const std::vector<double>& ip_solution = {});
@@ -56,7 +59,7 @@ bool strengthenCutCoefficient(
     const double coeff,
     const Disjunction* const disj,
     const std::vector<double>& lb_term,
-    const std::vector<std::vector<double> >& v, 
+    const CutCertificate& v, 
     const OsiSolverInterface* const solver,
     OsiSolverInterface* const mono,
     FILE* logfile);
@@ -67,7 +70,7 @@ void setupMonoidalIP(
     const int var,
     const Disjunction* const disj,
     const std::vector<double>& lb_term,
-    const std::vector<std::vector<double> >& v, 
+    const CutCertificate& v, 
     const OsiSolverInterface* const solver,
     const double mult);
     
@@ -76,6 +79,6 @@ void updateMonoidalIP(
     OsiSolverInterface* const mono,
     const int var,
     const Disjunction* const disj,
-    const std::vector<std::vector<double> >& v, 
+    const CutCertificate& v, 
     const OsiSolverInterface* const solver,
     const double mult);

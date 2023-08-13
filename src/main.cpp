@@ -27,6 +27,7 @@
 #include "analysis.hpp" // SummaryBoundInfo, SummaryCutInfo, Stat, SummaryStrengtheningInfo, printing to logfile
 #include "BBHelper.hpp"
 #include "CglAdvCut.hpp"
+#include "CutCertificate.hpp" // TermCutCertificate and CutCertificate
 #include "CutHelper.hpp"
 #include "Disjunction.hpp" // DisjunctiveTerm, Disjunction, getSolverForTerm
 //#include "disjcuts.hpp"
@@ -39,6 +40,10 @@ using namespace StrengtheningParameters;
 #include "SolverInterface.hpp"
 #include "strengthen.hpp"
 #include "utility.hpp"
+
+#ifdef USE_EIGEN
+#include "eigen.hpp" // computeRank
+#endif
 
 // For disjInfo
 #include "CglVPC.hpp"
@@ -53,9 +58,6 @@ using namespace StrengtheningParameters;
 #include "debug.hpp"
 #endif
 
-/// [term][Farkas multiplier]
-using CutCertificate = std::vector<std::vector<double> >;
-
 enum OverallTimeStats {
   INIT_SOLVE_TIME,
   CUT_TOTAL_TIME,
@@ -66,9 +68,10 @@ enum OverallTimeStats {
   VPC_PRLP_SETUP_TIME,
   VPC_PRLP_SOLVE_TIME,
   VPC_GEN_CUTS_TIME,
-  STRENGTHENING_TOTAL_TIME,
-  STRENGTHENING_CALC_CERTIFICATE_TIME,
-  STRENGTHENING_APPLY_CERTIFICATE_TIME,
+  STR_TOTAL_TIME,
+  STR_CALC_CERT_TIME,
+  STR_APPLY_CERT_TIME,
+  ANALYZE_REGULARITY_TIME,
   BB_TIME,
   APPLY_TIME,
   TOTAL_TIME,
@@ -84,9 +87,10 @@ const std::vector<std::string> OverallTimeStatsName {
   "VPC_PRLP_SETUP_TIME",
   "VPC_PRLP_SOLVE_TIME",
   "VPC_GEN_CUTS_TIME",
-  "STRENGTHENING_TOTAL_TIME",
-  "STRENGTHENING_CALC_CERTIFICATE_TIME",
-  "STRENGTHENING_APPLY_CERTIFICATE_TIME",
+  "STR_TOTAL_TIME",
+  "STR_CALC_CERT_TIME",
+  "STR_APPLY_CERT_TIME",
+  "ANALYZE_REGULARITY_TIME",
   "BB_TIME",
   "APPLY_TIME",
   "TOTAL_TIME"
@@ -252,8 +256,8 @@ int main(int argc, char** argv) {
       }
     }
     // If solfile provided, enable use_bound
-    if (!params.get(SOLFILE).empty() && !use_bb_option(strategy, BB_Strategy_Options::use_best_bound)) {
-      strategy = enable_bb_option(strategy, BB_Strategy_Options::use_best_bound);
+    if (!params.get(SOLFILE).empty() && !use_bb_option(strategy, StrengtheningParameters::BB_Strategy_Options::use_best_bound)) {
+      strategy = enable_bb_option(strategy, StrengtheningParameters::BB_Strategy_Options::use_best_bound);
     }
     doBranchAndBoundWithGurobi(params, strategy,
         params.get(stringParam::FILENAME).c_str(),
@@ -452,10 +456,60 @@ int main(int argc, char** argv) {
 
     //====================================================================================================//
     // Analyze regularity and irregularity
-    printf("\n## Analyzing regularity of cuts. ##\n");
-    std::vector<CutCertificate> regular_v; // [cut][term][Farkas multiplier] in the end, per term, this will be of dimension rows + disj term ineqs + cols
-    std::vector<int> certificate_submx_rank; // rank of the submatrix of the certificate
-    analyzeRegularity(regular_v, certificate_submx_rank, origCurrCuts, disj, solver, params);
+    const int should_analyze_regularity = params.get(StrengtheningParameters::intParam::ANALYZE_REGULARITY);
+
+    if (should_analyze_regularity >= 1) {
+      // Calculate the rank of the existing certificate for each cut
+      // (Do not compute regularity of the cut overall)
+      printf("\n## Analyzing regularity of certificate computed for each cut. ##\n");
+      timer.start_timer(OverallTimeStats::ANALYZE_REGULARITY_TIME);
+
+      // For purposes of linear independence,
+      // when a bound is used in the certificate on a certain variable
+      // it does not matter if it is a lower or upper bound
+      // since we can multiply rows by -1 without changing the rank
+      std::vector<int> certificate_submx_rank(currCuts.sizeCuts(), 0);
+      std::vector<int> num_nonzero_multipliers(solver->getNumRows() + disj->common_changed_var.size() + solver->getNumCols(), 0);
+
+      CoinPackedMatrix Atilde;
+      std::vector<double> btilde;
+      prepareAtilde(Atilde, btilde, disj, solver, params.logfile);
+      // assert(Atilde.getNumRows() == solver->getNumRows() + disj->common_changed_var.size());
+      // assert(Atilde.getNumRows() + disj->terms[0].changed_var.size() + solver->getNumCols() == v[0][0].size()); // dimension matches for cut 0, term 0
+
+      for (int cut_ind = 0; cut_ind < currCuts.sizeCuts(); cut_ind++) {
+        analyzeCertificateRegularity(certificate_submx_rank[cut_ind],
+            num_nonzero_multipliers[cut_ind], v[cut_ind],
+            disj, solver, Atilde, params);
+        
+    #ifdef TRACE
+        fprintf(stdout, "Cut %d: rank = %d, num_nonzero_multipliers = %d\n",
+            cut_ind, certificate_submx_rank[cut_ind], num_nonzero_multipliers[cut_ind]);
+    #endif
+      } // loop over certificates, analyzing each for regularity
+    
+      timer.end_timer(OverallTimeStats::ANALYZE_REGULARITY_TIME);
+    } // analyze regularity of certificate
+
+    if (should_analyze_regularity >= 2) {
+      // Analyze regularity of the cut overall, using all possible certificates, with the RCVMILP by Serra and Balas (2020)
+      printf("\n## Analyzing regularity of cuts via RCVMILP of Serra and Balas (2020). ##\n");
+      timer.start_timer(OverallTimeStats::ANALYZE_REGULARITY_TIME);
+
+      std::vector<CutCertificate> regular_v; // [cut][term][Farkas multiplier] in the end, per term, this will be of dimension rows + disj term ineqs + cols
+      std::vector<int> certificate_submx_rank; // rank of the submatrix of the certificate
+      std::vector<int> num_nonzero_multipliers;
+      analyzeCutRegularity(regular_v, certificate_submx_rank, origCurrCuts, disj, solver, params);
+    
+    #ifdef TRACE
+      for (int cut_ind = 0; cut_ind < currCuts.sizeCuts(); cut_ind++) {
+        fprintf(stdout, "Cut %d: rank = %d, num_nonzero_multipliers = %d\n",
+            cut_ind, certificate_submx_rank[cut_ind], num_nonzero_multipliers[cut_ind]);
+      }
+    #endif
+      
+      timer.end_timer(OverallTimeStats::ANALYZE_REGULARITY_TIME);
+    } // analyze regularity of *cut* (not just certificate)
 
     //====================================================================================================//
     // Apply cuts
@@ -895,9 +949,10 @@ int processArgs(int argc, char** argv) {
   // has_arg: 0,1,2 for none, required, or optional
   // *flag: how results are returned; if NULL, getopt_long() returns val (e.g., can be the equivalent short option character), and o/w getopt_long() returns 0, and flag points to a var which is set to val if the option is found, but left unchanged if the option is not found
   // val: value to return, or to load into the variable pointed to by flag
-  const char* const short_opts = "b:B:c:d:f:g:hi:l:m:o:r:s:t:v:";
+  const char* const short_opts = "a:b:B:c:d:f:g:hi:l:m:o:r:s:t:v:";
   const struct option long_opts[] =
   {
+      {"analyze_regularity",    required_argument, 0, 'a'},
       {"bb_runs",               required_argument, 0, 'b'},
       {"bb_mode",               required_argument, 0, 'b'*'2'},
       {"bb_strategy",           required_argument, 0, 'B'},
@@ -923,6 +978,16 @@ int processArgs(int argc, char** argv) {
   int status = 0;
   while ((inp = getopt_long(argc, argv, short_opts, long_opts, nullptr)) != -1) {
     switch (inp) {
+      case 'a': {
+                  int val;
+                  intParam param = intParam::ANALYZE_REGULARITY;
+                  if (!parseInt(optarg, val)) {
+                    error_msg(errorstring, "Error reading %s. Given value: %s.\n", params.name(param).c_str(), optarg);
+                    exit(1);
+                  }
+                  params.set(param, val);
+                  break;
+                }
       case 'b': {
                   int val;
                   intParam param = intParam::BB_RUNS;
@@ -1087,6 +1152,7 @@ int processArgs(int argc, char** argv) {
                 helpstring += "--solfile=solfile\n\tWhere to find integer optimum solution information (e.g., a mst/sol file produced by Gurobi/CPLEX/etc).\n";
                 helpstring += "-v level, --verbosity=level\n\tVerbosity level (0: print little, 1: let solver output be visible).\n";
                 helpstring += "\n# General cut options #\n";
+                helpstring += "-a 0/1/2, --analyze_regularity=0/1/2\n\t0: no, 1: yes, only first certificate 2: yes, use MIP to check for alternate certificates.\n";
                 helpstring += "-c num cuts, --cutlimit=num cuts\n\tMaximum number of cuts to generate (0+ = as given, -k = k * # fractional variables at root).\n";
                 helpstring += "-d num terms, --disj_terms=num terms\n\tMaximum number of disjunctive terms or disjunctions to generate (depending on mode).\n";
                 helpstring += "-g +/- 0-3, --gomory=+/- 0-3\n\t0: do not use Gomory cuts, 1: generate Gomory cuts via CglGMI, 2: generate Gomory cuts via gmic.cpp, 3: try closed-form strengthening (<0: only gen, >0: also apply to LP).\n";
@@ -1156,7 +1222,7 @@ void strengtheningHelper(
     return;
   }
 
-  timer.start_timer(OverallTimeStats::STRENGTHENING_TOTAL_TIME);
+  timer.start_timer(OverallTimeStats::STR_TOTAL_TIME);
 
   const int num_cuts = currCuts.sizeCuts();
   printf("\n## Strengthening disjunctive cuts: (# cuts = %d). ##\n", num_cuts);
@@ -1186,7 +1252,7 @@ void strengtheningHelper(
   fprintf(stdout, "Finished printing strengthened custom cuts.\n\n");
 #endif
 
-  timer.end_timer(OverallTimeStats::STRENGTHENING_TOTAL_TIME);
+  timer.end_timer(OverallTimeStats::STR_TOTAL_TIME);
 } /* strengtheningHelper */
 
 void calcStrengtheningCertificateHelper(
@@ -1195,7 +1261,7 @@ void calcStrengtheningCertificateHelper(
     const Disjunction* const disj,          ///< [in] The disjunction that generated the cuts
     const OsiSolverInterface* const solver  ///< [in] The solver that generated the cuts
 ) {
-  timer.start_timer(OverallTimeStats::STRENGTHENING_CALC_CERTIFICATE_TIME);
+  timer.start_timer(OverallTimeStats::STR_CALC_CERT_TIME);
 
   const int num_cuts = currCuts.sizeCuts();
   v.resize(num_cuts);
@@ -1223,7 +1289,7 @@ void calcStrengtheningCertificateHelper(
 
   } // loop over disjunctive terms to retrieve certificate
 
-  timer.end_timer(OverallTimeStats::STRENGTHENING_CALC_CERTIFICATE_TIME);
+  timer.end_timer(OverallTimeStats::STR_CALC_CERT_TIME);
 } /* calcStrengtheningCertificateHelper */
 
 void applyStrengtheningCertificateHelper(
@@ -1235,7 +1301,7 @@ void applyStrengtheningCertificateHelper(
     const OsiSolverInterface* const solver, ///< [in] The solver that generated the cuts
     const std::vector<double>& ip_solution  ///< [in] Feasible integer solution
 ) {
-  timer.start_timer(OverallTimeStats::STRENGTHENING_APPLY_CERTIFICATE_TIME);
+  timer.start_timer(OverallTimeStats::STR_APPLY_CERT_TIME);
 
   const int num_cuts = currCuts.sizeCuts();
   strInfo.num_coeffs_strengthened.resize(static_cast<int>(Stat::num_stats), 0.); // total,avg,stddev,min,max
@@ -1278,5 +1344,5 @@ void applyStrengtheningCertificateHelper(
   strInfo.num_coeffs_strengthened[(int) Stat::stddev] -= strInfo.num_coeffs_strengthened[(int) Stat::avg] * strInfo.num_coeffs_strengthened[(int) Stat::avg];
   strInfo.num_coeffs_strengthened[(int) Stat::stddev] = (strInfo.num_coeffs_strengthened[(int) Stat::stddev] > 0) ? std::sqrt(strInfo.num_coeffs_strengthened[(int) Stat::stddev]) : 0.;
   
-  timer.end_timer(OverallTimeStats::STRENGTHENING_APPLY_CERTIFICATE_TIME);
+  timer.end_timer(OverallTimeStats::STR_APPLY_CERT_TIME);
 } /* applyStrengtheningCertificateHelper */

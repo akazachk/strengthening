@@ -13,6 +13,7 @@ class OsiSolverInterface;
 class OsiCuts;
 
 #include "CglAdvCut.hpp" // CutType, ObjectiveType
+#include "CutCertificate.hpp"
 namespace StrengtheningParameters {
   struct Parameters;
 }
@@ -25,9 +26,6 @@ struct SummaryBoundInfo; // analysis.hpp
 struct SummaryDisjunctionInfo; // analysis.hpp
 struct SummaryCutInfo; // analysis.hpp
 struct SummaryStrengtheningInfo; // analysis.hpp
-
-/// [term][Farkas multiplier]
-using CutCertificate = std::vector<std::vector<double> >;
 
 /// @brief Information about objective value at various points in the solution process
 /// @details Gives objective for the LP and IP, and after adding GMICs, L&PCs, VPCs, and combinations of these cuts

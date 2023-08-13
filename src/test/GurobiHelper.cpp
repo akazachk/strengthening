@@ -18,6 +18,8 @@ using namespace StrengtheningParameters;
 // COIN-OR
 #include <CoinTime.hpp>
 #include <OsiCuts.hpp>
+#include <CoinPackedMatrix.hpp>
+#include <OsiSolverInterface.hpp>
 
 // Gurobi
 #ifdef USE_GUROBI
@@ -27,13 +29,13 @@ using namespace StrengtheningParameters;
  * Creates temporary file (in /tmp) so that it can be read by a different solver
  * It does not delete the file
  */
-void createTmpFileCopy(const Parameters& params, GRBModel& model, std::string& f_name, const std::string add_ext = ".mps.gz") {
+void createTmpFileCopy(FILE* const logfile, GRBModel& model, std::string& f_name, const std::string add_ext = ".mps.gz") {
   if (f_name.empty()) {
     try {
       createTmpFilename(f_name, add_ext);
     } catch (const std::exception &e) {
       error_msg(errorstring, "Could not generate temp file: %s.\n", e.what());
-      writeErrorToLog(errorstring, params.logfile);
+      writeErrorToLog(errorstring, logfile);
       exit(1);
     }
   } else {
@@ -45,8 +47,118 @@ void createTmpFileCopy(const Parameters& params, GRBModel& model, std::string& f
   model.write(f_name.c_str());
 } /* createTmpFileCopy (Gurobi) */
 
+GRBModel* buildGRBModelFromOsi(const OsiSolverInterface* const solver, FILE* const logfile) {
+  // Below DOES NOT WORK because when you make a copy of the file,
+  // order of the variables may not be preserved
+  // (Could fix this with ensuring variable names are checked, but also some precision may get lost in writing to a file)
+  // std::string f_name;
+  // createTmpFileCopy(logfile, solver, f_name);
+  GRBEnv env = GRBEnv();
+  GRBModel* model = new GRBModel(env);
+  // remove(f_name.c_str()); // remove temporary file
+
+  // Create variables
+  for (int col = 0; col < solver->getNumCols(); col++) {
+    const double lb = solver->getColLower()[col];
+    const double ub = solver->getColUpper()[col];
+    const double obj = solver->getObjCoefficients()[col];
+    const std::string name = solver->getColName(col);
+    const bool is_int = solver->isInteger(col);
+    const bool is_bin = is_int && (lb == 0 && ub == 1);
+    if (is_bin) {
+      model->addVar(lb, ub, obj, GRB_BINARY, name);
+    } else if (is_int) {
+      model->addVar(lb, ub, obj, GRB_INTEGER, name);
+    } else {
+      model->addVar(lb, ub, obj, GRB_CONTINUOUS, name);
+    }
+  }
+  model->update();
+
+  // Copy constraints
+  const CoinPackedMatrix* matrix = solver->getMatrixByRow();
+  for (int row = 0; row < solver->getNumRows(); row++) {
+    const double lb = solver->getRowLower()[row];
+    const double ub = solver->getRowUpper()[row];
+    const std::string name = solver->getRowName(row);
+    GRBLinExpr expr;
+    for (CoinBigIndex j = matrix->getVectorStarts()[row]; j < matrix->getVectorStarts()[row] + matrix->getVectorLengths()[row]; j++) {
+      const int col = matrix->getIndices()[j];
+      const double coeff = matrix->getElements()[j];
+      expr += coeff * model->getVars()[col];
+    }
+    if (lb == ub) {
+      model->addConstr(expr, GRB_EQUAL, lb, name);
+    } else if (isInfinity(std::abs(ub)) && !isInfinity(std::abs(lb))) {
+      model->addConstr(expr, GRB_GREATER_EQUAL, lb, name);
+    } else if (isInfinity(std::abs(lb)) && !isInfinity(std::abs(ub))) {
+      model->addConstr(expr, GRB_LESS_EQUAL, ub, name);
+    } else if (!isInfinity(std::abs(lb)) && !isInfinity(std::abs(ub))) {
+      model->addConstr(expr, GRB_LESS_EQUAL, ub, name + "_ub");
+      model->addConstr(expr, GRB_GREATER_EQUAL, lb, name + "_lb");
+    } else {
+      error_msg(errorstring, "buildGRBModelFromOsi: Constraint %s has no finite bounds.\n", name.c_str());
+      writeErrorToLog(errorstring, logfile);
+      exit(1);
+    }
+  }
+  model->update();
+
+  return model;
+} /* buildGRBModelFromOsi */
+
+/// @return GRB_IntAttr_Status value
+int solveGRBModel(GRBModel& model, FILE* const logfile) {
+  int optimstatus = -1;
+  try {
+    model.optimize();
+
+    optimstatus = model.get(GRB_IntAttr_Status);
+
+    if (optimstatus == GRB_INF_OR_UNBD) {
+      const int presolve_flag = model.get(GRB_IntParam_Presolve);
+      if (presolve_flag) {
+        model.set(GRB_IntParam_Presolve, 0);
+        model.optimize();
+        optimstatus = model.get(GRB_IntAttr_Status);
+      }
+    }
+
+    if (optimstatus == GRB_INFEASIBLE || optimstatus == GRB_UNBOUNDED || optimstatus == GRB_INF_OR_UNBD) {
+      error_msg(errorstring, "Gurobi: Failed to optimize MIP.\n");
+      writeErrorToLog(errorstring, logfile);
+      exit(1);
+    }
+  } catch (GRBException& e) {
+    error_msg(errorstring, "Gurobi: Exception caught: %s\n", e.getMessage().c_str());
+    writeErrorToLog(errorstring, logfile);
+    exit(1);
+  } catch (...) {
+    error_msg(errorstring, "Gurobi: Unknown exception caught.\n");
+    writeErrorToLog(errorstring, logfile);
+    exit(1);
+  }
+
+  return optimstatus;
+} /* solveGRBModel */
+
+void saveSolution(
+    std::vector<double>& solution,
+    const GRBModel& model) {
+  GRBVar* vars = model.getVars();
+  const int num_vars = model.get(GRB_IntAttr_NumVars);
+  solution.resize(num_vars);
+  for (int i = 0; i < num_vars; i++) {
+    solution[i] = vars[i].get(GRB_DoubleAttr_X);
+  }
+  if (vars) {
+    delete[] vars;
+  }
+} /* saveSolution */
+
+/// @details Sets model parameters for branch-and-bound tests
 void setStrategyForBBTestGurobi(const Parameters& params, const int strategy,
-    GRBModel& model, const double best_bound, int seed = -1) {
+    GRBModel& model, const double best_bound, int seed) {
   if (seed < 0) seed = params.get(intParam::RANDOM_SEED);
   // Parameters that should always be set
   model.set(GRB_DoubleParam_TimeLimit, params.get(doubleConst::BB_TIMELIMIT)); // time limit
@@ -287,7 +399,7 @@ void presolveModelWithGurobi(const Parameters& params, int strategy,
         size_t slashindex = presolved_name.find_last_of("/\\");
         presolved_model_mip.set(GRB_StringAttr_ModelName, presolved_name.substr(slashindex+1));
         printf("Saving Gurobi-presolved model to \"%s.mps.gz\".\n", presolved_name.c_str());
-        createTmpFileCopy(params, presolved_model_mip, presolved_name, ".mps.gz"); // adds .mps.gz ext
+        createTmpFileCopy(params.logfile, presolved_model_mip, presolved_name, ".mps.gz"); // adds .mps.gz ext
         if (vars) {
           delete[] vars;
         }
@@ -328,7 +440,7 @@ void presolveModelWithGurobi(const Parameters& params, int strategy,
     const OsiSolverInterface* const solver, double& presolved_lp_opt,
     std::string& presolved_name, const double best_bound) {
   std::string f_name = "";
-  createTmpFileCopy(params, solver, f_name);
+  createTmpFileCopy(params.logfile, solver, f_name);
   presolveModelWithGurobi(params, strategy, f_name.c_str(), presolved_lp_opt, presolved_name, best_bound);
   remove(f_name.c_str()); // remove temporary file
 } /* presolveModelWithGurobi (Osi) */
@@ -548,7 +660,7 @@ void doBranchAndBoundWithGurobi(const Parameters& params, int strategy,
     const OsiSolverInterface* const solver, BBInfo& info,
     const double best_bound, std::vector<double>* const solution) {
   std::string f_name;
-  createTmpFileCopy(params, solver, f_name);
+  createTmpFileCopy(params.logfile, solver, f_name);
   doBranchAndBoundWithGurobi(params, strategy, f_name.c_str(), info, best_bound,
       solution);
   remove(f_name.c_str()); // remove temporary file
@@ -579,7 +691,7 @@ void doBranchAndBoundWithUserCutsGurobi(const Parameters& params, int strategy,
     const OsiSolverInterface* const solver, const OsiCuts* cuts, BBInfo& info,
     const double best_bound, const bool addAsLazy) {
   std::string f_name;
-  createTmpFileCopy(params, solver, f_name);
+  createTmpFileCopy(params.logfile, solver, f_name);
   doBranchAndBoundWithUserCutsGurobi(params, strategy, f_name.c_str(), cuts, info, best_bound, addAsLazy);
   remove(f_name.c_str()); // remove temporary file
 } /* doBranchAndBoundWithUserCutsGurobi (Osi) */

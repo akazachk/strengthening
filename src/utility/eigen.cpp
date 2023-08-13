@@ -131,7 +131,7 @@ void createEigenMatrix(
   assert(M.cols() == num_cols);
   assert(M.nonZeros() == (long int) (mat->getNumElements() - num_elem_removed + (doAll ? num_cols : cols.size())));
 #endif
-} /* createEigenMatrix (sparse) */
+} /* createEigenMatrix (sparse, CoinPackedMatrix) */
 
 void createEigenMatrix(
     /// [out] sparse matrix, in row-major form
@@ -146,66 +146,12 @@ void createEigenMatrix(
   const CoinPackedMatrix* const mat = solver->getMatrixByRow();
 #ifdef TRACE
   if (mat->isColOrdered()) {
-    throw std::logic_error("createEigenMatrix (sparse): Matrix must be row-ordered.");
+    throw std::logic_error("createEigenMatrix (sparse, solver): Matrix must be row-ordered.");
   }
 #endif
-
-  const bool doAll = (rows.size() + cols.size()) == 0;
-  const int num_cols = mat->getNumCols();
-  const int num_selected_rows = doAll ? mat->getNumRows() + mat->getNumCols() : rows.size() + cols.size();
-  int num_elem_removed = 0, num_rows_removed = 0;
-
-  // Prepare sparse matrix
-  M.resize(num_selected_rows, num_cols);
-  M.reserve(mat->getNumElements() + cols.size());
-
-  const bool batchInsert = true;
-  std::vector<Eigen::Triplet<double> > tripletList;
-  if (batchInsert) {
-    tripletList.reserve(mat->getNumElements() + cols.size());
-  }
-  unsigned tmp_ind = 0;
-  for (int row = 0; row < mat->getNumRows(); row++) {
-    if (doAll || (tmp_ind < rows.size() && rows[tmp_ind] == row)) {
-      if (batchInsert) prepareRow(tripletList, mat, row, tmp_ind);
-      else insertRow(M, mat, row, tmp_ind);
-      tmp_ind++;
-    } else {
-      num_elem_removed += mat->getVectorSize(row);
-      num_rows_removed++;
-    }
-  }
-  // Add explicit column lower bound rows
-  // We *do not* ``complement'' the upper bounded variables because we would then have to
-  // also complement ``alpha'' when we use it for the right-hand side;
-  // these two negations cancel each other out
-  for (const int& col : cols) {
-    const double val = 1.0;
-    if (batchInsert) tripletList.push_back(Eigen::Triplet<double>(tmp_ind, col, val));
-    else M.insert(tmp_ind, col) = val;
-    tmp_ind++;
-  }
-  if (doAll) {
-    for (int col = 0; col < solver->getNumCols(); col++) {
-      const double val = 1.0;
-      if (batchInsert) tripletList.push_back(Eigen::Triplet<double>(tmp_ind, col, val));
-      else M.insert(tmp_ind, col) = val;
-      tmp_ind++;
-    }
-  }
-  if (batchInsert) {
-    M.setFromTriplets(tripletList.begin(), tripletList.end());
-  }
-
-  M.makeCompressed();
-
-#ifdef TRACE
-  // Check matrix
-  assert(M.rows() == num_selected_rows);
-  assert(M.cols() == num_cols);
-  assert(M.nonZeros() == (long int) (mat->getNumElements() - num_elem_removed + (doAll ? num_cols : cols.size())));
-#endif
-} /* createEigenMatrix (sparse) */
+  assert(mat->getNumCols() == solver->getNumCols());
+  createEigenMatrix(M, mat, rows, cols);
+} /* createEigenMatrix (sparse, solver) */
 
 void createEigenMatrix(
     /// [out] dense matrix
@@ -251,7 +197,7 @@ void solveLinearSystem(
 
 void calculateCertificateEigen(
     /// [out] Farkas multipliers (vector of length m + m_t + n)
-    std::vector<double>& v,
+    TermCutCertificate& v,
     /// [in] number of nonzero cut coefficients
     const int num_elem, 
     /// [in] indices of nonzero cut coefficients
@@ -259,7 +205,7 @@ void calculateCertificateEigen(
     /// [in] nonzero cut coefficients
     const double* const coeff,
     // [in] LP solver corresponding to disjunctive term
-    OsiSolverInterface* const solver,
+    OsiSolverInterface* const term_solver,
     /// [in] set of rows that we want to consider
     const std::vector<int>& rows,
     /// [in] set of variable bounds we want to explicitly use
@@ -267,13 +213,13 @@ void calculateCertificateEigen(
     /// [in] logfile for error printing
     FILE* const logfile) {
   Eigen::SparseMatrix<double,Eigen::RowMajor> A;
-  createEigenMatrix(A, solver, rows, cols);
+  createEigenMatrix(A, term_solver, rows, cols);
 #ifdef TRACE
-  assert(A.rows() == solver->getNumCols());
+  assert(A.rows() == term_solver->getNumCols());
 #endif
 
-  // Set up right-hand side for solver (should be equal to alpha)
-  Eigen::VectorXd b(solver->getNumCols());
+  // Set up right-hand side for term_solver (should be equal to alpha)
+  Eigen::VectorXd b(term_solver->getNumCols());
   b.setZero();
   for (int tmp_ind = 0; tmp_ind < num_elem; tmp_ind++) {
     b(ind[tmp_ind]) = coeff[tmp_ind];
@@ -281,28 +227,28 @@ void calculateCertificateEigen(
 
   /*int tmp_ind = 0;
   for (const int& row : rows) {
-    b(tmp_ind) = solver->getRightHandSide()[row];
+    b(tmp_ind) = term_solver->getRightHandSide()[row];
     tmp_ind++;
   }
   for (const int& col : cols) {
     double val = 0.0;
-    if (isVal(solver->getColSolution()[col], solver->getColLower()[col])) {
-      val = solver->getColLower()[col];
+    if (isVal(term_solver->getColSolution()[col], term_solver->getColLower()[col])) {
+      val = term_solver->getColLower()[col];
     }
-    else if (isVal(solver->getColSolution()[col], solver->getColUpper()[col])) {
-      val = solver->getColUpper()[col];
+    else if (isVal(term_solver->getColSolution()[col], term_solver->getColUpper()[col])) {
+      val = term_solver->getColUpper()[col];
     }
     else {
       error_msg(errorstring, 
           "Unable to identify which bound is met by nonbasic variable %d with value %.6g, and bounds [%.6g,%.6g]. May be a free nonbasic variable; check and then possibly add right-hand side equal to its current value instead of exiting.\n",
-          col, solver->getColSolution()[col], solver->getColLower()[col], solver->getColUpper()[col]);
+          col, term_solver->getColSolution()[col], term_solver->getColLower()[col], term_solver->getColUpper()[col]);
       exit(1);
     }
     b(tmp_ind) = val;
     tmp_ind++;
   }*/
 
-  Eigen::VectorXd x(solver->getNumCols());
+  Eigen::VectorXd x(term_solver->getNumCols());
   solveLinearSystem(x, A.transpose(), b);
 
   /*{ // DEBUG
@@ -310,29 +256,29 @@ void calculateCertificateEigen(
     tmp = A.transpose() * x;
 
     printf("Orig\tCalc\n");
-    for (int col = 0; col < solver->getNumCols(); col++) {
-      //printf("%g\t%g\n", solver->getColSolution()[col], x(col));
+    for (int col = 0; col < term_solver->getNumCols(); col++) {
+      //printf("%g\t%g\n", term_solver->getColSolution()[col], x(col));
       printf("%g\t%g\n", b(col), tmp(col));
     }
   }*/ // DEBUG
 
   int tmp_ind = 0;
   for (const int& row : rows) {
-    const double mult = 1.; //(solver->getRowSense()[row] == 'L') ? -1. : 1.;
+    const double mult = 1.; //(term_solver->getRowSense()[row] == 'L') ? -1. : 1.;
     v[row] = mult * x(tmp_ind);
     tmp_ind++;
   }
   for (const int& col : cols) {
-    const double mult = 1.; //isNonBasicUBVar(solver, col) ? -1. : 1.;
-    v[solver->getNumRows() + col] = mult * x(tmp_ind);
+    const double mult = 1.; //isNonBasicUBVar(term_solver, col) ? -1. : 1.;
+    v[term_solver->getNumRows() + col] = mult * x(tmp_ind);
     tmp_ind++;
   }
 
   /*{ // DEBUG
     Eigen::SparseMatrix<double,Eigen::RowMajor> fullA;
-    createEigenMatrix(fullA, solver, std::vector<int>(), std::vector<int>());
+    createEigenMatrix(fullA, term_solver, std::vector<int>(), std::vector<int>());
 
-    Eigen::VectorXd fullv(solver->getNumCols() + solver->getNumRows());
+    Eigen::VectorXd fullv(term_solver->getNumCols() + term_solver->getNumRows());
     for (int i = 0; i < (int) v.size(); i++) {
       fullv(i) = v[i];
     }
@@ -341,7 +287,7 @@ void calculateCertificateEigen(
     tmp = fullA.transpose() * fullv;
 
     printf("Orig\tCalc\n");
-    for (int col = 0; col < solver->getNumCols(); col++) {
+    for (int col = 0; col < term_solver->getNumCols(); col++) {
       printf("%g\t%g\n", b(col), tmp(col));
     }
     exit(1);
@@ -355,24 +301,43 @@ void calculateCertificateEigen(
 } /* calculateCertificateEigen */
 
 int computeRank(
+    const Eigen::SparseMatrix<double,Eigen::RowMajor>& A,
+    /// [in] Precision when taking submatrix rank
+    const double MATRIX_EPS) {
+  return computeRank(Eigen::MatrixXd(A), MATRIX_EPS);
+} /* computeRank (Eigen::SparseMatrix) */
+
+int computeRank(
+    const Eigen::MatrixXd& M,
+    /// [in] Precision when taking submatrix rank
+    const double MATRIX_EPS) {
+  Eigen::FullPivLU<Eigen::MatrixXd> lu(M);
+	lu.setThreshold(MATRIX_EPS);
+	return (int) lu.rank();
+} /* computeRank (Eigen::MatrixXd) */
+
+int computeRank(
     /// [in] CoinPackedMatrix from which rank will be computed
     const CoinPackedMatrix* const mat,
     /// [in] Rows of the matrix to use
-    const std::vector<int>& rows) {
+    const std::vector<int>& rows,
+    /// [in] Cols of the matrix to use
+    const std::vector<int>& cols,
+    /// [in] Precision when taking submatrix rank
+    const double MATRIX_EPS) {
   if (mat->isColOrdered()) {
     throw std::logic_error("computeRank: Matrix must be row-ordered.");
   }
 
-  return -1;
-
   // Create Eigen matrix from CoinPackedMatrix
-  Eigen::SparseMatrix<double> M;
-  // createEigenMatrix(M, mat, rows, cols);
+  Eigen::SparseMatrix<double,Eigen::RowMajor> M;
+  createEigenMatrix(M, mat, rows, cols);
+  return computeRank(M, MATRIX_EPS);
 
-  const int num_rows = rows.size();
-  const int num_cols = mat->getNumCols();
-  std::vector<Eigen::Triplet<double> > tripletList;
-  tripletList.reserve(mat->getNumElements());
+  // const int num_rows = rows.size();
+  // const int num_cols = mat->getNumCols();
+  // std::vector<Eigen::Triplet<double> > tripletList;
+  // tripletList.reserve(mat->getNumElements());
 
   // int tmp_ind = 0;
   // for (int i = 0; i < num_rows; i++) {

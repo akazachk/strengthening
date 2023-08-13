@@ -49,7 +49,7 @@
 /// That is, we only need the basis inverse applied to the matrix.
 void getCertificate(
     /// [out] Farkas multipliers (vector of length m + m_t + n)
-    std::vector<double>& v,
+    TermCutCertificate& v,
     /// [in] number of nonzero cut coefficients
     const int num_elem, 
     /// [in] indices of nonzero cut coefficients
@@ -103,52 +103,15 @@ void getCertificate(
   throw std::logic_error(errorstring);
 #endif // USE_EIGEN
 
-//#ifdef TRACE
-  // Verify that the certificate yields the same cut coefficients as the original cut
-  int num_errors = 0;
-  double total_diff = 0;
-  checkCut(num_errors, total_diff, cut_coeff, v, term_solver);
-  if (num_errors > 0) {
-    const bool should_continue = isZero(total_diff, 1e-3);
-    if (should_continue) {
-      // Send warning
-      warning_msg(warnstring,
-          "Number of differences between true and calculated cuts: %d. Total difference: %g. Small enough difference that we will try to continue, but beware of numerical issues.\n",
-          num_errors, total_diff);
-    } else {
-      // Exit
-      error_msg(errorstring,
-          "Number of differences between true and calculated cuts: %d. Total difference: %g. Exiting.\n",
-          num_errors, total_diff);
-      writeErrorToLog(errorstring, logfile);
-    }
-// #ifdef USE_EIGEN
-//     fprintf(stderr, "x:\n");
-//     for (int i = 0; i < solver->getNumCols(); i++) {
-//       fprintf(stderr, "x[%d] = %g\n", i, x(i));
-//     }
-//     fprintf(stderr, "b:\n");
-//     for (int i = 0; i < solver->getNumCols(); i++) {
-//       fprintf(stderr, "b[%d] = %g\n", i, b(i));
-//     }
-// #endif // USE_EIGEN
-    fprintf(stderr, "v:\n");
-    for (int i = 0; i < (int) v.size(); i++) {
-      fprintf(stderr, "v[%d] = %g\n", i, v[i]);
-    }
-    if (!should_continue) {
-      exit(1);
-    }
-  } // num_errors > 0
-  //else printf("No errors found.\n");
-//#endif // TRACE
-
   term_solver->disableFactorization();
+
+  // Verify certificate results in same cut
+  checkCutHelper(cut_coeff, v, term_solver, NULL, logfile);
 } /* getCertificate */
 
 void getCertificateForTerm(
     /// [out] Farkas multipliers
-    std::vector<double>& v, 
+    TermCutCertificate& v, 
     /// [in] number of nonzero cut coefficients
     const int num_elem, 
     /// [in] indices of nonzero cut coefficients
@@ -253,7 +216,7 @@ void getCertificateForTerm(
 /// Use Theorem B.5 of Kazachkov 2018 dissertation to get certificate with trivial normalization
 void getCertificateTrivial(
     /// [out] Farkas multipliers
-    std::vector<double>& v, 
+    TermCutCertificate& v, 
     /// [in] number of nonzero cut coefficients
     const int num_elem, 
     /// [in] indices of nonzero cut coefficients
@@ -295,7 +258,7 @@ int strengthenCutS(
     /// [in] disjunction
     const Disjunction* const disj,
     /// [in] Farkas multipliers for each of the terms of the disjunction (each is a vector of length m + n)
-    const std::vector<std::vector<double> >& v, 
+    const CutCertificate& v, 
     /// [in] original solver (used to get globally-valid lower bounds for the disjunctive terms)
     const OsiSolverInterface* const solver,
     /// [in] logfile for error printing
@@ -469,7 +432,7 @@ int strengthenCut(
     /// [in] disjunction
     const Disjunction* const disj,
     /// [in] Farkas multipliers for each of the terms of the disjunction (each is a vector of length m + num_disj_ineqs + n)
-    const std::vector<std::vector<double> >& v, 
+    const CutCertificate& v, 
     /// [in] original solver (used to get globally-valid lower bounds for the disjunctive terms)
     const OsiSolverInterface* const solver,
     /// [in] logfile for error printing
@@ -611,7 +574,7 @@ bool strengthenCutCoefficient(
     /// [in] u^t_0 (D^t_0 - ell^t) for all t
     const std::vector<double>& lb_term,
     /// [in] Farkas multipliers for each of the terms of the disjunction (each is a vector of length num_rows + num_disj_term_ineqs + num_cols)
-    const std::vector<std::vector<double> >& v, 
+    const CutCertificate& v, 
     /// [in] original solver
     const OsiSolverInterface* const solver,
     /// [in/out] monoidal cut strengthening solver (req'd for num_terms > 2),
@@ -763,7 +726,7 @@ void setupMonoidalIP(
     /// [in] u^t_0 (D^t_0 - \ell^t) for all t
     const std::vector<double>& lb_term,
     /// [in] Farkas multipliers for each of the terms of the disjunction (each is a vector of length m + n)
-    const std::vector<std::vector<double> >& v, 
+    const CutCertificate& v, 
     /// [in] original solver
     const OsiSolverInterface* const solver,
     /// [in] multiplier on utk (negative 1 if the upper bound is being used for all terms, so we will later complement)
@@ -866,7 +829,7 @@ void updateMonoidalIP(
     /// [in] disjunction
     const Disjunction* const disj,
     /// [in] Farkas multipliers for each of the terms of the disjunction (each is a vector of length m + n)
-    const std::vector<std::vector<double> >& v, 
+    const CutCertificate& v, 
     /// [in] original solver
     const OsiSolverInterface* const solver,
     /// [in] multiplier on utk (negative 1 if the upper bound is being used for all terms, so we will later complement)
@@ -920,7 +883,7 @@ int BalJer79_Algorithm2(
     /// [in] disjunction
     const Disjunction* const disj,
     /// [in] Farkas multipliers for each of the terms of the disjunction (each is a vector of length m + n)
-    const std::vector<std::vector<double> >& v, 
+    const CutCertificate& v, 
     /// [in] original solver
     const OsiSolverInterface* const solver) {
   // Set up original cut coeff and rhs

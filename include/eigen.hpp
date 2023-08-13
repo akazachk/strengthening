@@ -7,11 +7,16 @@
 
 #include <vector>
 
+// Project files
+#include "CutCertificate.hpp" // TermCutCertificate and CutCertifcate
+
+// COIN-OR files
 class CoinPackedMatrix;
 class OsiSolverInterface;
 
 #ifdef USE_EIGEN
 #include <Eigen/Sparse>
+#include <Eigen/Dense>
 
 void insertRow(
     Eigen::SparseMatrix<double,Eigen::RowMajor>& M,
@@ -48,7 +53,7 @@ void solveLinearSystem(
     const Eigen::VectorXd& b);
 
 void calculateCertificateEigen(
-    std::vector<double>&v,
+    TermCutCertificate& v,
     const int num_elem,
     const int* const indices,
     const double* const elements,
@@ -58,7 +63,17 @@ void calculateCertificateEigen(
     FILE* const logfile);
 
 int computeRank(
+  const Eigen::SparseMatrix<double,Eigen::RowMajor>& M,
+  const double MATRIX_EPS = 1e-10);
+
+int computeRank(
+  const Eigen::MatrixXd& M,
+  const double MATRIX_EPS = 1e-10);
+
+int computeRank(
   const CoinPackedMatrix* const mat,
-  const std::vector<int>& rows);
+  const std::vector<int>& rows,
+  const std::vector<int>& cols,
+  const double MATRIX_EPS = 1e-10);
 
 #endif // USE_EIGEN
