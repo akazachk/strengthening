@@ -879,9 +879,10 @@ void analyzeCertificateRegularity(
       }
     }
   }
-  const int first_col_ind = solver->getNumRows() + disj->common_changed_var.size();
+
   for (int col = 0; col < solver->getNumCols(); col++) {
     for (int term = 0; term < disj->num_terms; term++) {
+      const int first_col_ind = solver->getNumRows() + disj->common_changed_var.size() + disj->terms[term].changed_var.size();
       if (!isZero(v[term][first_col_ind + col])) {
         cols.push_back(col);
         break;
