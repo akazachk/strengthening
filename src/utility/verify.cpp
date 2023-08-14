@@ -188,14 +188,14 @@ int checkCutHelper(
     if (should_continue) {
       // Send warning
       warning_msg(warnstring,
-          "Number of differences between true and calculated cuts: %d. Total difference: %g. Small enough difference that we will try to continue, but beware of numerical issues.\n",
+          "checkCutHelper: Number of differences between true and calculated cuts: %d. Total difference: %g. Small enough difference that we will try to continue, but beware of numerical issues.\n",
           num_errors, total_diff);
     } else {
       // Exit
       error_msg(errorstring,
-          "Number of differences between true and calculated cuts: %d. Total difference: %g. Exiting.\n",
+          "checkCutHelper: Number of differences between true and calculated cuts: %d. Total difference: %g. Exiting.\n",
           num_errors, total_diff);
-      writeErrorToLog(errorstring, logfile);
+      throw std::logic_error(errorstring);
     }
 // #ifdef USE_EIGEN
 //     fprintf(stderr, "x:\n");
