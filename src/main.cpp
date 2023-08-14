@@ -499,7 +499,7 @@ int main(int argc, char** argv) {
       std::vector<CutCertificate> regular_v; // [cut][term][Farkas multiplier] in the end, per term, this will be of dimension rows + disj term ineqs + cols
       std::vector<int> certificate_submx_rank; // rank of the submatrix of the certificate
       std::vector<int> num_nonzero_multipliers;
-      analyzeCutRegularity(regular_v, certificate_submx_rank, origCurrCuts, disj, solver, params);
+      analyzeCutRegularity(regular_v, certificate_submx_rank, num_nonzero_multipliers, origCurrCuts, disj, solver, params);
     
     #ifdef TRACE
       for (int cut_ind = 0; cut_ind < currCuts.sizeCuts(); cut_ind++) {

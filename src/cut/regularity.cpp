@@ -30,6 +30,10 @@
 #include <gurobi_c++.h>
 #endif
 
+#ifdef DEBUG
+#include "debug.hpp"
+#endif
+
 /// @details Number of rows should be solver->getNumRows() + num_common_rows + number of finite bounds
 int calculateNumRowsAtilde(
     /// [in] Disjunction from which to get globally-valid inequalities
@@ -420,10 +424,13 @@ void genRCVMILPFromCut(
   // liftingSolver->loadProblem(mx, colLB.data(), colUB.data(), NULL, NULL, NULL, NULL);
   liftingSolver->loadProblem(mx, NULL, NULL, NULL, NULL, NULL, NULL);
   
-  // First num_cols rows are = 0 constraints
-  for (int col = 0; col < num_cols; col++) {
-    liftingSolver->setRowLower(col, 0);
-    liftingSolver->setRowUpper(col, 0);
+  // First num_cols rows for each term are = 0 constraints
+  for (int term_ind = 0; term_ind < disj->num_terms; term_ind++) {
+    const int term_rows_start = term_ind * (num_cols + 1 + mprime);
+    for (int col = 0; col < num_cols; col++) {
+      liftingSolver->setRowLower(term_rows_start + col, 0);
+      liftingSolver->setRowUpper(term_rows_start + col, 0);
+    }
   }
 
   if (!use_min_sum_delta) {
@@ -496,6 +503,21 @@ void genRCVMILPFromCut(
   }
   assert(liftingSolver->getNumCols() == var_names.size());
   liftingSolver->setColNames(var_names, 0, liftingSolver->getNumCols(), 0);
+
+  // Set names of rows
+  std::vector<std::string> row_names;
+  for (int t = 0; t < num_terms; t++) {
+    for (int i = 0; i < num_cols; i++) {
+      row_names.push_back("term_" + std::to_string(t) + "_alpha_" + std::to_string(i));
+    }
+    row_names.push_back("term_" + std::to_string(t) + "_beta");
+    for (int i = 0; i < mprime; i++) {
+      row_names.push_back("term_" + std::to_string(t) + "_delta_" + std::to_string(i));
+    }
+  }
+  row_names.push_back("sum_delta");
+  assert(liftingSolver->getNumRows() == row_names.size());
+  liftingSolver->setRowNames(row_names, 0, liftingSolver->getNumRows(), 0);
 } /* genRCVMILPFromCut */
 
 void updateRCVMILPFromCut(
@@ -615,11 +637,11 @@ int solveRCVMILP(
     lp_filename_stub = logdir + "/" + instname + "_cglp_" + stringValue(cut_ind, "%d");
   }
 
-  if (write_lp) {
-    std::string lp_filename = lp_filename_stub + "_COIN" + LP_EXT;
-    printf("\n## Saving CGLP from cut to file: %s\n", lp_filename.c_str());
-    liftingSolver->writeLp(lp_filename.c_str());
-  }
+  // if (write_lp) {
+  //   std::string lp_filename = lp_filename_stub + "_COIN" + LP_EXT;
+  //   printf("\n## Saving CGLP from cut to file: %s\n", lp_filename.c_str());
+  //   liftingSolver->writeLp(lp_filename.c_str());
+  // }
 
   if (use_bb_option(params.get(StrengtheningParameters::intParam::BB_STRATEGY),
       StrengtheningParameters::BB_Strategy_Options::gurobi)) {
@@ -651,39 +673,11 @@ int solveRCVMILP(
     // Retrieve solution from model
     saveSolution(solution, model);
 
-    { // DEBUG DEBUG
-      GRBVar* vars = model.getVars();
-
-      // Verify col 2
-      const double val = -1. * (
-          -1 * vars[75].get(GRB_DoubleAttr::GRB_DoubleAttr_X)
-          + 8 * vars[76].get(GRB_DoubleAttr::GRB_DoubleAttr_X) 
-          + 5 * vars[77].get(GRB_DoubleAttr::GRB_DoubleAttr_X) 
-          - 4 * vars[79].get(GRB_DoubleAttr::GRB_DoubleAttr_X)
-          - 2 * vars[80].get(GRB_DoubleAttr::GRB_DoubleAttr_X) 
-          - 3 * vars[81].get(GRB_DoubleAttr::GRB_DoubleAttr_X) 
-          + 6 * vars[82].get(GRB_DoubleAttr::GRB_DoubleAttr_X) 
-          + 7 * vars[83].get(GRB_DoubleAttr::GRB_DoubleAttr_X) 
-          - 3 * vars[85].get(GRB_DoubleAttr::GRB_DoubleAttr_X) 
-          - 5 * vars[86].get(GRB_DoubleAttr::GRB_DoubleAttr_X) 
-          + 8 * vars[87].get(GRB_DoubleAttr::GRB_DoubleAttr_X) 
-          + 7 * vars[88].get(GRB_DoubleAttr::GRB_DoubleAttr_X) 
-          - 4 * vars[89].get(GRB_DoubleAttr::GRB_DoubleAttr_X) 
-          - 1 * vars[90].get(GRB_DoubleAttr::GRB_DoubleAttr_X) 
-          - 6 * vars[91].get(GRB_DoubleAttr::GRB_DoubleAttr_X) 
-          + 5 * vars[92].get(GRB_DoubleAttr::GRB_DoubleAttr_X) 
-          + 8 * vars[93].get(GRB_DoubleAttr::GRB_DoubleAttr_X) 
-          - 2 * vars[94].get(GRB_DoubleAttr::GRB_DoubleAttr_X) 
-          - vars[97].get(GRB_DoubleAttr::GRB_DoubleAttr_X) 
-          + vars[124].get(GRB_DoubleAttr::GRB_DoubleAttr_X)
-     ) / solution[0];
-
-      printf("value for coefficient on cut for column 2 = %f.\n", val);
-
-      if (vars) {
-        delete[] vars;
-      }
-    } // DEBUG DEBUG
+// #ifdef DEBUG
+//     { // DEBUG DEBUG
+//       checkCoefficientForColumn(liftingSolver, solution.data(), 1, 0);
+//     } // DEBUG DEBUG
+// #endif
 
     // Free memory
     if (m) { delete m; }
@@ -854,7 +848,7 @@ void getCertificateFromRCVMILPSolution(
         v[term_ind][v_ind] = solution[var_lb] / theta;
       }
       else if (ub_nonzero) {
-        v[term_ind][v_ind] = solution[var_ub] / theta;
+        v[term_ind][v_ind] = -1. * solution[var_ub] / theta;
       }
     }
   } // loop over terms to set CutCertificate
@@ -909,6 +903,8 @@ void analyzeCutRegularity(
     std::vector<CutCertificate>& v,
     /// [out] Rank of submatrix associated to the certificate for each cut
     std::vector<int>& certificate_submx_rank,
+    /// [out] Number of original (+ globally valid) constraints that have nonzero multipliers in the certificate
+    std::vector<int>& num_nonzero_multipliers,
     /// [in] Set of cuts that are to be analyzed for regularity
     const OsiCuts& cuts,
     /// [in] Disjunction from which cuts were generated
@@ -921,6 +917,9 @@ void analyzeCutRegularity(
 
   certificate_submx_rank.clear();
   certificate_submx_rank.resize(cuts.sizeCuts());
+
+  num_nonzero_multipliers.clear();
+  num_nonzero_multipliers.resize(cuts.sizeCuts());
 
   // Prepare Atilde and btilde, which are common to all terms
   // This encompasses the original constraints
@@ -974,6 +973,11 @@ void analyzeCutRegularity(
     for (int term_ind = 0; term_ind < disj->num_terms; term_ind++) {
       checkCutHelper(cut_coeff, v[cut_ind][term_ind], term_ind, disj, solver, params.logfile);
     }
+
+    // Compute rank of submatrix associated to the certificate
+    analyzeCertificateRegularity(certificate_submx_rank[cut_ind],
+            num_nonzero_multipliers[cut_ind], v[cut_ind],
+            disj, solver, Atilde, params);
   } // loop over cuts
 
   // if (cbc_model) { delete cbc_model; }

@@ -80,6 +80,7 @@ void analyzeCertificateRegularity(
 void analyzeCutRegularity(
   std::vector<CutCertificate>& v,
   std::vector<int>& certificate_submx_rank,
+  std::vector<int>& num_nonzero_multipliers,
   const OsiCuts& cuts,
   const Disjunction* const disj,
   const OsiSolverInterface* const solver,

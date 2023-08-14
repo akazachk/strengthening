@@ -160,7 +160,7 @@ ifeq ($(BUILD_CONFIG),debug)
   OUT_DIR = Debug
   DEBUG_FLAG = -g3
   OPT_FLAG = -O0
-  DEFS = -DTRACE -DCODE_VERSION="\#${CODE_VERSION}" -DVPC_VERSION="\#${VPC_VERSION}"
+  DEFS = -DTRACE -DDEBUG -DCODE_VERSION="\#${CODE_VERSION}" -DVPC_VERSION="\#${VPC_VERSION}"
   # message-length sets line wrapping for error messages; 0 = no line wrapping
   EXTRA_FLAGS = -fmessage-length=0
   ifeq ($(CC),g++)

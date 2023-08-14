@@ -147,6 +147,8 @@ void saveSolution(
     const GRBModel& model) {
   GRBVar* vars = model.getVars();
   const int num_vars = model.get(GRB_IntAttr_NumVars);
+  // double* values = model.get(GRB_DoubleAttr_X, vars, num_vars); // error due to model being const
+  // solution.assign(values, values + num_vars);
   solution.resize(num_vars);
   for (int i = 0; i < num_vars; i++) {
     solution[i] = vars[i].get(GRB_DoubleAttr_X);
