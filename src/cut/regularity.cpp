@@ -651,6 +651,40 @@ int solveRCVMILP(
     // Retrieve solution from model
     saveSolution(solution, model);
 
+    { // DEBUG DEBUG
+      GRBVar* vars = model.getVars();
+
+      // Verify col 2
+      const double val = -1. * (
+          -1 * vars[75].get(GRB_DoubleAttr::GRB_DoubleAttr_X)
+          + 8 * vars[76].get(GRB_DoubleAttr::GRB_DoubleAttr_X) 
+          + 5 * vars[77].get(GRB_DoubleAttr::GRB_DoubleAttr_X) 
+          - 4 * vars[79].get(GRB_DoubleAttr::GRB_DoubleAttr_X)
+          - 2 * vars[80].get(GRB_DoubleAttr::GRB_DoubleAttr_X) 
+          - 3 * vars[81].get(GRB_DoubleAttr::GRB_DoubleAttr_X) 
+          + 6 * vars[82].get(GRB_DoubleAttr::GRB_DoubleAttr_X) 
+          + 7 * vars[83].get(GRB_DoubleAttr::GRB_DoubleAttr_X) 
+          - 3 * vars[85].get(GRB_DoubleAttr::GRB_DoubleAttr_X) 
+          - 5 * vars[86].get(GRB_DoubleAttr::GRB_DoubleAttr_X) 
+          + 8 * vars[87].get(GRB_DoubleAttr::GRB_DoubleAttr_X) 
+          + 7 * vars[88].get(GRB_DoubleAttr::GRB_DoubleAttr_X) 
+          - 4 * vars[89].get(GRB_DoubleAttr::GRB_DoubleAttr_X) 
+          - 1 * vars[90].get(GRB_DoubleAttr::GRB_DoubleAttr_X) 
+          - 6 * vars[91].get(GRB_DoubleAttr::GRB_DoubleAttr_X) 
+          + 5 * vars[92].get(GRB_DoubleAttr::GRB_DoubleAttr_X) 
+          + 8 * vars[93].get(GRB_DoubleAttr::GRB_DoubleAttr_X) 
+          - 2 * vars[94].get(GRB_DoubleAttr::GRB_DoubleAttr_X) 
+          - vars[97].get(GRB_DoubleAttr::GRB_DoubleAttr_X) 
+          + vars[124].get(GRB_DoubleAttr::GRB_DoubleAttr_X)
+     ) / solution[0];
+
+      printf("value for coefficient on cut for column 2 = %f.\n", val);
+
+      if (vars) {
+        delete[] vars;
+      }
+    } // DEBUG DEBUG
+
     // Free memory
     if (m) { delete m; }
 #endif // USE_GUROBI
