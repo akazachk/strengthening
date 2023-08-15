@@ -520,100 +520,6 @@ void genRCVMILPFromCut(
   liftingSolver->setRowNames(row_names, 0, liftingSolver->getNumRows(), 0);
 } /* genRCVMILPFromCut */
 
-void updateRCVMILPFromCut(
-    /// [in] RCVMILP to be updated
-    OsiSolverInterface* const liftingSolver,
-    /// [in] Cut to be added to the RCVMILP
-    const OsiRowCut* const cut,
-    /// [in] Disjunction that the cut is from
-    const Disjunction* const disj,
-    /// [in] Original solver
-    const OsiSolverInterface* const solver,
-    /// [in] Log file
-    FILE* const log_file) {
-  const int num_terms = disj->terms.size();
-
-  // The cut goes into column 0 (corresponding to variable \theta)
-  // Let m' be the number of rows of Atilde
-  // Then the cut coefficients are inputted into rows 0,...,n-1, then t*(n+m'+1),...,t*(n+m'+1)+n-1 for t = 0,...,num_terms-1
-  const int theta_col = 0;
-  const int mprime = calculateNumRowsAtilde(disj, solver);
-
-  // 2023-08-04 amk: not sure how to replace column 1, since indices may be different (so CoinPackedMatrix::replaceVector is not an option)
-  // Create new CoinPackedMatrix with new cut column
-  CoinPackedMatrix old_mx(*liftingSolver->getMatrixByCol()); // this is a copy
-  old_mx.deleteCols(1, &theta_col);
-
-  // Prepare rows corresponding to the cut
-  CoinPackedVector alpha_beta; // will be [alpha; beta; 0]
-  alpha_beta.append(cut->row());
-  alpha_beta.insert(solver->getNumCols(), -1. * cut->rhs());
-  
-  // Duplicate this for each term
-  CoinPackedVector alpha_beta_col(alpha_beta);
-  for (int term_ind = 1; term_ind < num_terms; term_ind++) {
-    const int offset = (solver->getNumCols() + mprime + 1);
-    // Modify indices of alpha_beta
-    const int num_el = alpha_beta.getNumElements();
-    int* ind = alpha_beta.getIndices();
-    for (int i = 0; i < num_el; i++) {
-      ind[i] += offset;
-    }
-    alpha_beta_col.append(alpha_beta);
-  }
-  alpha_beta_col.insert(old_mx.getNumRows()-1, 0.);
-
-  // Create new matrix with first column containing the appropriate number of copies of theta_delta
-  // this is not right if theta_col != 0
-  if (theta_col != 0) throw std::logic_error("Value of theta_col has to be 0 for now.");
-  CoinPackedMatrix new_mx;
-  new_mx.setDimensions(old_mx.getNumRows(), 0);
-  new_mx.appendCol(alpha_beta_col);
-  new_mx.rightAppendPackedMatrix(old_mx);
-
-  // Replace matrix in liftingSolver
-  liftingSolver->replaceMatrix(new_mx);
-
-#ifdef TRACE
-  {
-    // Check that all coefficients were correctly set
-    const CoinPackedMatrix* mx = liftingSolver->getMatrixByCol();
-    const CoinShallowPackedVector alpha_beta_col_check = mx->getVector(theta_col);  
-    const CoinPackedVector cut_row = cut->row();
-    const double cut_rhs = cut->rhs();
-    for (int term_ind = 0; term_ind < num_terms; term_ind++) {
-      const int offset = term_ind * (solver->getNumCols() + mprime + 1);
-
-      // Check coefficients of (alpha,-beta) for this term
-      for (int el = 0; el < cut_row.getNumElements(); el++) {
-        const int row_ind = offset + cut_row.getIndices()[el];
-        const double coeff = cut_row.getElements()[el];
-        const double coeff_check = alpha_beta_col_check[row_ind];
-        if (!isVal(coeff, coeff_check)) {
-          error_msg(
-              errorstring,
-              "*** ERROR: Coefficients do not match for term %d, row %d: %f != %f.\n",
-              term_ind, row_ind, coeff, coeff_check);
-          throw std::logic_error(errorstring);
-        }
-      }
-
-      // Check right-hand side row
-      const int row_ind = offset + solver->getNumCols();
-      const double coeff = -1. * cut_rhs;
-      const double coeff_check = alpha_beta_col_check[row_ind];
-      if (!isVal(coeff, coeff_check)) {
-          error_msg(
-              errorstring,
-              "*** ERROR: Constant side do not match for term %d, row %d: %f != %f.\n",
-              term_ind, row_ind, coeff, coeff_check);
-          throw std::logic_error(errorstring);
-      }
-    } // loop over terms
-  } // check that update was performed correctly
-#endif
-} /* updateRCVMILPFromCut */
-
 int computeRankOfRCVMILPSolution(
     /// [out] Indices of nonzero multipliers
     std::vector<int>& delta,
@@ -697,7 +603,9 @@ void addRankConstraint(
     /// [in] Indices of delta variables
     const std::vector<int>& delta,
     /// [in] Rank of solution
-    const int rank) {
+    const int rank,
+    /// [in] Iteration number
+    const int iter_num = -1) {
   const int num_nonzero_multipliers = delta.size();
   if (num_nonzero_multipliers <= rank) {
     return;
@@ -719,7 +627,8 @@ void addRankConstraint(
   expr.addTerms(coeffs.data(), vars.data(), num_nonzero_multipliers);
 
   // Add constraint
-  model->addConstr(expr, GRB_LESS_EQUAL, rank);
+  std::string constr_name = iter_num > 0 ? "rank_" + std::to_string(iter_num) : "";
+  model->addConstr(expr, GRB_LESS_EQUAL, rank, constr_name);
 
   // Update model
   model->update();
@@ -727,14 +636,85 @@ void addRankConstraint(
   if (all_vars) {
     delete[] all_vars;
   }
-} /* addRankConstraint */
-#endif // USE_GUROBI
+} /* addRankConstraint (Gurobi) */
+
+void updateRCVMILPFromCut(
+    /// [in] RCVMILP to be updated
+    GRBModel* const model,
+    /// [in] Cut to be added to the RCVMILP
+    const OsiRowCut* const cut,
+    /// [in] Disjunction that the cut is from
+    const Disjunction* const disj,
+    /// [in] Original solver
+    const OsiSolverInterface* const solver,
+    /// [in] Log file
+    FILE* const log_file) {
+  // Create dense vector from cut
+  std::vector<double> alpha_beta(solver->getNumCols() + 1, 0.);
+
+  const CoinPackedVector cut_row = cut->row();
+  for (int i = 0; i < cut_row.getNumElements(); i++) {
+    const int col_ind = cut_row.getIndices()[i];
+    const double coeff = cut_row.getElements()[i];
+    alpha_beta[col_ind] = coeff;
+  }
+  alpha_beta[solver->getNumCols()] = -1. * cut->rhs();
+
+  // The cut goes into column 0 (corresponding to variable \theta)
+  // Let m' be the number of rows of Atilde
+  // Then the cut coefficients are inputted into rows 0,...,n-1, then t*(n+m'+1),...,t*(n+m'+1)+n-1 for t = 0,...,num_terms-1
+  const int num_terms = disj->terms.size();
+  const int theta_col = 0;
+  const int mprime = calculateNumRowsAtilde(disj, solver);
+
+  GRBConstr* constrs = model->getConstrs(); // An array of all linear constraints in the model. Note that this array is heap-allocated, and must be returned to the heap by the user.
+  GRBVar* vars = model->getVars();
+  GRBVar theta_var = vars[theta_col];
+
+  // Set each term's coefficients with new cut
+  for (int term_ind = 0; term_ind < num_terms; term_ind++) {
+    const int offset = term_ind * (solver->getNumCols() + 1 + mprime);
+
+    for (int col_ind = 0; col_ind <= solver->getNumCols(); col_ind++) {
+      const int constr_ind = col_ind + offset;
+      const double newvalue = alpha_beta[col_ind];
+      model->chgCoeff(constrs[constr_ind], theta_var, newvalue);
+    }
+  }
+  
+  model->update();
+
+#ifdef TRACE
+  {
+    // Check coefficients of (alpha,-beta) for each term
+    for (int term_ind = 0; term_ind < num_terms; term_ind++) {
+      const int offset = term_ind * (solver->getNumCols() + 1 + mprime);
+
+      for (int col_ind = 0; col_ind <= solver->getNumCols(); col_ind++) {
+        const int constr_ind = col_ind + offset;
+        const double coeff = alpha_beta[col_ind];
+        const double coeff_check = model->getCoeff(constrs[constr_ind], theta_var);
+        if (!isVal(coeff, coeff_check)) {
+          error_msg(
+              errorstring,
+              "*** ERROR: Coefficients do not match for term %d, col %d/%d (last = rhs): %f != %f.\n",
+              term_ind, col_ind, solver->getNumCols(), coeff, coeff_check);
+          throw std::logic_error(errorstring);
+        }
+      }
+    } // loop over terms
+  } // check that update was performed correctly
+#endif
+
+  if (constrs) { delete[] constrs; }
+  if (vars) { delete[] vars; }
+} /* updateRCVMILPFromCut (Gurobi) */
 
 /// @details Solves the RCVMILP and populates the certificate
 /// @return 0 if problem solved to optimality or terminated by limit, 1 if problem proved infeasible
 int solveRCVMILP(
     /// [in/out] RCVMILP instance
-    OsiSolverInterface* const liftingSolver,
+    GRBModel* const model,
     /// [out] Solution to the RCVMILP, where order of variables is theta, delta, {v^t}_{t \in T}
     std::vector<double>& solution,
     /// [in] Disjunction from which cuts were generated
@@ -756,106 +736,260 @@ int solveRCVMILP(
     parseFilename(logdir, logname, in_file_ext, params.get(StrengtheningParameters::stringParam::LOGFILE), params.logfile);
     std::string instdir, instname;
     parseFilename(instdir, instname, in_file_ext, params.get(StrengtheningParameters::stringParam::FILENAME), params.logfile);
-    lp_filename_stub = logdir + "/" + instname + "_cglp_" + stringValue(cut_ind, "%d");
+    lp_filename_stub = logdir + "/" + instname + "_cglp_" + stringValue(cut_ind, "%d") + "_GUROBI";
   }
 
-  // if (write_lp) {
-  //   std::string lp_filename = lp_filename_stub + "_COIN" + LP_EXT;
-  //   printf("\n## Saving CGLP from cut to file: %s\n", lp_filename.c_str());
-  //   liftingSolver->writeLp(lp_filename.c_str());
-  // }
-
-  if (use_bb_option(params.get(StrengtheningParameters::intParam::BB_STRATEGY),
-      StrengtheningParameters::BB_Strategy_Options::gurobi)) {
-#ifdef USE_GUROBI
-    GRBModel* m = buildGRBModelFromOsi(liftingSolver, params.logfile);
-    GRBModel model = *m;
-    setStrategyForBBTestGurobi(params, 0, model);
-
-    bool reached_feasibility = false;
-    int num_iters = 0;
-    const int max_iters = 100;
-    while (!reached_feasibility && num_iters < max_iters) {
-      printf("\n## Solving CGLP (iter %d) from cut %d. ##\n", num_iters, cut_ind);
-      
-      if (write_lp) {
-        std::string lp_filename = lp_filename_stub + "_GUROBI" + LP_EXT;
-        printf("File: %s\n", lp_filename.c_str());
-        m->write(lp_filename);
-      }
-
-      return_code = solveGRBModel(model, params.logfile);
-      num_iters++;
-      // doBranchAndBoundWithGurobi(liftingSolver,
-      //     params.get(StrengtheningParameters::intParam::BB_STRATEGY),
-      //     tmp_bb_info, best_bound, &solution);
-
-      if (return_code == GRB_INFEASIBLE || return_code == GRB_UNBOUNDED || return_code == GRB_INF_OR_UNBD) {
-        error_msg(errorstring,
-            "solveRCVMILP: Branch and bound with Gurobi did not find an optimal solution for cut %d.\n", cut_ind);
-        writeErrorToLog(errorstring, params.logfile);
-        throw std::logic_error(errorstring);
-      } else {
-        return_code = 0;
-      }
-
-      // Retrieve solution from model
-      saveSolution(solution, model);
-
-      // Check rank of solution vs number of nonzero multipliers
-      std::vector<int> delta;
-      const int certificate_rank = computeRankOfRCVMILPSolution(delta, solution.data(), disj, solver, Atilde, params, cut_ind);
-      if (certificate_rank < (int) delta.size()) {
-        addRankConstraint(&model, delta, certificate_rank);
-      } else {
-        reached_feasibility = true;
-      }
-    }
-    printf("solveRCVMILP: Reached feasibility with Gurobi in %d iterations.\n", num_iters);
-
-// #ifdef DEBUG
-//     { // DEBUG DEBUG
-//       checkCoefficientForColumn(liftingSolver, solution.data(), 1, 0);
-//     } // DEBUG DEBUG
-// #endif
-
-    // Free memory
-    if (m) { delete m; }
-#endif // USE_GUROBI
-  } // USE_GUROBI
-  else if (use_bb_option(params.get(StrengtheningParameters::intParam::BB_STRATEGY), 
-      StrengtheningParameters::BB_Strategy_Options::cbc)) {
-#ifdef USE_CBC
-    CbcModel cbc_model(*liftingSolver);
-    setIPSolverParameters(&cbc_model, params.get(StrengtheningParameters::VERBOSITY));
+  bool reached_feasibility = false;
+  int num_iters = 0;
+  const int MAX_ITERS = 100;
+  while (!reached_feasibility && num_iters < MAX_ITERS) {
+    printf("\n## solveRCVMILP (Gurobi): Solving CGLP (iter %d) from cut %d. ##\n", num_iters, cut_ind);
 
     if (write_lp) {
-      std::string lp_filename = lp_filename_stub + "_COIN" + LP_EXT;
-      printf("\n## Saving CGLP from cut to file: %s\n", lp_filename.c_str());
-      liftingSolver->writeLp(lp_filename.c_str());
+      const std::string lp_filename = lp_filename_stub + LP_EXT;
+      printf("File: %s\n", lp_filename.c_str());
+      model->write(lp_filename);
     }
-    
-    cbc_model.branchAndBound(params.get(StrengtheningParameters::VERBOSITY));
-    if (cbc_model.isProvenOptimal()) {
-      // Store found solution in solution
-      const double* const cbc_sol = cbc_model.getColSolution();
-      const int num_cols = cbc_model.getNumCols();
-      solution.assign(cbc_sol, cbc_sol + num_cols);
-    } else if (cbc_model.status() == 1) { // time limit, max nodes, or max iters reached
-      warning_msg(warnstring, "Cbc stopped with status = 1 for cut %d.\n", cut_ind);
+
+    return_code = solveGRBModel(*model, params.logfile);
+
+    if (return_code == GRB_INFEASIBLE || return_code == GRB_UNBOUNDED || return_code == GRB_INF_OR_UNBD) {
+      error_msg(errorstring,
+          "solveRCVMILP (Gurobi): Branch and bound is infeasible or unbounded for cut %d in iteration %d.\n", cut_ind, num_iters);
+      writeErrorToLog(errorstring, params.logfile);
+      throw std::logic_error(errorstring);
     } else {
-      return_code = 1;
+      return_code = 0;
     }
-#endif // USE_CBC
-  } // USE_CBC
-  else {
-    error_msg(errorstring, "solveRCVMILP: Implementation for solving RCVMILP is available only for Cbc and Gurobi.\n");
-    writeErrorToLog(errorstring, params.logfile);
-    throw std::logic_error(errorstring);
-  }
+    num_iters++;
+
+    // Retrieve solution from model
+    saveSolution(solution, *model);
+
+    // Check rank of solution vs number of nonzero multipliers
+    std::vector<int> delta;
+    const int certificate_rank = computeRankOfRCVMILPSolution(delta, solution.data(), disj, solver, Atilde, params, cut_ind);
+    if (certificate_rank < (int) delta.size()) {
+      addRankConstraint(model, delta, certificate_rank, num_iters);
+    } else {
+      reached_feasibility = true;
+    }
+  } // iterate while !reached_feasibility
+  printf("solveRCVMILP (Gurobi): Terminated in %d / %d iterations. Reached feasibility: %d.\n", num_iters, MAX_ITERS, reached_feasibility);
 
   return return_code;
-} /* solveRCVMILP */
+} /* solveRCVMILP (Gurobi) */
+#endif // USE_GUROBI
+
+#ifdef USE_CBC
+/// @brief Append row to \p model restricting sum of delta variables to be <= \p rank
+void addRankConstraint(
+    /// [in/out] CbcModel RCVMILP instance 
+    CbcModel* const model,
+    /// [in] Indices of delta variables
+    const std::vector<int>& delta,
+    /// [in] Rank of solution
+    const int rank,
+    /// [in] Iteration number
+    const int iter_num = -1) {
+  const int num_nonzero_multipliers = delta.size();
+  if (num_nonzero_multipliers <= rank) {
+    return;
+  }
+
+  // Add new constraint to Cbc model to restrict sum of delta variables to be <= rank
+  // Create new CoinPackedVector
+  CoinPackedVector row;
+  row.reserve(num_nonzero_multipliers);
+  for (int i = 0; i < num_nonzero_multipliers; i++) {
+    const int var_ind = delta[i];
+    row.insert(var_ind, 1.);
+  }
+
+  // Add constraint
+  const double lb = -1. * model->getInfinity();
+  const double ub = rank;
+  // const char sense = 'L';
+  const std::string name = iter_num > 0 ? "rank_" + std::to_string(iter_num) : "";
+
+  model->solver()->addRow(row, lb, ub, name);
+} /* addRankConstraint (Cbc) */
+
+void updateRCVMILPFromCut(
+    /// [in] RCVMILP to be updated
+    CbcModel* const cbc_model,
+    /// [in] Cut to be added to the RCVMILP
+    const OsiRowCut* const cut,
+    /// [in] Disjunction that the cut is from
+    const Disjunction* const disj,
+    /// [in] Original solver
+    const OsiSolverInterface* const solver,
+    /// [in] Log file
+    FILE* const log_file) {
+  OsiSolverInterface* liftingSolver = cbc_model->solver();
+
+  const int num_terms = disj->terms.size();
+
+  // The cut goes into column 0 (corresponding to variable \theta)
+  // Let m' be the number of rows of Atilde
+  // Then the cut coefficients are inputted into rows 0,...,n-1, then t*(n+m'+1),...,t*(n+m'+1)+n-1 for t = 0,...,num_terms-1
+  const int theta_col = 0;
+  const int mprime = calculateNumRowsAtilde(disj, solver);
+
+  // 2023-08-04 amk: not sure how to replace column 1, since indices may be different (so CoinPackedMatrix::replaceVector is not an option)
+  // Create new CoinPackedMatrix with new cut column
+  CoinPackedMatrix old_mx(*liftingSolver->getMatrixByCol()); // this is a copy
+  old_mx.deleteCols(1, &theta_col);
+
+  // Prepare rows corresponding to the cut
+  CoinPackedVector alpha_beta; // will be [alpha; beta; 0]
+  alpha_beta.append(cut->row());
+  alpha_beta.insert(solver->getNumCols(), -1. * cut->rhs());
+  
+  // Duplicate this for each term
+  CoinPackedVector alpha_beta_col(alpha_beta);
+  for (int term_ind = 1; term_ind < num_terms; term_ind++) {
+    const int offset = (solver->getNumCols() + mprime + 1);
+    // Modify indices of alpha_beta
+    const int num_el = alpha_beta.getNumElements();
+    int* ind = alpha_beta.getIndices();
+    for (int i = 0; i < num_el; i++) {
+      ind[i] += offset;
+    }
+    alpha_beta_col.append(alpha_beta);
+  }
+  alpha_beta_col.insert(old_mx.getNumRows()-1, 0.);
+
+  // Create new matrix with first column containing the appropriate number of copies of theta_delta
+  // this is not right if theta_col != 0
+  if (theta_col != 0) throw std::logic_error("Value of theta_col has to be 0 for now.");
+  CoinPackedMatrix new_mx;
+  new_mx.setDimensions(old_mx.getNumRows(), 0);
+  new_mx.appendCol(alpha_beta_col);
+  new_mx.rightAppendPackedMatrix(old_mx);
+
+  // Replace matrix in liftingSolver
+  liftingSolver->replaceMatrix(new_mx);
+
+#ifdef TRACE
+  {
+    // Check that all coefficients were correctly set
+    const CoinPackedMatrix* mx = liftingSolver->getMatrixByCol();
+    const CoinShallowPackedVector alpha_beta_col_check = mx->getVector(theta_col);  
+    const CoinPackedVector cut_row = cut->row();
+    const double cut_rhs = cut->rhs();
+    for (int term_ind = 0; term_ind < num_terms; term_ind++) {
+      const int offset = term_ind * (solver->getNumCols() + mprime + 1);
+
+      // Check coefficients of (alpha,-beta) for this term
+      for (int el = 0; el < cut_row.getNumElements(); el++) {
+        const int row_ind = offset + cut_row.getIndices()[el];
+        const double coeff = cut_row.getElements()[el];
+        const double coeff_check = alpha_beta_col_check[row_ind];
+        if (!isVal(coeff, coeff_check)) {
+          error_msg(
+              errorstring,
+              "*** ERROR: Coefficients do not match for term %d, row %d: %f != %f.\n",
+              term_ind, row_ind, coeff, coeff_check);
+          throw std::logic_error(errorstring);
+        }
+      }
+
+      // Check right-hand side row
+      const int row_ind = offset + solver->getNumCols();
+      const double coeff = -1. * cut_rhs;
+      const double coeff_check = alpha_beta_col_check[row_ind];
+      if (!isVal(coeff, coeff_check)) {
+          error_msg(
+              errorstring,
+              "*** ERROR: Constant side do not match for term %d, row %d: %f != %f.\n",
+              term_ind, row_ind, coeff, coeff_check);
+          throw std::logic_error(errorstring);
+      }
+    } // loop over terms
+  } // check that update was performed correctly
+#endif
+
+  OsiSolverInterface* oldSolver = cbc_model->swapSolver(liftingSolver);
+  if (oldSolver && cbc_model->modelOwnsSolver()) {
+    delete oldSolver;
+  }
+} /* updateRCVMILPFromCut (Cbc) */
+
+/// @details Solves the RCVMILP and populates the certificate
+/// @return 0 if problem solved to optimality or terminated by limit, 1 if problem proved infeasible
+int solveRCVMILP(
+    /// [in/out] RCVMILP instance
+    CbcModel* const cbc_model,
+    /// [out] Solution to the RCVMILP, where order of variables is theta, delta, {v^t}_{t \in T}
+    std::vector<double>& solution,
+    /// [in] Disjunction from which cuts were generated
+    const Disjunction* const disj,
+    /// [in] Solver corresponding to instance for which cuts are valid
+    const OsiSolverInterface* const solver,
+    /// [in] Matrix containing original + globally-valid constraints
+    const CoinPackedMatrix& Atilde,
+    /// [in] Parameters for choosing solver
+    const StrengtheningParameters::Parameters& params,
+    /// [in] Index of the cut for which we are checking the certificate
+    const int cut_ind) {
+  int return_code = 0;
+  const bool write_lp = true && !params.get(StrengtheningParameters::LOGFILE).empty();
+  std::string lp_filename_stub = "", LP_EXT = ".lp";
+  if (write_lp) {
+    // Write to file, using logfile as the output directory
+    std::string logdir, logname, in_file_ext;
+    parseFilename(logdir, logname, in_file_ext, params.get(StrengtheningParameters::stringParam::LOGFILE), params.logfile);
+    std::string instdir, instname;
+    parseFilename(instdir, instname, in_file_ext, params.get(StrengtheningParameters::stringParam::FILENAME), params.logfile);
+    lp_filename_stub = logdir + "/" + instname + "_cglp_" + stringValue(cut_ind, "%d") + "_COIN";
+  }
+
+  bool reached_feasibility = false;
+  int num_iters = 0;
+  const int MAX_ITERS = 100;
+  while (!reached_feasibility && num_iters < MAX_ITERS) {
+    printf("\n## solveRCVMILP (Cbc): Solving CGLP (iter %d) from cut %d. ##\n", num_iters, cut_ind);
+
+    if (write_lp) {
+      const std::string lp_filename = lp_filename_stub + LP_EXT;
+      printf("File: %s\n", lp_filename.c_str());
+      cbc_model->referenceSolver()->writeLp(lp_filename.c_str());
+    }
+    
+    cbc_model->branchAndBound(params.get(StrengtheningParameters::VERBOSITY));
+    
+    if (cbc_model->status() == 1) { // time limit, max nodes, or max iters reached
+      warning_msg(warnstring, "solveRCVMILP (Cbc): Cbc stopped with status = 1 for cut %d.\n", cut_ind);
+      return_code = 1;
+      break;
+    } else {
+      error_msg(errorstring,
+          "solveRCVMILP (Cbc): Branch and bound is infeasible or unbounded for cut %d in iteration %d.\n", cut_ind, num_iters);
+      writeErrorToLog(errorstring, params.logfile);
+      throw std::logic_error(errorstring);
+    }
+    num_iters++;
+
+    // Retrieve solution from model
+    const double* const cbc_sol = cbc_model->getColSolution();
+    const int num_cols = cbc_model->getNumCols();
+    solution.assign(cbc_sol, cbc_sol + num_cols);
+
+    // Check rank of solution vs number of nonzero multipliers
+    std::vector<int> delta;
+    const int certificate_rank = computeRankOfRCVMILPSolution(delta, solution.data(), disj, solver, Atilde, params, cut_ind);
+    if (certificate_rank < (int) delta.size()) {
+      addRankConstraint(cbc_model, delta, certificate_rank, num_iters);
+    } else {
+      reached_feasibility = true;
+    }
+  } // iterate while !reached_feasibility
+  printf("solveRCVMILP (Cbc): Terminated in %d / %d iterations. Reached feasibility: %d.\n", num_iters, MAX_ITERS, reached_feasibility);
+
+  return return_code;
+} /* solveRCVMILP (Cbc) */
+#endif // USE_CBC
 
 void getCertificateFromRCVMILPSolution(
     /// [out] Certificate of cut (vector of length m + m_t + n)
@@ -1079,28 +1213,86 @@ void analyzeCutRegularity(
   const int rank_atilde = computeRank(&Atilde, std::vector<int>(), std::vector<int>());
 
   // Prepare solver for computing certificate
+  // TODO: Probably should just input directly to other solver if we are not using Cbc...
   OsiSolverInterface* liftingSolver = new SolverInterface;
   setLPSolverParameters(liftingSolver, params.get(StrengtheningParameters::VERBOSITY));
   genRCVMILPFromCut(liftingSolver, cuts.rowCutPtr(0), disj, solver, params);
-  // cbc_model->setModelOwnsSolver(false);
-  // cbc_model->swapSolver(liftingSolver);
-  // cbc_model->setModelOwnsSolver(true); // solver will be deleted with cbc object
+
+  // Check that if Gurobi is selected, then USE_GUROBI is defined
+  const bool use_gurobi = use_bb_option(params.get(StrengtheningParameters::intParam::BB_STRATEGY),
+      StrengtheningParameters::BB_Strategy_Options::gurobi);
+  const bool use_cbc = use_bb_option(params.get(StrengtheningParameters::intParam::BB_STRATEGY),
+      StrengtheningParameters::BB_Strategy_Options::cbc);
+      
+#ifdef USE_GUROBI
+  GRBModel* grbSolver;
+#endif
+  if (use_gurobi) {
+#ifndef USE_GUROBI
+    error_msg(errorstring, "analyzeCutRegularity: Gurobi is selected as the branch-and-bound solver, but USE_GUROBI is not defined.\n");
+    writeErrorToLog(errorstring, params.logfile);
+    throw std::logic_error(errorstring);
+#else
+    grbSolver = buildGRBModelFromOsi(liftingSolver, params.logfile); 
+    setStrategyForBBTestGurobi(params, 0, *grbSolver);
+#endif
+  }
+
+#ifdef USE_CBC
+  CbcModel* cbcSolver;
+#endif
+  if (use_cbc) {
+#ifndef USE_CBC
+    error_msg(errorstring, "analyzeCutRegularity: Cbc is selected as the branch-and-bound solver, but USE_CBC is not defined.\n");
+    writeErrorToLog(errorstring, params.logfile);
+    throw std::logic_error(errorstring);
+#else
+    cbcSolver = new CbcModel(*liftingSolver);
+    setIPSolverParameters(cbcSolver, params.get(StrengtheningParameters::VERBOSITY));
+#endif
+  }
+
+  if (!use_gurobi && !use_cbc) {
+    error_msg(errorstring, "analyzeCutRegularity: Implementation for solving RCVMILP is available only for Cbc and Gurobi.\n");
+    writeErrorToLog(errorstring, params.logfile);
+    throw std::logic_error(errorstring);
+  }
 
   v.clear();
   v.resize(cuts.sizeCuts());
   for (int cut_ind = 0; cut_ind < cuts.sizeCuts(); cut_ind++) {
     if (cut_ind > 0) {
-      updateRCVMILPFromCut(liftingSolver, cuts.rowCutPtr(cut_ind), disj, solver, params.logfile);
+      if (use_gurobi) {
+#ifdef USE_GUROBI
+        updateRCVMILPFromCut(grbSolver, cuts.rowCutPtr(cut_ind), disj, solver, params.logfile);
+#endif
+      } else {
+        updateRCVMILPFromCut(cbcSolver, cuts.rowCutPtr(cut_ind), disj, solver, params.logfile);
+      }
     }
 
     // Solve the RCVMILP
     std::vector<double> solution;
-    const int return_code = solveRCVMILP(liftingSolver, solution, disj, solver, Atilde, params, cut_ind);
+    int return_code = 0;
+    if (use_gurobi) {
+#ifdef USE_GUROBI
+      return_code = solveRCVMILP(grbSolver, solution, disj, solver, Atilde, params, cut_ind);
+#endif
+    } else {
+      return_code = solveRCVMILP(cbcSolver, solution, disj, solver, Atilde, params, cut_ind);
+    }
+    
     if (return_code > 0) {
       error_msg(errorstring, "Solver does not terminate with optimal solution for cut %d.\n", cut_ind);
       writeErrorToLog(errorstring, params.logfile);
       
-      if (liftingSolver) { delete liftingSolver; }
+      if (liftingSolver) { if (!use_cbc || !cbcSolver || !cbcSolver->modelOwnsSolver()) { delete liftingSolver; } }
+#ifdef USE_GUROBI
+      if (use_gurobi && grbSolver) { delete grbSolver; }
+#endif
+#ifdef USE_CBC
+      if (use_cbc && cbcSolver) { delete cbcSolver; }
+#endif
       
       throw std::logic_error(errorstring);
     }
@@ -1127,7 +1319,11 @@ void analyzeCutRegularity(
             disj, solver, Atilde, params);
   } // loop over cuts
 
-  // if (cbc_model) { delete cbc_model; }
-  // if (liftingSolver && !cbc_model->modelOwnsSolver()) { delete liftingSolver; }
-  if (liftingSolver) { delete liftingSolver; }
+  if (liftingSolver) { if (!use_cbc || !cbcSolver || !cbcSolver->modelOwnsSolver()) { delete liftingSolver; } }
+#ifdef USE_GUROBI
+  if (use_gurobi && grbSolver) { delete grbSolver; }
+#endif
+#ifdef USE_CBC
+  if (use_cbc && cbcSolver) { delete cbcSolver; }
+#endif
 } /* analyzeCutRegularity */
