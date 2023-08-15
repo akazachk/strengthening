@@ -614,6 +614,122 @@ void updateRCVMILPFromCut(
 #endif
 } /* updateRCVMILPFromCut */
 
+int computeRankOfRCVMILPSolution(
+    /// [out] Indices of nonzero multipliers
+    std::vector<int>& delta,
+    /// [in] Solution to RCVMILP, where variables are theta then delta then {u^t}_{t \in T} then {u^t_0}_{t \in T}
+    const double* const solution,
+    /// [in] Disjunction from which cuts were generated
+    const Disjunction* const disj,
+    /// [in] Solver corresponding to instance for which cuts are valid
+    const OsiSolverInterface* const solver,
+    /// [in] Matrix containing original + globally-valid constraints
+    const CoinPackedMatrix& Atilde,
+    /// [in] Parameters
+    const StrengtheningParameters::Parameters& params,
+    /// [in] Cut index
+    const int cut_ind) {
+  std::vector<int> rows, cols;
+
+  delta.clear();
+  delta.reserve(solver->getNumCols());
+
+  const int num_nonbound_constr_tilde = solver->getNumRows() + disj->common_changed_var.size() + disj->common_ineqs.size();
+
+  int num_lb = 0;
+  int num_ub = 0;
+  for (int col = 0; col < solver->getNumCols(); col++) {
+    const double lb = solver->getColLower()[col];
+    const double ub = solver->getColUpper()[col];
+
+    num_lb += !isInfinity(std::abs(lb));
+    num_ub += !isInfinity(std::abs(ub));
+  }
+
+  // Check the binary delta variables,
+  // which are forced to be nonzero if the corresponding row
+  // has a nonzero multiplier for any disjunctive term,
+  // through the \delta_i \ge u^t_i constraints (or \delta_i \ge -u^t_i for <= constraints)
+  const int delta_var_start = 1;
+  for (int row_ind = 0; row_ind < num_nonbound_constr_tilde; row_ind++) {
+    const int var = delta_var_start + row_ind;
+    if (isZero(solution[var])) {
+      continue;
+    }
+    delta.push_back(row_ind);
+    rows.push_back(row_ind);
+  }
+
+  // For the original variable bounds,
+  // check if the lb or ub \delta variables are nonzero
+  // Throw a warning if they are both nonzero...
+  for (int col_ind = 0; col_ind < solver->getNumCols(); col_ind++) {
+    const int var_lb = delta_var_start + num_nonbound_constr_tilde + col_ind;
+    const int var_ub = delta_var_start + num_nonbound_constr_tilde + num_lb + col_ind;
+    
+    const bool lb_nonzero = !isZero(solution[var_lb]);
+    const bool ub_nonzero = !isZero(solution[var_ub]);
+    
+    if (lb_nonzero && ub_nonzero) {
+      error_msg(errorstring, "Both lower and upper bound delta variables are nonzero for cut %d, col %d.\n", cut_ind, col_ind);
+      writeErrorToLog(errorstring, params.logfile);
+      throw std::logic_error(errorstring);
+    }
+    else if (lb_nonzero) {
+      delta.push_back(var_lb);
+      cols.push_back(col_ind);
+    }
+    else if (ub_nonzero) {
+      delta.push_back(var_ub);
+      cols.push_back(col_ind);
+    }
+  } // loop over columns
+
+  const int certificate_rank = computeRank(&Atilde, rows, cols);
+  return certificate_rank;
+} /* computeRankOfRCVMILPSolution */
+
+#ifdef USE_GUROBI
+/// @brief Append row to Gurobi \p model restricting sum of delta variables to be <= \p rank
+void addRankConstraint(
+    /// [in/out] Gurobi RCVMILP instance 
+    GRBModel* const model,
+    /// [in] Indices of delta variables
+    const std::vector<int>& delta,
+    /// [in] Rank of solution
+    const int rank) {
+  const int num_nonzero_multipliers = delta.size();
+  if (num_nonzero_multipliers <= rank) {
+    return;
+  }
+
+  // Create new GRBLinExpr
+  GRBLinExpr expr;
+
+  std::vector<double> coeffs(num_nonzero_multipliers, 1.);
+  std::vector<GRBVar> vars;
+
+  GRBVar* all_vars = model->getVars(); // An array of all variables in the model. Note that this array is heap-allocated, and must be returned to the heap by the user.
+
+  for (int i = 0; i < num_nonzero_multipliers; i++) {
+    const int var_ind = delta[i];
+    vars.push_back(all_vars[var_ind]);
+  }
+
+  expr.addTerms(coeffs.data(), vars.data(), num_nonzero_multipliers);
+
+  // Add constraint
+  model->addConstr(expr, GRB_LESS_EQUAL, rank);
+
+  // Update model
+  model->update();
+
+  if (all_vars) {
+    delete[] all_vars;
+  }
+} /* addRankConstraint */
+#endif // USE_GUROBI
+
 /// @details Solves the RCVMILP and populates the certificate
 /// @return 0 if problem solved to optimality or terminated by limit, 1 if problem proved infeasible
 int solveRCVMILP(
@@ -621,6 +737,12 @@ int solveRCVMILP(
     OsiSolverInterface* const liftingSolver,
     /// [out] Solution to the RCVMILP, where order of variables is theta, delta, {v^t}_{t \in T}
     std::vector<double>& solution,
+    /// [in] Disjunction from which cuts were generated
+    const Disjunction* const disj,
+    /// [in] Solver corresponding to instance for which cuts are valid
+    const OsiSolverInterface* const solver,
+    /// [in] Matrix containing original + globally-valid constraints
+    const CoinPackedMatrix& Atilde,
     /// [in] Parameters for choosing solver
     const StrengtheningParameters::Parameters& params,
     /// [in] Index of the cut for which we are checking the certificate
@@ -650,28 +772,46 @@ int solveRCVMILP(
     GRBModel model = *m;
     setStrategyForBBTestGurobi(params, 0, model);
 
-    if (write_lp) {
-      std::string lp_filename = lp_filename_stub + "_GUROBI" + LP_EXT;
-      printf("\n## Saving CGLP from cut to file: %s\n", lp_filename.c_str());
-      m->write(lp_filename);
+    bool reached_feasibility = false;
+    int num_iters = 0;
+    const int max_iters = 100;
+    while (!reached_feasibility && num_iters < max_iters) {
+      printf("\n## Solving CGLP (iter %d) from cut %d. ##\n", num_iters, cut_ind);
+      
+      if (write_lp) {
+        std::string lp_filename = lp_filename_stub + "_GUROBI" + LP_EXT;
+        printf("File: %s\n", lp_filename.c_str());
+        m->write(lp_filename);
+      }
+
+      return_code = solveGRBModel(model, params.logfile);
+      num_iters++;
+      // doBranchAndBoundWithGurobi(liftingSolver,
+      //     params.get(StrengtheningParameters::intParam::BB_STRATEGY),
+      //     tmp_bb_info, best_bound, &solution);
+
+      if (return_code == GRB_INFEASIBLE || return_code == GRB_UNBOUNDED || return_code == GRB_INF_OR_UNBD) {
+        error_msg(errorstring,
+            "solveRCVMILP: Branch and bound with Gurobi did not find an optimal solution for cut %d.\n", cut_ind);
+        writeErrorToLog(errorstring, params.logfile);
+        throw std::logic_error(errorstring);
+      } else {
+        return_code = 0;
+      }
+
+      // Retrieve solution from model
+      saveSolution(solution, model);
+
+      // Check rank of solution vs number of nonzero multipliers
+      std::vector<int> delta;
+      const int certificate_rank = computeRankOfRCVMILPSolution(delta, solution.data(), disj, solver, Atilde, params, cut_ind);
+      if (certificate_rank < (int) delta.size()) {
+        addRankConstraint(&model, delta, certificate_rank);
+      } else {
+        reached_feasibility = true;
+      }
     }
-
-    return_code = solveGRBModel(model, params.logfile);
-    // doBranchAndBoundWithGurobi(liftingSolver,
-    //     params.get(StrengtheningParameters::intParam::BB_STRATEGY),
-    //     tmp_bb_info, best_bound, &solution);
-
-    if (return_code == GRB_INFEASIBLE || return_code == GRB_UNBOUNDED || return_code == GRB_INF_OR_UNBD) {
-      error_msg(errorstring,
-          "solveRCVMILP: Branch and bound with Gurobi did not find an optimal solution for cut %d.\n", cut_ind);
-      writeErrorToLog(errorstring, params.logfile);
-      throw std::logic_error(errorstring);
-    } else {
-      return_code = 0;
-    }
-
-    // Retrieve solution from model
-    saveSolution(solution, model);
+    printf("solveRCVMILP: Reached feasibility with Gurobi in %d iterations.\n", num_iters);
 
 // #ifdef DEBUG
 //     { // DEBUG DEBUG
@@ -775,7 +915,10 @@ void getCertificateFromRCVMILPSolution(
     const bool ub_nonzero = !isZero(solution[var_ub]);
     
     if (lb_nonzero && ub_nonzero) {
-      warning_msg(warnstring, "Both lower and upper bound delta variables are nonzero for cut %d, col %d.\n", cut_ind, col_ind);
+      // warning_msg(warnstring, "Both lower and upper bound delta variables are nonzero for cut %d, col %d.\n", cut_ind, col_ind);
+      error_msg(errorstring, "Both lower and upper bound delta variables are nonzero for cut %d, col %d.\n", cut_ind, col_ind);
+      writeErrorToLog(errorstring, logfile);
+      throw std::logic_error(errorstring);
     }
     else if (lb_nonzero) {
       delta.push_back(var_lb);
@@ -842,7 +985,10 @@ void getCertificateFromRCVMILPSolution(
       const bool ub_nonzero = !isZero(solution[var_ub]);
 
       if (lb_nonzero && ub_nonzero) {
-        warning_msg(warnstring, "Both lower and upper bound delta variables are nonzero for cut %d, col %d.\n", cut_ind, col_ind);
+        // warning_msg(warnstring, "Both lower and upper bound delta variables are nonzero for cut %d, col %d.\n", cut_ind, col_ind);
+        error_msg(errorstring, "Both lower and upper bound delta variables are nonzero for cut %d, col %d.\n", cut_ind, col_ind);
+        writeErrorToLog(errorstring, logfile);
+        throw std::logic_error(errorstring);
       }
       else if (lb_nonzero) {
         v[term_ind][v_ind] = solution[var_lb] / theta;
@@ -949,7 +1095,7 @@ void analyzeCutRegularity(
 
     // Solve the RCVMILP
     std::vector<double> solution;
-    const int return_code = solveRCVMILP(liftingSolver, solution, params, cut_ind);
+    const int return_code = solveRCVMILP(liftingSolver, solution, disj, solver, Atilde, params, cut_ind);
     if (return_code > 0) {
       error_msg(errorstring, "Solver does not terminate with optimal solution for cut %d.\n", cut_ind);
       writeErrorToLog(errorstring, params.logfile);

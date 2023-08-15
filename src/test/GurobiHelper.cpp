@@ -145,7 +145,7 @@ int solveGRBModel(GRBModel& model, FILE* const logfile) {
 void saveSolution(
     std::vector<double>& solution,
     const GRBModel& model) {
-  GRBVar* vars = model.getVars();
+  GRBVar* vars = model.getVars(); // An array of all variables in the model. Note that this array is heap-allocated, and must be returned to the heap by the user.
   const int num_vars = model.get(GRB_IntAttr_NumVars);
   // double* values = model.get(GRB_DoubleAttr_X, vars, num_vars); // error due to model being const
   // solution.assign(values, values + num_vars);

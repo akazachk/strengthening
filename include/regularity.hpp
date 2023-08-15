@@ -23,16 +23,16 @@ class OsiCuts;
 
 /// @brief Calculate the number of rows of Atilde
 int calculateNumRowsAtilde(
-  const Disjunction* const disj,
-  const OsiSolverInterface* const solver);
+    const Disjunction* const disj,
+    const OsiSolverInterface* const solver);
 
 /// @brief Create CoinPackedMatrix containing original constraints, globally-valid inequalities, and variable bounds
 void prepareAtilde(
-  CoinPackedMatrix& Atilde,
-  std::vector<double>& btilde,
-  const Disjunction* const disj,
-  const OsiSolverInterface* const solver,
-  FILE* logfile);
+    CoinPackedMatrix& Atilde,
+    std::vector<double>& btilde,
+    const Disjunction* const disj,
+    const OsiSolverInterface* const solver,
+    FILE* logfile);
 
 /// @brief Generate a CGLP from a cut
 void genRCVMILPFromCut(
@@ -50,38 +50,51 @@ void updateRCVMILPFromCut(
     const Disjunction* const disj, 
     const OsiSolverInterface* const solver);
 
+/// @brief  Given a solution to the RCVMILP, compute the rank of the submatrix given by the \p solution to the RCVMILP
+int computeRankOfRCVMILPSolution(
+    std::vector<int>& delta,
+    const double* const solution,
+    const Disjunction* const disj,
+    const OsiSolverInterface* const solver,
+    const CoinPackedMatrix& Atilde,
+    const StrengtheningParameters::Parameters& params,
+    const int cut_ind);
+
 /// @brief Obtain solution to RCVMILP
 int solveRCVMILP(
-  OsiSolverInterface* const liftingSolver,
-  std::vector<double>& solution, 
-  const StrengtheningParameters::Parameters& params,
-  const int cut_ind);
+    OsiSolverInterface* const liftingSolver,
+    std::vector<double>& solution,
+    const Disjunction* const disj,
+    const OsiSolverInterface* const solver,
+    const CoinPackedMatrix& Atilde,
+    const StrengtheningParameters::Parameters& params,
+    const int cut_ind);
 
 /// @brief Given a solution to the RCVMILP, extract the Farkas multipliers
 void getCertificateFromRCVMILPSolution(
-  CutCertificate& v,
-  const std::vector<double>& solution,
-  const Disjunction* const disj,
-  const OsiSolverInterface* const solver,
-  const int cut_ind,
-  FILE* const logfile);
+    CutCertificate& v,
+    const std::vector<double>& solution,
+    const Disjunction* const disj,
+    const OsiSolverInterface* const solver,
+    const int cut_ind,
+    FILE* const logfile);
 
 /// @brief Use existing \p Atilde matrix (or recalculate it) to compute rank of submatrix given by the #CutCertificate \p v
 void analyzeCertificateRegularity(
-  int& certificate_rank,
-  int& num_nonzero_multipliers,
-  const CutCertificate& v,
-  const Disjunction* const disj,
-  const OsiSolverInterface* const solver,
-  const CoinPackedMatrix& Atilde,
-  const StrengtheningParameters::Parameters& params);
+    int& certificate_rank,
+    int& num_nonzero_multipliers,
+    const CutCertificate& v,
+    const Disjunction* const disj,
+    const OsiSolverInterface* const solver,
+    const CoinPackedMatrix& Atilde,
+    const StrengtheningParameters::Parameters& params);
 
 /// @brief Given a set of \p cuts, identify regular ones and find their certificates to store in \p v
 void analyzeCutRegularity(
-  std::vector<CutCertificate>& v,
-  std::vector<int>& certificate_submx_rank,
-  std::vector<int>& num_nonzero_multipliers,
-  const OsiCuts& cuts,
-  const Disjunction* const disj,
-  const OsiSolverInterface* const solver,
-  const StrengtheningParameters::Parameters &params);
+    std::vector<CutCertificate>& v,
+    std::vector<int>& certificate_submx_rank,
+    std::vector<int>& num_nonzero_multipliers,
+    const OsiCuts& cuts,
+    const Disjunction* const disj,
+    const OsiSolverInterface* const solver,
+    const StrengtheningParameters::Parameters &params);
