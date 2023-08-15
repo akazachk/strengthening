@@ -1088,7 +1088,7 @@ void getCertificateFromRCVMILPSolution(
   for (int term_ind = 0; term_ind < disj->num_terms; term_ind++) {
     const int num_term_constr = disj->terms[term_ind].changed_var.size();
     const int rcvmilp_term_uvar_start_ind = delta_var_start + mprime + term_ind * mprime;
-    const int rcvmilp_term_u0var_start_ind = delta_var_start + mprime + disj->num_terms * mprime + term_ind * m_t_previous;
+    const int rcvmilp_term_u0var_start_ind = delta_var_start + mprime + disj->num_terms * mprime + m_t_previous;
     m_t_previous += num_term_constr;
     
     const int size_certificate = num_nonbound_constr_tilde + num_term_constr + solver->getNumCols();
