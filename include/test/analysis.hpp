@@ -38,16 +38,22 @@ struct SummaryBoundInfo {
   double ip_obj = std::numeric_limits<double>::max();
   double gmic_obj = std::numeric_limits<double>::max();
   double lpc_obj = std::numeric_limits<double>::max();
+
   double unstr_mycut_obj = std::numeric_limits<double>::max();
   double unstr_gmic_mycut_obj = std::numeric_limits<double>::max();
   double unstr_all_cuts_obj = std::numeric_limits<double>::max();
+  
   double mycut_obj = std::numeric_limits<double>::max();
   double gmic_mycut_obj = std::numeric_limits<double>::max();
   double all_cuts_obj = std::numeric_limits<double>::max();
-  double mycut_reg_obj = std::numeric_limits<double>::max(); ///< objective after adding strengthened cuts using RCVMILP certificate
-  double gmic_mycut_reg_obj = std::numeric_limits<double>::max(); ///< objective after adding GMICs and strengthened cuts using RCVMILP certificate
-  double all_cuts_reg_obj = std::numeric_limits<double>::max(); ///< objective after adding all cuts, including strengthened cuts using RCVMILP certificate and strengthened with original certificate
-  int num_root_bounds_changed = 0, num_gmic = 0, num_lpc = 0, num_mycut = 0, num_str_cuts = 0;
+  
+  double rcvmip_mycut_obj = std::numeric_limits<double>::max(); ///< objective after adding strengthened cuts using RCVMILP certificate
+  double rcvmip_gmic_mycut_obj = std::numeric_limits<double>::max(); ///< objective after adding GMICs and strengthened cuts using RCVMILP certificate
+  double rcvmip_all_cuts_obj = std::numeric_limits<double>::max(); ///< objective after adding all cuts, including strengthened cuts using RCVMILP certificate and strengthened with original certificate
+  
+  int num_root_bounds_changed = 0, num_gmic = 0, num_lpc = 0, num_mycut = 0;
+  int num_str_cuts = 0; ///< number of cuts for which strengthening using original certificate changes at least one coefficient
+  int num_rcvmip_str_cuts = 0; ///< number of cuts for which strengthening using RCVMIP certificate changes at least one coefficient
 }; /* SummaryBoundInfo */
 
 /// @brief Summary statistics for the disjunction generated

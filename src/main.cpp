@@ -71,7 +71,9 @@ enum OverallTimeStats {
   STR_TOTAL_TIME,
   STR_CALC_CERT_TIME,
   STR_APPLY_CERT_TIME,
-  ANALYZE_REGULARITY_TIME,
+  REG_TOTAL_TIME,
+  REG_CALC_CERT_TIME,
+  REG_APPLY_CERT_TIME,
   BB_TIME,
   APPLY_TIME,
   TOTAL_TIME,
@@ -90,7 +92,9 @@ const std::vector<std::string> OverallTimeStatsName {
   "STR_TOTAL_TIME",
   "STR_CALC_CERT_TIME",
   "STR_APPLY_CERT_TIME",
-  "ANALYZE_REGULARITY_TIME",
+  "REG_TOTAL_TIME",
+  "REG_CALC_CERT_TIME",
+  "REG_APPLY_CERT_TIME",
   "BB_TIME",
   "APPLY_TIME",
   "TOTAL_TIME"
@@ -113,7 +117,7 @@ SummaryBBInfo info_nocuts, info_mycuts, info_allcuts;
 SummaryDisjunctionInfo disjInfo;
 std::vector<SummaryCutInfo> cutInfoVec;
 SummaryCutInfo cutInfo, cutInfoGMICs, cutInfoUnstr;
-SummaryStrengtheningInfo strInfo;
+SummaryStrengtheningInfo strInfo, rcvmipStrInfo;
 
 // For output
 std::string cut_output = "", bb_output = "";
@@ -169,7 +173,8 @@ void strengtheningHelper(
     SummaryStrengtheningInfo& strInfo,
     const Disjunction* const disj,
     const OsiSolverInterface* const solver,
-    const std::vector<double>& ip_solution
+    const std::vector<double>& ip_solution,
+    const bool is_rcvmip = false
 );
 
 /// @brief Calculate the strengthening certificate (Farkas multipliers) \p v for \p currCuts
@@ -188,7 +193,8 @@ void applyStrengtheningCertificateHelper(
     SummaryStrengtheningInfo& strInfo,
     const Disjunction* const disj,
     const OsiSolverInterface* const solver,
-    const std::vector<double>& ip_solution
+    const std::vector<double>& ip_solution,
+    const bool is_rcvmip = false
 );
 
 /****************** MAIN FUNCTION **********************/
@@ -449,8 +455,10 @@ int main(int argc, char** argv) {
     std::vector<int> str_cut_ind; // indices of cuts that were strengthened
     std::vector<CutCertificate> v; // [cut][term][Farkas multiplier] in the end, per term, this will be of dimension rows + disj term ineqs + cols
 
+    timer.start_timer(OverallTimeStats::STR_TOTAL_TIME);
     strengtheningHelper(currCuts, v, str_cut_ind, strInfo, disj, solver, ip_solution);
     setStrInfo(strInfo, disj, v, solver->getNumRows(), solver->getNumCols(), str_cut_ind, gen.probData.EPS);
+    timer.end_timer(OverallTimeStats::STR_TOTAL_TIME);
 
     timer.end_timer(OverallTimeStats::CUT_TOTAL_TIME);
 
@@ -458,11 +466,12 @@ int main(int argc, char** argv) {
     // Analyze regularity and irregularity
     const int should_analyze_regularity = params.get(StrengtheningParameters::intParam::ANALYZE_REGULARITY);
 
+    // First, analyze regularity of the existing certificate for each cut
     if (should_analyze_regularity >= 1) {
       // Calculate the rank of the existing certificate for each cut
       // (Do not compute regularity of the cut overall)
       printf("\n## Analyzing regularity of certificate computed for each cut. ##\n");
-      timer.start_timer(OverallTimeStats::ANALYZE_REGULARITY_TIME);
+      timer.start_timer(OverallTimeStats::REG_TOTAL_TIME);
 
       // For purposes of linear independence,
       // when a bound is used in the certificate on a certain variable
@@ -488,18 +497,25 @@ int main(int argc, char** argv) {
     #endif
       } // loop over certificates, analyzing each for regularity
     
-      timer.end_timer(OverallTimeStats::ANALYZE_REGULARITY_TIME);
-    } // analyze regularity of certificate
+      timer.end_timer(OverallTimeStats::REG_TOTAL_TIME);
+    } // analyze regularity of *certificate* (not cut overall)
 
+    // Next, analyze regularity of cut overall, using all possible certificates, with the RCVMILP by Serra and Balas (2020)
+    // If this is performed, we can obtain new strengthened cuts to compare against the existing ones
     std::vector<CutCertificate> rcvmip_v; // [cut][term][Farkas multiplier] in the end, per term, this will be of dimension rows + disj term ineqs + cols
+    OsiCuts rcvmipCurrCuts;
+    std::vector<int> rcvmip_str_cut_ind; // indices of cuts that were strengthened
+
     if (should_analyze_regularity >= 2) {
-      // Analyze regularity of the cut overall, using all possible certificates, with the RCVMILP by Serra and Balas (2020)
       printf("\n## Analyzing regularity of cuts via RCVMILP of Serra and Balas (2020). ##\n");
-      timer.start_timer(OverallTimeStats::ANALYZE_REGULARITY_TIME);
+      timer.start_timer(OverallTimeStats::REG_TOTAL_TIME);
   
       std::vector<int> certificate_submx_rank; // rank of the submatrix of the certificate
       std::vector<int> num_nonzero_multipliers;
+
+      timer.start_timer(OverallTimeStats::REG_CALC_CERT_TIME);
       analyzeCutRegularity(rcvmip_v, certificate_submx_rank, num_nonzero_multipliers, origCurrCuts, disj, solver, params);
+      timer.end_timer(OverallTimeStats::REG_CALC_CERT_TIME);
     
     #ifdef TRACE
       for (int cut_ind = 0; cut_ind < currCuts.sizeCuts(); cut_ind++) {
@@ -507,8 +523,13 @@ int main(int argc, char** argv) {
             cut_ind, certificate_submx_rank[cut_ind], num_nonzero_multipliers[cut_ind]);
       }
     #endif
+
+      // Apply the new strengthening certificates to get new cuts
+      rcvmipCurrCuts = origCurrCuts; // assignment operator essentially inserts each of the origCurrCuts into newCurrCuts
+      strengtheningHelper(rcvmipCurrCuts, rcvmip_v, rcvmip_str_cut_ind, rcvmipStrInfo, disj, solver, ip_solution, false);
+      setStrInfo(rcvmipStrInfo, disj, rcvmip_v, solver->getNumRows(), solver->getNumCols(), rcvmip_str_cut_ind, gen.probData.EPS);
       
-      timer.end_timer(OverallTimeStats::ANALYZE_REGULARITY_TIME);
+      timer.end_timer(OverallTimeStats::REG_TOTAL_TIME);
     } // analyze regularity of *cut* (not just certificate)
 
     //====================================================================================================//
@@ -1205,12 +1226,13 @@ void updateDisjInfo(SummaryDisjunctionInfo& disjInfo, const int num_disj, const 
 
 void strengtheningHelper(
     OsiCuts& currCuts,                      ///< [in/out] The cuts to be strengthened (in place)
-    std::vector<CutCertificate>& v,         ///< [out] Certificate of cuts that, in the end, per term, this will be of dimension rows + disj term ineqs + cols with indices [cut][term][Farkas multiplier]
+    std::vector<CutCertificate>& v,         ///< [in/out] Certificate of cuts, per term, of dimension rows + disj term ineqs + cols with indices [cut][term][Farkas multiplier]
     std::vector<int>& str_cut_ind,          ///< [in/out] Indices of cuts that were strengthened
     SummaryStrengtheningInfo& strInfo,      ///< [in/out] The summary info for the strengthening
     const Disjunction* const disj,          ///< [in] The disjunction that generated the cuts
     const OsiSolverInterface* const solver, ///< [in] The solver that generated the cuts
-    const std::vector<double>& ip_solution  ///< [in] Feasible integer solution
+    const std::vector<double>& ip_solution, ///< [in] Feasible integer solution
+    const bool is_rcvmip                    ///< [in] Whether we are using the original (false) or RCVMIP (true) certificate --- if false, certificate \p v is calculated using #calcStrengtheningCertificate
 ) {
   // Check if cuts should be strengthened
   bool do_strengthening = params.get(intParam::STRENGTHEN) >= 1; // the strengthening parameter is set
@@ -1222,19 +1244,19 @@ void strengtheningHelper(
     return;
   }
 
-  timer.start_timer(OverallTimeStats::STR_TOTAL_TIME);
-
   const int num_cuts = currCuts.sizeCuts();
   printf("\n## Strengthening disjunctive cuts: (# cuts = %d). ##\n", num_cuts);
 
   // Retrieve the certificate
-  calcStrengtheningCertificateHelper(currCuts, v, disj, solver);
+  if (!is_rcvmip) {
+    calcStrengtheningCertificateHelper(currCuts, v, disj, solver);
+  }
 
   // Apply the certificate
   applyStrengtheningCertificateHelper(currCuts, v, str_cut_ind, strInfo, disj, solver, ip_solution);
 
   // Print the results
-  fprintf(stdout, "\nFinished strengthening (%d / %d cuts affected).\n", boundInfo.num_str_cuts, boundInfo.num_mycut);
+  fprintf(stdout, "\nFinished strengthening (%d / %d cuts affected).\n", strInfo.num_str_cuts, boundInfo.num_mycut);
   fprintf(stdout, "Number coeffs changed:\n");
   fprintf(stdout, "\ttotal: %g\n", strInfo.num_coeffs_strengthened[(int) Stat::total]);
   fprintf(stdout, "\tavg: %g\n", strInfo.num_coeffs_strengthened[(int) Stat::avg]);
@@ -1251,8 +1273,6 @@ void strengtheningHelper(
   }
   fprintf(stdout, "Finished printing strengthened custom cuts.\n\n");
 #endif
-
-  timer.end_timer(OverallTimeStats::STR_TOTAL_TIME);
 } /* strengtheningHelper */
 
 void calcStrengtheningCertificateHelper(
@@ -1299,9 +1319,11 @@ void applyStrengtheningCertificateHelper(
     SummaryStrengtheningInfo& strInfo,      ///< [in/out] The summary info for the strengthening
     const Disjunction* const disj,          ///< [in] The disjunction that generated the cuts
     const OsiSolverInterface* const solver, ///< [in] The solver that generated the cuts
-    const std::vector<double>& ip_solution  ///< [in] Feasible integer solution
+    const std::vector<double>& ip_solution, ///< [in] Feasible integer solution
+    const bool is_rcvmip                    ///< [in] Whether we are using the original (false) or RCVMIP (true) certificate
 ) {
-  timer.start_timer(OverallTimeStats::STR_APPLY_CERT_TIME);
+  OverallTimeStats which_time = is_rcvmip ? OverallTimeStats::REG_APPLY_CERT_TIME : OverallTimeStats::STR_APPLY_CERT_TIME;
+  timer.start_timer(which_time);
 
   const int num_cuts = currCuts.sizeCuts();
   strInfo.num_coeffs_strengthened.resize(static_cast<int>(Stat::num_stats), 0.); // total,avg,stddev,min,max
@@ -1319,7 +1341,11 @@ void applyStrengtheningCertificateHelper(
         disj, v[cut_ind], solver, params.logfile, ip_solution);
 
     // Update stats
-    boundInfo.num_str_cuts += curr_num_coeffs_str > 0;
+    if (is_rcvmip) {
+      boundInfo.num_rcvmip_str_cuts += curr_num_coeffs_str > 0;
+    } else {
+      boundInfo.num_str_cuts += curr_num_coeffs_str > 0;
+    }
     strInfo.num_str_cuts += curr_num_coeffs_str > 0;
     strInfo.num_coeffs_strengthened[(int) Stat::total] += curr_num_coeffs_str;
     strInfo.num_coeffs_strengthened[(int) Stat::avg] += (double) curr_num_coeffs_str / num_cuts;
@@ -1344,5 +1370,5 @@ void applyStrengtheningCertificateHelper(
   strInfo.num_coeffs_strengthened[(int) Stat::stddev] -= strInfo.num_coeffs_strengthened[(int) Stat::avg] * strInfo.num_coeffs_strengthened[(int) Stat::avg];
   strInfo.num_coeffs_strengthened[(int) Stat::stddev] = (strInfo.num_coeffs_strengthened[(int) Stat::stddev] > 0) ? std::sqrt(strInfo.num_coeffs_strengthened[(int) Stat::stddev]) : 0.;
   
-  timer.end_timer(OverallTimeStats::STR_APPLY_CERT_TIME);
+  timer.end_timer(which_time);
 } /* applyStrengtheningCertificateHelper */
