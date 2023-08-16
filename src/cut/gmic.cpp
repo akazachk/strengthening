@@ -48,6 +48,7 @@ void generateGomoryCuts(
     GMIGen.getParam().setMAX_SUPPORT(solver->getNumCols());
     GMIGen.getParam().setMAX_SUPPORT_REL(0.5);
     GMIGen.getParam().setMAXDYN(solver->getInfinity());
+    GMIGen.getParam().setMINVIOL(0.0);
     GMIGen.generateCuts(*solver, currGMICs);
   } // generate GMICs via CglGMI
 
