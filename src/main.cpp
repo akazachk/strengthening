@@ -491,15 +491,15 @@ int main(int argc, char** argv) {
       timer.end_timer(OverallTimeStats::ANALYZE_REGULARITY_TIME);
     } // analyze regularity of certificate
 
+    std::vector<CutCertificate> rcvmip_v; // [cut][term][Farkas multiplier] in the end, per term, this will be of dimension rows + disj term ineqs + cols
     if (should_analyze_regularity >= 2) {
       // Analyze regularity of the cut overall, using all possible certificates, with the RCVMILP by Serra and Balas (2020)
       printf("\n## Analyzing regularity of cuts via RCVMILP of Serra and Balas (2020). ##\n");
       timer.start_timer(OverallTimeStats::ANALYZE_REGULARITY_TIME);
-
-      std::vector<CutCertificate> regular_v; // [cut][term][Farkas multiplier] in the end, per term, this will be of dimension rows + disj term ineqs + cols
+  
       std::vector<int> certificate_submx_rank; // rank of the submatrix of the certificate
       std::vector<int> num_nonzero_multipliers;
-      analyzeCutRegularity(regular_v, certificate_submx_rank, num_nonzero_multipliers, origCurrCuts, disj, solver, params);
+      analyzeCutRegularity(rcvmip_v, certificate_submx_rank, num_nonzero_multipliers, origCurrCuts, disj, solver, params);
     
     #ifdef TRACE
       for (int cut_ind = 0; cut_ind < currCuts.sizeCuts(); cut_ind++) {

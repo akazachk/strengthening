@@ -44,6 +44,9 @@ struct SummaryBoundInfo {
   double mycut_obj = std::numeric_limits<double>::max();
   double gmic_mycut_obj = std::numeric_limits<double>::max();
   double all_cuts_obj = std::numeric_limits<double>::max();
+  double mycut_reg_obj = std::numeric_limits<double>::max(); ///< objective after adding strengthened cuts using RCVMILP certificate
+  double gmic_mycut_reg_obj = std::numeric_limits<double>::max(); ///< objective after adding GMICs and strengthened cuts using RCVMILP certificate
+  double all_cuts_reg_obj = std::numeric_limits<double>::max(); ///< objective after adding all cuts, including strengthened cuts using RCVMILP certificate and strengthened with original certificate
   int num_root_bounds_changed = 0, num_gmic = 0, num_lpc = 0, num_mycut = 0, num_str_cuts = 0;
 }; /* SummaryBoundInfo */
 
@@ -71,12 +74,17 @@ struct SummaryCutInfo {
   int min_support = std::numeric_limits<int>::max();
   int max_support = 0;
   double avg_support = 0.;
-  std::vector<CglAdvCut::CutType> cutType; // one entry per cut
-  std::vector<CglAdvCut::ObjectiveType> objType; // one entry per cut
+  std::vector<CglAdvCut::CutType> cutType; ///< one entry per cut
+  std::vector<CglAdvCut::ObjectiveType> objType; ///< one entry per cut
 
   std::vector<int> numCutsOfType;
   std::vector<int> numCutsFromHeur, numObjFromHeur, numFailsFromHeur, numActiveFromHeur;
   std::vector<int> numFails;
+
+  std::vector<int> orig_cert_submx_rank; ///< rank of the submatrix of the original certificate
+  std::vector<int> orig_cert_submx_num_nnz_mult; ///< number of original problem constraints with nonzero multipliers in original certificate
+  std::vector<int> rcvmip_cert_submx_rank; ///< rank of the submatrix of the RCVMIP certificate
+  std::vector<int> rcvmip_cert_submx_num_nnz_mult; ///< number of original problem constraints with nonzero multipliers in the RCVMIP certificate
 }; /* SummaryCutInfo */
 
 /// @brief Container for types of statistics we want to keep
