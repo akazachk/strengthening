@@ -448,7 +448,7 @@ int main(int argc, char** argv) {
       //     vpc->timer.get_value(CglVPC::VPCTimeStats::DISJ_SETUP_TIME));
 
       // Update statistics about the disjunction objective value and cuts
-      disj = gen.gen.disj();
+      disj = (gen.gen.disj())->clone();
       exitReason = gen.exitReason;
       if (disj) {
         disjInfo.num_disj++;
@@ -711,8 +711,9 @@ int main(int argc, char** argv) {
     
     timer.end_timer(OverallTimeStats::TOTAL_APPLY_TIME);
 
-    // Free memory from solvers specific for this round
+    // Free memory from solvers/disj specific for this round
     if (roundOrigSolver && roundOrigSolver != origSolver) { delete roundOrigSolver; }
+    if (disj) { delete disj; }
     
     // Print summary of bounds after this round
     printf("\n*** INFO:\n");
