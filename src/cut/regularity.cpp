@@ -396,7 +396,8 @@ void genRCVMILPFromCut(
       
       // Two vectors are parallel if u . v / ||u|| ||v|| = 1
       const double how_parallel = getParallelism(row1, row2);
-      if (lessThanVal(how_parallel, 1.)) {
+      const bool is_parallel = isVal(how_parallel, 1.) || isVal(how_parallel, -1.);
+      if (!is_parallel) {
         continue;
       }
       
