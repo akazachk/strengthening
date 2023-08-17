@@ -814,15 +814,8 @@ int solveRCVMILP(
   bool reached_feasibility = false;
   int num_iters = 0;
   const int MAX_ITERS = 100;
+  printf("\n## solveRCVMILP (Gurobi): Solving CGLP from cut %d. ##\n", cut_ind);
   while (!reached_feasibility && num_iters < MAX_ITERS) {
-    printf("\n## solveRCVMILP (Gurobi): Solving CGLP (iter %d) from cut %d. ##\n", num_iters, cut_ind);
-
-    if (write_lp) {
-      const std::string lp_filename = lp_filename_stub + LP_EXT;
-      printf("File: %s\n", lp_filename.c_str());
-      model->write(lp_filename);
-    }
-
     return_code = solveGRBModel(*model, params.logfile);
 
     if (return_code == GRB_INFEASIBLE || return_code == GRB_UNBOUNDED || return_code == GRB_INF_OR_UNBD) {
@@ -846,8 +839,18 @@ int solveRCVMILP(
     } else {
       reached_feasibility = true;
     }
+
+    // Print value of theta variable (should decrease across rounds)
+    const double theta_val = solution.size() > 0 ? solution[0] : -1.;
+    printf("Iter %d: theta = %f\tcert_rank = %d\tcert_size = %d\n", num_iters, theta_val, certificate_rank, (int) delta_var_inds.size());
   } // iterate while !reached_feasibility
   printf("solveRCVMILP (Gurobi): Terminated in %d / %d iterations. Reached feasibility: %d.\n", num_iters, MAX_ITERS, reached_feasibility);
+
+  if (write_lp) {
+    const std::string lp_filename = lp_filename_stub + LP_EXT;
+    printf("Saving RCVMILP (Gurobi) to file: %s\n", lp_filename.c_str());
+    model->write(lp_filename);
+  }
 
   return return_code;
 } /* solveRCVMILP (Gurobi) */
@@ -1135,7 +1138,7 @@ void getCertificateFromRCVMILPSolution(
   } // loop over columns
 
   // Help to keep track of where v^t variables start in solution, for term t
-  const int mtilde = calculateNumRowsAtilde(disj, solver);
+  // const int mtilde = calculateNumRowsAtilde(disj, solver);
 
   // Loop over terms to set the CutCertificate
   // Recall that certificate v is a vector of length m + m_t + n
@@ -1286,7 +1289,7 @@ void analyzeCutRegularity(
   prepareAtilde(Atilde, btilde, disj, solver, params.logfile);
 
   // Compute rank of Atilde
-  const int rank_atilde = computeRank(&Atilde, std::vector<int>(), std::vector<int>());
+  // const int rank_atilde = computeRank(&Atilde, std::vector<int>(), std::vector<int>());
 
   // Prepare solver for computing certificate
   // TODO: Probably should just input directly to other solver if we are not using Cbc...
