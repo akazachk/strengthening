@@ -992,7 +992,7 @@ int solveRCVMILP(
 #endif // USE_CBC
 
 void getCertificateFromRCVMILPSolution(
-    /// [out] Certificate of cut (vector of length m + m_t + n)
+    /// [out] Certificate of cut, [term][Farkas multiplier]; per term, m + m_t + n indices correspond to rows + disj term ineqs + cols
     CutCertificate& v,
     /// [in] Solution to the RCVMILP, where order of variables is theta, delta (length equal to m' := #calculateNumRowsAtilde), {u^t}_{t \in T}, {u^t_0}_{t \in T}
     const std::vector<double>& solution,
@@ -1139,7 +1139,7 @@ void analyzeCertificateRegularity(
     int& certificate_rank,
     /// [out] Number of original (+ globally valid) constraints that have nonzero multipliers in the certificate
     int& num_nonzero_multipliers,
-    /// [in] Certificate of cut
+    /// [in] Certificate of cut, [term][Farkas multiplier]; per term, m + m_t + n indices correspond to rows (including globally-valid constraints) + disj term ineqs + cols
     const CutCertificate& v,
     /// [in] Disjunction from which cuts were generated
     const Disjunction* const disj,
@@ -1180,7 +1180,7 @@ void analyzeCertificateRegularity(
 } /* analyzeCertificateRegularity */
 
 void analyzeCutRegularity(
-    /// [out] Certificate of cuts that, in the end, per term, will be of dimension rows + disj term ineqs + cols with indices [cut][term][Farkas multiplier]
+    /// [out] Certificate of cut, [term][Farkas multiplier]; per term, m + m_t + n indices correspond to rows (including globally-valid constraints) + disj term ineqs + cols
     std::vector<CutCertificate>& v,
     /// [out] Rank of submatrix associated to the certificate for each cut
     std::vector<int>& certificate_submx_rank,
