@@ -35,6 +35,167 @@
 #include "debug.hpp"
 #endif
 
+/// @brief Calculate number of finite lower and upper bounds
+int calculateNumFiniteBounds(
+  const OsiSolverInterface* const solver,
+  int* const num_lb = NULL, int* const num_ub = NULL) {
+  if (num_lb) { *num_lb = 0; }
+  if (num_ub) { *num_ub = 0; }
+  int num_finite_bounds = 0;
+  for (int col = 0; col < solver->getNumCols(); col++) {
+    const bool lb_finite = !isInfinity(std::abs(solver->getColLower()[col]));
+    const bool ub_finite = !isInfinity(std::abs(solver->getColUpper()[col]));
+    num_finite_bounds += lb_finite + ub_finite;
+    
+    if (num_lb && lb_finite) {
+        (*num_lb)++;
+    }
+
+    if (num_ub && ub_finite) {
+        (*num_ub)++;
+    }
+  }
+
+  return num_finite_bounds;
+} /* calculateNumFiniteBounds */
+
+/// @brief Get index of variable theta in RCVMIP
+int getThetaIndex() {
+  return 0;
+} /* getThetaIndex */
+
+/// @brief Get index of row \p row_ind in Atilde
+/// @return -1 if row is not one of the nonbound constraints in Atilde
+int getRowAtildeIndex(
+    /// [in] Solver
+    const OsiSolverInterface* const solver,
+    /// [in] Disjunction
+    const Disjunction* const disj,
+    /// [in] Row index
+    const int row_ind) {
+  const int num_orig_rows = (solver) ? solver->getNumRows() : 0;
+  const int num_common_rows = (disj) ? disj->common_changed_var.size() + disj->common_ineqs.size() : 0;
+  if (row_ind < num_orig_rows + num_common_rows) {
+    return row_ind;
+  } else {
+    return -1;
+  }
+} /* getRowAtildeIndex */
+
+/// @brief Get index of row in Atilde for lb on column \p col_ind (if negative, just return where these start)
+/// @details This is useful in case we later change Atilde, e.g., if we do not have to calculate the number of finite bounds
+/// @return -1 if no lb var exists
+int getLBAtildeIndex(
+    /// [in] Solver
+    const OsiSolverInterface* const solver,
+    /// [in] Disjunction
+    const Disjunction* const disj,
+    /// [in] Column index (if negative return where these start)
+    const int col_ind = -1,
+    /// [in] Number of previous lb delta variables; if < 0, that means we do not have that information available and need to recalc
+    const int num_prev_bound = -1) {
+  const int num_nonbound_constrs = solver->getNumRows() + disj->common_changed_bound.size() + disj->common_ineqs.size();
+  if (col_ind < 0) {
+    return num_nonbound_constrs;
+  }
+
+  if (isInfinity(std::abs(solver->getColLower()[col_ind]))) {
+    return -1;
+  }
+
+  if (num_prev_bound >= 0) {
+    return num_nonbound_constrs + num_prev_bound;
+  } else {
+    int num_prev_lb = 0;
+    for (int i = 0; i < col_ind; i++) {
+      const double val = solver->getColLower()[i];
+      num_prev_lb += !isInfinity(std::abs(val));
+    }
+    return num_nonbound_constrs + num_prev_lb;
+  }
+} /* getLBAtildeIndex */
+
+/// @brief Get index of row in Atilde for ub on column \p col_ind (if negative, just return where these start)
+/// @details This is useful in case we later change Atilde, e.g., if we do not have to calculate the number of finite bounds
+/// @return -1 if no lb var exists
+int getUBAtildeIndex(
+    /// [in] Solver
+    const OsiSolverInterface* const solver,
+    /// [in] Disjunction
+    const Disjunction* const disj,
+    /// [in] Column index (if negative return where these start)
+    const int col_ind = -1,
+    /// [in] Number of previous lb+ub delta variables; if < 0, that means we do not have that information available and need to recalc
+    const int num_prev_bound = -1) {
+  const int num_nonbound_constrs = solver->getNumRows() + disj->common_changed_bound.size() + disj->common_ineqs.size();
+  if (col_ind < 0) {
+    if (num_prev_bound >= 0) {
+      return num_nonbound_constrs + num_prev_bound;
+    } else {
+      int num_lb = 0;
+      calculateNumFiniteBounds(solver, &num_lb);
+      return num_nonbound_constrs + num_lb;
+    }
+  }
+
+  if (isInfinity(solver->getColUpper()[col_ind])) {
+    return -1;
+  }
+
+  if (num_prev_bound >= 0) {
+    return num_nonbound_constrs + num_prev_bound;
+  } else {
+    int num_lb = 0, num_prev_ub = 0;
+    for (int i = 0; i < solver->getNumCols(); i++) {
+      const double lb = solver->getColLower()[i];
+      num_lb += !isInfinity(std::abs(lb));
+
+      if (i < col_ind) {
+        const double ub = solver->getColUpper()[i];
+        num_prev_ub += !isInfinity(std::abs(ub));
+      }
+    }
+    return num_nonbound_constrs + num_lb + num_prev_ub;
+  }
+} /* getUBAtildeIndex */
+
+/// @brief Get start index of variable u^t for term \p term_ind in RCVMIP
+int getUtStartIndex(
+    /// [in] Solver
+    const OsiSolverInterface* const solver,
+    /// [in] Disjunction
+    const Disjunction* const disj,
+    /// [in] Term index
+    const int term_ind,
+    /// [in] Number of rows of Aprime
+    const int mtilde_in = -1) {
+  const int mtilde = (mtilde_in >= 0) ? mtilde_in : calculateNumRowsAtilde(disj, solver);
+  return 1 + mtilde + term_ind * mtilde;
+} /* getUtStartIndex */
+
+/// @brief Get start index of variable u_0^t for term \p term_ind in RCVMIP
+int getUt0StartIndex(
+    /// [in] Solver
+    const OsiSolverInterface* const solver,
+    /// [in] Disjunction
+    const Disjunction* const disj,
+    /// [in] Term index
+    const int term_ind,
+    /// [in] Number of rows of Aprime
+    const int mtilde_in = -1,
+    /// [in] Previous terms u^t_0 variables counted already
+    const int prev_mt_in = -1) {
+  const int mtilde = (mtilde_in >= 0) ? mtilde_in : calculateNumRowsAtilde(disj, solver);
+  const int first_u0_var = 1 + mtilde + disj->num_terms * mtilde;
+  int prev_mt = (prev_mt_in < 0) ? 0 : prev_mt_in;
+  if (prev_mt_in < 0) {
+    for (int t = 0; t < term_ind; t++) {
+      prev_mt += disj->terms[t].changed_var.size() + disj->terms[t].ineqs.size();
+    }
+  }
+  return first_u0_var + prev_mt;
+} /* getUt0StartIndex */
+
 /// @details Number of rows should be solver->getNumRows() + num_common_rows + number of finite bounds
 int calculateNumRowsAtilde(
     /// [in] Disjunction from which to get globally-valid inequalities
@@ -44,19 +205,8 @@ int calculateNumRowsAtilde(
   // Let mprime be the number of rows of Atilde
   // This is the number of original constraints + number of globally-valid bound changes
   // We also add the number of lower and upper bounds to mprime
-  int mprime_bounds = 0;
-  for (int col = 0; col < solver->getNumCols(); col++) {
-      const double lb = solver->getColLower()[col];
-      const double ub = solver->getColUpper()[col];
-
-      if (!isInfinity(std::abs(lb))) {
-          mprime_bounds++;
-      }
-      if (!isInfinity(std::abs(ub))) {
-          mprime_bounds++;
-      }
-  }
   const int num_common_rows = disj->common_changed_var.size() + disj->common_ineqs.size();
+  const int mprime_bounds = calculateNumFiniteBounds(solver);
   return solver->getNumRows() + num_common_rows + mprime_bounds;
 } /* calculateNumRowsAtilde */
 
@@ -409,14 +559,9 @@ void genRCVMILPFromCut(
     } // inner loop over rows
   } // outer loop over rows
 
-  // Add constraints, when appropriate, that variable lb and ub delta vars are at most one
+  // Add constraints, when appropriate, that variable lb and ub delta vars are at most one 
   int num_lb = 0;
-  for (int col_ind = 0; col_ind < num_cols; col_ind++) {
-    const double lb = solver->getColLower()[col_ind];
-    if (!isInfinity(std::abs(lb))) {
-      num_lb++;
-    }
-  }
+  calculateNumFiniteBounds(solver, &num_lb);
   int lb_ind = 1 + last_row_to_check;
   int ub_ind = lb_ind + num_lb;
   for (int col_ind = 0; col_ind < num_cols; col_ind++) {
@@ -610,14 +755,7 @@ int computeRankOfRCVMILPSolution(
   const int num_nonbound_constr_tilde = solver->getNumRows() + disj->common_changed_var.size() + disj->common_ineqs.size();
 
   int num_lb = 0;
-  // int num_ub = 0;
-  for (int col = 0; col < solver->getNumCols(); col++) {
-    const double lb = solver->getColLower()[col];
-    // const double ub = solver->getColUpper()[col];
-
-    num_lb += !isInfinity(std::abs(lb));
-    // num_ub += !isInfinity(std::abs(ub));
-  }
+  calculateNumFiniteBounds(solver, &num_lb);
 
   // Check the binary delta variables,
   // which are forced to be nonzero if the corresponding row
@@ -668,6 +806,167 @@ int computeRankOfRCVMILPSolution(
 } /* computeRankOfRCVMILPSolution */
 
 #ifdef USE_GUROBI
+/// @brief Add warm start if existing certificate provided
+void setRCVMIPStart(
+    /// [in/out] Gurobi RCVMILP instance 
+    GRBModel* const model,
+    /// [in] Certificate of cut (in-version used to set MIP start), [term][Farkas multiplier]; per term, m + m_t + n indices correspond to rows (including globally-valid constraints) + disj term ineqs + cols
+    const CutCertificate& v,
+    /// [in] Disjunction from which cuts were generated
+    const Disjunction* const disj,
+    /// [in] Solver corresponding to instance for which cuts are valid
+    const OsiSolverInterface* const solver) {    
+  if (v.size() == 0) return;
+
+  // Recall that the certificate v is a vector of length m + m_t + n
+  // The delta variable for constraint row_ind will be set to one if v[t][row_ind] > 0 for some t \in num_terms
+  const int num_nonbound_constrs = solver->getNumRows() + disj->common_changed_var.size() + disj->common_ineqs.size();
+  assert( v[0].size() == num_nonbound_constrs + disj->terms[0].changed_var.size() + solver->getNumCols() );
+  const int mtilde = calculateNumRowsAtilde(disj, solver);
+  // assert( Atilde.getNumRows() == mtilde );
+
+  // If need to scale, find largest value in v
+  const bool SHOULD_SCALE = true;
+  double scale = 1.;
+  if (SHOULD_SCALE) {
+    for (int term_ind = 0; term_ind < disj->num_terms; term_ind++) {
+      for (int i = 0; i < v[term_ind].size(); i++) {
+        if (std::abs(v[term_ind][i]) > scale) {
+          scale = std::abs(v[term_ind][i]);
+        }
+      }
+    }
+  }
+
+  GRBVar* const vars = model->getVars(); // vector of variables, theta then delta (length m') then {u^t}_t then {u^t_0}_t
+
+  // Set theta
+  vars[getThetaIndex()].set(GRB_DoubleAttr::GRB_DoubleAttr_Start, 1. / scale);
+
+  // Set delta and u^t variables for original + globally-valid constraints
+  for (int row_ind = 0; row_ind < num_nonbound_constrs; row_ind++) {
+    const int atilde_row_ind = getRowAtildeIndex(solver, disj, row_ind);
+
+    bool set_delta = false;
+    for (int term_ind = 0; term_ind < disj->num_terms; term_ind++) {
+      // Get RCVMIP variable index for this term and constraint
+      const int rcvmip_term_var_start_ind = getUtStartIndex(solver, disj, term_ind, mtilde);
+      const int curr_rcvmip_ind = rcvmip_term_var_start_ind + atilde_row_ind;
+      
+      // Get the index inside of the certificate v
+      const int term_cert_var_ind = row_ind;
+      const double v_val = v[term_ind][term_cert_var_ind];
+
+      vars[curr_rcvmip_ind].set(GRB_DoubleAttr::GRB_DoubleAttr_Start, v_val / scale);
+
+      if (!set_delta && !isZero(v_val)) {
+        set_delta = true;
+      }
+    }
+
+    const int rcvmip_delta_ind = 1 + atilde_row_ind;
+    if (set_delta) {
+      vars[rcvmip_delta_ind].set(GRB_DoubleAttr::GRB_DoubleAttr_Start, 1.);
+    } else {
+      vars[rcvmip_delta_ind].set(GRB_DoubleAttr::GRB_DoubleAttr_Start, 0.);
+    }
+  }
+
+  // Set delta and u^t variables for variable lower bounds
+  int num_prev_bound = 0;
+  for (int col_ind = 0; col_ind < solver->getNumCols(); col_ind++) {
+    const int atilde_row_ind = getLBAtildeIndex(solver, disj, col_ind, num_prev_bound);
+    if (atilde_row_ind < 0) {
+      // There are no RCVMIP variables associated to this column
+      continue;
+    } else {
+      num_prev_bound += 1;
+    }
+
+    bool set_delta = false;
+    for (int term_ind = 0; term_ind < disj->num_terms; term_ind++) {
+      // Get RCVMIP variable index for this term and constraint
+      const int rcvmip_term_var_start_ind = getUtStartIndex(solver, disj, term_ind, mtilde);
+      const int curr_rcvmip_ind = rcvmip_term_var_start_ind + atilde_row_ind;
+      
+      // Get the index inside of the certificate v
+      const int term_cert_var_ind = num_nonbound_constrs + disj->terms[term_ind].changed_var.size() + col_ind;
+      const double v_val = v[term_ind][term_cert_var_ind];
+
+      // If positive then this is corresponds to a multiplier on the lower bound
+      if (greaterThanVal(v_val, 0.)) {
+        vars[curr_rcvmip_ind].set(GRB_DoubleAttr::GRB_DoubleAttr_Start, v_val / scale);
+        set_delta = true;
+      } else {
+        vars[curr_rcvmip_ind].set(GRB_DoubleAttr::GRB_DoubleAttr_Start, 0.);
+      }
+    } // loop over terms for lb
+    
+    const int rcvmip_delta_ind = 1 + atilde_row_ind;
+    if (set_delta) {
+      vars[rcvmip_delta_ind].set(GRB_DoubleAttr::GRB_DoubleAttr_Start, 1.);
+    } else {
+      vars[rcvmip_delta_ind].set(GRB_DoubleAttr::GRB_DoubleAttr_Start, 0.);
+    }
+  } // loop over columns for lb
+  
+  // Set delta and u^t variables for variable upper bounds
+  for (int col_ind = 0; col_ind < solver->getNumCols(); col_ind++) {
+    const int atilde_row_ind = getUBAtildeIndex(solver, disj, col_ind, num_prev_bound);
+    if (atilde_row_ind < 0) {
+      // There are no RCVMIP variables associated to this column
+      continue;
+    } else {
+      num_prev_bound += 1;
+    }
+
+    bool set_delta = false;
+    for (int term_ind = 0; term_ind < disj->num_terms; term_ind++) {
+      // Get RCVMIP variable index for this term and constraint
+      const int rcvmip_term_var_start_ind = getUtStartIndex(solver, disj, term_ind, mtilde);
+      const int curr_rcvmip_ind = rcvmip_term_var_start_ind + atilde_row_ind;
+      
+      // Get the index inside of the certificate v
+      const int term_cert_var_ind = num_nonbound_constrs + disj->terms[term_ind].changed_var.size() + col_ind;
+      const double v_val = v[term_ind][term_cert_var_ind];
+
+      // If positive then this is corresponds to a multiplier on the lower bound
+      if (lessThanVal(v_val, 0.)) {
+        vars[curr_rcvmip_ind].set(GRB_DoubleAttr::GRB_DoubleAttr_Start, v_val / scale);
+        set_delta = true;
+      } else {
+        vars[curr_rcvmip_ind].set(GRB_DoubleAttr::GRB_DoubleAttr_Start, 0.);
+      }
+    } // loop over terms for lb
+    
+    const int rcvmip_delta_ind = 1 + atilde_row_ind;
+    if (set_delta) {
+      vars[rcvmip_delta_ind].set(GRB_DoubleAttr::GRB_DoubleAttr_Start, 1.);
+    } else {
+      vars[rcvmip_delta_ind].set(GRB_DoubleAttr::GRB_DoubleAttr_Start, 0.);
+    }
+  } // loop over columns for ub
+
+  // Set u^t_0 variables
+  int prev_mt = 0;
+  for (int term_ind = 0; term_ind < disj->num_terms; term_ind++) {
+    const int rcvmip_term_var_start_ind = getUt0StartIndex(solver, disj, term_ind, mtilde, prev_mt);
+    const int curr_mt = disj->terms[term_ind].changed_var.size() + disj->terms[term_ind].ineqs.size();
+    prev_mt += curr_mt;
+
+    for (int i = 0; i < curr_mt; i++) {
+      const int rcvmip_ind = rcvmip_term_var_start_ind + i;
+      const int cert_ind = num_nonbound_constrs + i;
+      const double v_val = v[term_ind][cert_ind];
+      vars[rcvmip_ind].set(GRB_DoubleAttr::GRB_DoubleAttr_Start, v_val / scale);
+    }
+  }
+
+  model->update();
+
+  if (vars) { delete[] vars; }
+} /* setRCVMIPStart */
+
 /// @brief Append row to Gurobi \p model restricting sum of delta variables to be <= \p rank
 void addRankConstraint(
     /// [in/out] Gurobi RCVMILP instance 
@@ -1084,13 +1383,8 @@ void getCertificateFromRCVMILPSolution(
   delta.reserve(solver->getNumCols());
 
   const int num_nonbound_constr_tilde = solver->getNumRows() + disj->common_changed_var.size() + disj->common_ineqs.size();
-
   int num_lb = 0;
-  for (int col = 0; col < solver->getNumCols(); col++) {
-    const double lb = solver->getColLower()[col];
-
-    num_lb += !isInfinity(std::abs(lb));
-  }
+  calculateNumFiniteBounds(solver, &num_lb);
 
   // Check the binary delta variables,
   // which are forced to be nonzero if the corresponding row
@@ -1259,7 +1553,7 @@ void analyzeCertificateRegularity(
 } /* analyzeCertificateRegularity */
 
 void analyzeCutRegularity(
-    /// [out] Certificate of cut, [term][Farkas multiplier]; per term, m + m_t + n indices correspond to rows (including globally-valid constraints) + disj term ineqs + cols
+    /// [in/out] Certificate of cut (in-version used to set MIP start), [term][Farkas multiplier]; per term, m + m_t + n indices correspond to rows (including globally-valid constraints) + disj term ineqs + cols
     std::vector<CutCertificate>& v,
     /// [out] Rank of submatrix associated to the certificate for each cut
     std::vector<int>& certificate_submx_rank,
@@ -1274,6 +1568,10 @@ void analyzeCutRegularity(
     /// [in] Parameters for setting verbosity and logfile
     const StrengtheningParameters::Parameters& params) {
   if (cuts.sizeCuts() == 0) return;
+  
+   // Check that disjunction has not been lost
+  if (disj == NULL) return;
+  if (disj->terms.size() == 0) return;
 
   certificate_submx_rank.clear();
   certificate_submx_rank.resize(cuts.sizeCuts());
@@ -1337,9 +1635,9 @@ void analyzeCutRegularity(
     throw std::logic_error(errorstring);
   }
 
-  v.clear();
   v.resize(cuts.sizeCuts());
   for (int cut_ind = 0; cut_ind < cuts.sizeCuts(); cut_ind++) {
+    // Set theta column for the current cut
     if (cut_ind > 0) {
       if (use_gurobi) {
 #ifdef USE_GUROBI
@@ -1348,6 +1646,18 @@ void analyzeCutRegularity(
       } else {
         updateRCVMILPFromCut(cbcSolver, cuts.rowCutPtr(cut_ind), disj, solver, params.logfile);
       }
+    }
+
+    // Set MIP start for current cut
+#ifdef USE_GUROBI
+    if (use_gurobi) {
+      setRCVMIPStart(grbSolver, v[cut_ind], disj, solver);
+    }
+#endif
+
+    // Clear the certificate for the current cut, if one was provided
+    if (v.size() > cut_ind) {
+      v[cut_ind].clear();
     }
 
     // Solve the RCVMILP

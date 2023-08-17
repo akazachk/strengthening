@@ -587,6 +587,9 @@ int main(int argc, char** argv) {
     if (SHOULD_ANALYZE_REGULARITY >= 2 && currCuts.sizeCuts() > 0 && disj) {
       printf("\n## Analyzing regularity of cuts via RCVMILP of Serra and Balas (2020). ##\n");
       timer.start_timer(OverallTimeStats::REG_TOTAL_TIME);
+
+      // Copy to rcvmip_v the contents of v
+      rcvmip_v = v;
   
       // std::vector<int> certificate_submx_rank; // rank of the submatrix of the certificate
       // std::vector<int> num_nonzero_multipliers;
