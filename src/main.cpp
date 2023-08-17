@@ -534,7 +534,16 @@ int main(int argc, char** argv) {
 
     //====================================================================================================//
     // Analyze regularity and irregularity
-    // First, analyze regularity of the existing certificate for each cut
+
+    // To start, obtain rank of coefficient matrix (after adding globally-valid inequalities)
+    CoinPackedMatrix Atilde;
+    std::vector<double> btilde;
+    if (SHOULD_ANALYZE_REGULARITY != 0 && disj != NULL) {
+      prepareAtilde(Atilde, btilde, disj, solver, params.logfile);
+    }
+    const int Atilderank = (Atilde.getNumRows() > 0) ? computeRank(&Atilde, std::vector<int>(), std::vector<int>()) : solver->getNumCols();
+
+    // Analyze regularity of the existing certificate for each cut
     if (SHOULD_ANALYZE_REGULARITY >= 1 && currCuts.sizeCuts() > 0 && disj) {
       // Calculate the rank of the existing certificate for each cut
       // (Do not compute regularity of the cut overall)
@@ -549,10 +558,6 @@ int main(int argc, char** argv) {
       // std::vector<int> num_nonzero_multipliers(solver->getNumRows() + disj->common_changed_var.size() + solver->getNumCols(), 0);
       cutInfoVec[round_ind].orig_cert_submx_rank.resize(currCuts.sizeCuts(), 0);
       cutInfoVec[round_ind].orig_cert_submx_num_nnz_mult.resize(currCuts.sizeCuts(), 0);
-
-      CoinPackedMatrix Atilde;
-      std::vector<double> btilde;
-      prepareAtilde(Atilde, btilde, disj, solver, params.logfile);
       // assert(Atilde.getNumRows() == solver->getNumRows() + disj->common_changed_var.size());
       // assert(Atilde.getNumRows() + disj->terms[0].changed_var.size() + solver->getNumCols() == v[0][0].size()); // dimension matches for cut 0, term 0
 
@@ -562,8 +567,11 @@ int main(int argc, char** argv) {
             disj, solver, Atilde, params);
         
     #ifdef TRACE
-        fprintf(stdout, "Cut %d: rank = %d, num_nonzero_multipliers = %d\n",
-            cut_ind, cutInfoVec[round_ind].orig_cert_submx_rank[cut_ind], cutInfoVec[round_ind].orig_cert_submx_num_nnz_mult[cut_ind]);
+        fprintf(stdout, "Cut %d: rank = %d/%d, num_nonzero_multipliers = %d\n",
+            cut_ind,
+            cutInfoVec[round_ind].orig_cert_submx_rank[cut_ind],
+            Atilderank,
+            cutInfoVec[round_ind].orig_cert_submx_num_nnz_mult[cut_ind]);
     #endif
       } // loop over certificates, analyzing each for regularity
     
@@ -589,8 +597,11 @@ int main(int argc, char** argv) {
     
     #ifdef TRACE
       for (int cut_ind = 0; cut_ind < currCuts.sizeCuts(); cut_ind++) {
-        fprintf(stdout, "Cut %d: rank = %d, num_nonzero_multipliers = %d\n",
-            cut_ind, cutInfoVec[round_ind].rcvmip_cert_submx_rank[cut_ind], cutInfoVec[round_ind].rcvmip_cert_submx_num_nnz_mult[cut_ind]);
+        fprintf(stdout, "Cut %d: rank = %d/%d, num_nonzero_multipliers = %d\n",
+            cut_ind,
+            cutInfoVec[round_ind].rcvmip_cert_submx_rank[cut_ind],
+            Atilderank,
+            cutInfoVec[round_ind].rcvmip_cert_submx_num_nnz_mult[cut_ind]);
       }
     #endif
 
@@ -648,7 +659,7 @@ int main(int argc, char** argv) {
     boundInfo.all_cuts_obj = boundInfo.gmic_mycut_obj;
 
     // In addition, we measure effect of unstrengthened cuts on their own
-    const bool unstr_str_cuts_different = (currCuts.sizeCuts() > 0 && boundInfo.num_str_cuts > 0); // if false, unstr info is same as str info
+    const bool unstr_str_cuts_different = (unstrCurrCuts.sizeCuts() > 0 && boundInfo.num_str_cuts > 0); // if false, unstr info is same as str info
     if (unstr_str_cuts_different) {
       OsiSolverInterface* unstrCutSolver = roundOrigSolver->clone();
       
@@ -670,7 +681,7 @@ int main(int argc, char** argv) {
     }
 
     // Repeat for RCVMIP-strengthened cuts
-    const bool rcvmip_cuts_different = (SHOULD_ANALYZE_REGULARITY > 1 && currCuts.sizeCuts() > 0 && boundInfo.num_rcvmip_str_cuts > 0); // if false, rcvmip info is same as unstr or str info
+    const bool rcvmip_cuts_different = (SHOULD_ANALYZE_REGULARITY > 1 && rcvmipCurrCuts.sizeCuts() > 0 && boundInfo.num_rcvmip_str_cuts > 0); // if false, rcvmip info is same as unstr or str info
     if (rcvmip_cuts_different) {
       OsiSolverInterface* rcvmipCutSolver = roundOrigSolver->clone();
       
@@ -734,7 +745,7 @@ int main(int argc, char** argv) {
         boundInfo.num_str_cuts, boundInfoVec[round_ind].num_mycut,
         stringValue(boundInfo.all_cuts_obj, "%1.6f").c_str());
     fflush(stdout);
-    if (SHOULD_ANALYZE_REGULARITY > 1) {
+    if (SHOULD_ANALYZE_REGULARITY > 1 && !isInfinity(boundInfo.rcvmip_all_cuts_obj)) {
       printf("Obj value (%d/%d RCVMIP strengthened): %s.\n",
           boundInfo.num_rcvmip_str_cuts, boundInfoVec[round_ind].num_mycut,
           stringValue(boundInfo.rcvmip_all_cuts_obj, "%1.6f").c_str());

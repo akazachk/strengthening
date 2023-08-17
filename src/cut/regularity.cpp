@@ -14,6 +14,7 @@
 
 // Project files
 // #include "analysis.hpp" // cutCertificate
+#include "CutHelper.hpp" // getParallelism
 #include "Disjunction.hpp"
 #include "Parameters.hpp"
 #include "SolverHelper.hpp" // setLPSolverParameters, setIPSolverParameters
@@ -377,6 +378,61 @@ void genRCVMILPFromCut(
   }
   mx.appendRow(numcols_rank_constraint);
 
+  // Now, for each row, see if there is another row that is a multiple of it,
+  // and add the constraint that the sum of the indicator variables for the two rows is at most 1
+  // Check only the rows corresponding to the original constraints and globally-valid inequalities
+  // not the rows corresponding to the variable bounds
+  const double last_row_to_check = num_rows + disj->common_changed_bound.size() + disj->common_ineqs.size();
+  Atilde.reverseOrdering(); // make it row-ordered
+  assert( !Atilde.isColOrdered() );
+  for (int r1 = 0; r1 < last_row_to_check; r1++) {
+    // Although we do not check the variable bounds for the first index,
+    // in case the original or globally-valid constraints are parallel to a variable bound,
+    // we check the variable bounds for the second index
+    // (This is indeed going to be the case for the globally-valid cosntraints when those are bound improvements derived from strong branching)
+    for (int r2 = r1 + 1; r2 < Atilde.getNumRows(); r2++) {
+      const CoinPackedVector row1 = Atilde.getVector(r1);
+      const CoinPackedVector row2 = Atilde.getVector(r2);
+      
+      // Two vectors are parallel if u . v / ||u|| ||v|| = 1
+      const double how_parallel = getParallelism(row1, row2);
+      if (lessThanVal(how_parallel, 1.)) {
+        continue;
+      }
+      
+      // Add to mx the constraint that the sum of the indicator variables for the two rows is at most 1
+      CoinPackedVector constraint;
+      constraint.insert(r1 + 1, 1.);
+      constraint.insert(r2 + 1, 1.);
+      mx.appendRow(constraint);
+    } // inner loop over rows
+  } // outer loop over rows
+
+  // Add constraints, when appropriate, that variable lb and ub delta vars are at most one
+  int num_lb = 0;
+  for (int col_ind = 0; col_ind < num_cols; col_ind++) {
+    const double lb = solver->getColLower()[col_ind];
+    if (!isInfinity(std::abs(lb))) {
+      num_lb++;
+    }
+  }
+  int lb_ind = 1 + last_row_to_check;
+  int ub_ind = lb_ind + num_lb;
+  for (int col_ind = 0; col_ind < num_cols; col_ind++) {
+    const bool lb_exists = !isInfinity(std::abs(solver->getColLower()[col_ind]));
+    const bool ub_exists = !isInfinity(std::abs(solver->getColUpper()[col_ind]));
+
+    if (lb_exists && ub_exists) {
+      CoinPackedVector constraint;
+      constraint.insert(lb_ind, 1.);
+      constraint.insert(ub_ind, 1.);
+      mx.appendRow(constraint);
+    }
+    
+    lb_ind += lb_exists;
+    ub_ind += ub_exists;
+  } // loop over columns to make sure lb + ub delta vars for same column are at most one
+
   // // Prepare bounds (default >= 0)
   // std::vector<double> colLB(num_cglp_vars, 0.);
   // std::vector<double> colUB(num_cglp_vars, liftingSolver->getInfinity());
@@ -424,6 +480,7 @@ void genRCVMILPFromCut(
   // liftingSolver->loadProblem(mx, colLB.data(), colUB.data(), NULL, NULL, NULL, NULL);
   liftingSolver->loadProblem(mx, NULL, NULL, NULL, NULL, NULL, NULL);
   
+  // Set constant sides for the rows
   // First num_cols rows for each term are = 0 constraints
   for (int term_ind = 0; term_ind < disj->num_terms; term_ind++) {
     const int term_rows_start = term_ind * (num_cols + 1 + mprime);
@@ -450,6 +507,12 @@ void genRCVMILPFromCut(
     for (int i = 0; i < mprime; i++) {
       liftingSolver->setObjCoeff(i+1, 1.);
     }
+  }
+
+  // Set rows as <= 1 for extra constraints from parallel rows of Atilde
+  for (int extra_row_ind = num_cglp_constraints; extra_row_ind < liftingSolver->getNumRows(); extra_row_ind++) {
+    liftingSolver->setRowLower(extra_row_ind, -1. * liftingSolver->getInfinity());
+    liftingSolver->setRowUpper(extra_row_ind, 1.);
   }
 
   // Set theta as upper-bounded by one (lb is already 0)
@@ -516,13 +579,16 @@ void genRCVMILPFromCut(
     }
   }
   row_names.push_back("sum_delta");
+  for (int extra_row_ind = num_cglp_constraints; extra_row_ind < liftingSolver->getNumRows(); extra_row_ind++) {
+    row_names.push_back("par_rows_" + std::to_string(extra_row_ind - num_cglp_constraints));
+  }
   assert(liftingSolver->getNumRows() == row_names.size());
   liftingSolver->setRowNames(row_names, 0, liftingSolver->getNumRows(), 0);
 } /* genRCVMILPFromCut */
 
 int computeRankOfRCVMILPSolution(
     /// [out] Indices of nonzero multipliers
-    std::vector<int>& delta,
+    std::vector<int>& delta_var_inds,
     /// [in] Solution to RCVMILP, where variables are theta then delta then {u^t}_{t \in T} then {u^t_0}_{t \in T}
     const double* const solution,
     /// [in] Disjunction from which cuts were generated
@@ -537,8 +603,8 @@ int computeRankOfRCVMILPSolution(
     const int cut_ind) {
   std::vector<int> rows, cols;
 
-  delta.clear();
-  delta.reserve(solver->getNumCols());
+  delta_var_inds.clear();
+  delta_var_inds.reserve(solver->getNumCols());
 
   const int num_nonbound_constr_tilde = solver->getNumRows() + disj->common_changed_var.size() + disj->common_ineqs.size();
 
@@ -562,7 +628,7 @@ int computeRankOfRCVMILPSolution(
     if (isZero(solution[var])) {
       continue;
     }
-    delta.push_back(row_ind);
+    delta_var_inds.push_back(var);
     rows.push_back(row_ind);
   }
 
@@ -584,11 +650,11 @@ int computeRankOfRCVMILPSolution(
       throw std::logic_error(errorstring);
     }
     else if (lb_nonzero) {
-      delta.push_back(lb_ind);
+      delta_var_inds.push_back(lb_ind);
       cols.push_back(col_ind);
     }
     else if (ub_nonzero) {
-      delta.push_back(ub_ind);
+      delta_var_inds.push_back(ub_ind);
       cols.push_back(col_ind);
     }
 
@@ -772,10 +838,10 @@ int solveRCVMILP(
     saveSolution(solution, *model);
 
     // Check rank of solution vs number of nonzero multipliers
-    std::vector<int> delta;
-    const int certificate_rank = computeRankOfRCVMILPSolution(delta, solution.data(), disj, solver, Atilde, params, cut_ind);
-    if (certificate_rank < (int) delta.size()) {
-      addRankConstraint(model, delta, certificate_rank, num_iters);
+    std::vector<int> delta_var_inds;
+    const int certificate_rank = computeRankOfRCVMILPSolution(delta_var_inds, solution.data(), disj, solver, Atilde, params, cut_ind);
+    if (certificate_rank < (int) delta_var_inds.size()) {
+      addRankConstraint(model, delta_var_inds, certificate_rank, num_iters);
     } else {
       reached_feasibility = true;
     }
