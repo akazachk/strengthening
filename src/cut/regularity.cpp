@@ -497,12 +497,12 @@ void genRCVMILPFromCut(
       
       CoinPackedVector row;
       row.insert(col, -1. * coeff);
-      row.insert(num_cols, -1. * coeff * val);
+      row.insert(num_cols, coeff * val);
       term_mx.appendCol(row);
     }
     for (int i = 0; i < (int) term.ineqs.size(); i++) {
       CoinPackedVector row = -1. * term.ineqs[i].row();
-      row.insert(num_cols, -1. * term.ineqs[i].rhs());
+      row.insert(num_cols, term.ineqs[i].rhs());
       term_mx.appendCol(row);
     }
 
