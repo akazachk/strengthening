@@ -448,9 +448,9 @@ int main(int argc, char** argv) {
       //     vpc->timer.get_value(CglVPC::VPCTimeStats::DISJ_SETUP_TIME));
 
       // Update statistics about the disjunction objective value and cuts
-      disj = (gen.gen.disj())->clone();
       exitReason = gen.exitReason;
-      if (disj) {
+      if (gen.gen.disj()) {
+        disj = (gen.gen.disj())->clone();
         disjInfo.num_disj++;
         boundInfo.num_mycut += gen.num_cuts;
         boundInfoVec[round_ind].num_mycut += gen.num_cuts;
@@ -535,7 +535,7 @@ int main(int argc, char** argv) {
     //====================================================================================================//
     // Analyze regularity and irregularity
     // First, analyze regularity of the existing certificate for each cut
-    if (SHOULD_ANALYZE_REGULARITY >= 1) {
+    if (SHOULD_ANALYZE_REGULARITY >= 1 && currCuts.sizeCuts() > 0 && disj) {
       // Calculate the rank of the existing certificate for each cut
       // (Do not compute regularity of the cut overall)
       printf("\n## Analyzing regularity of certificate computed for each cut. ##\n");
@@ -576,7 +576,7 @@ int main(int argc, char** argv) {
     OsiCuts rcvmipCurrCuts;
     std::vector<int> rcvmip_str_cut_ind; // indices of cuts that were strengthened
 
-    if (SHOULD_ANALYZE_REGULARITY >= 2) {
+    if (SHOULD_ANALYZE_REGULARITY >= 2 && currCuts.sizeCuts() > 0 && disj) {
       printf("\n## Analyzing regularity of cuts via RCVMILP of Serra and Balas (2020). ##\n");
       timer.start_timer(OverallTimeStats::REG_TOTAL_TIME);
   
