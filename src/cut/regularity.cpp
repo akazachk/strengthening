@@ -543,13 +543,13 @@ int computeRankOfRCVMILPSolution(
   const int num_nonbound_constr_tilde = solver->getNumRows() + disj->common_changed_var.size() + disj->common_ineqs.size();
 
   int num_lb = 0;
-  int num_ub = 0;
+  // int num_ub = 0;
   for (int col = 0; col < solver->getNumCols(); col++) {
     const double lb = solver->getColLower()[col];
-    const double ub = solver->getColUpper()[col];
+    // const double ub = solver->getColUpper()[col];
 
     num_lb += !isInfinity(std::abs(lb));
-    num_ub += !isInfinity(std::abs(ub));
+    // num_ub += !isInfinity(std::abs(ub));
   }
 
   // Check the binary delta variables,
@@ -569,26 +569,31 @@ int computeRankOfRCVMILPSolution(
   // For the original variable bounds,
   // check if the lb or ub \delta variables are nonzero
   // Throw a warning if they are both nonzero...
+  int lb_ind = delta_var_start + num_nonbound_constr_tilde;
+  int ub_ind = delta_var_start + num_nonbound_constr_tilde + num_lb;
   for (int col_ind = 0; col_ind < solver->getNumCols(); col_ind++) {
-    const int var_lb = delta_var_start + num_nonbound_constr_tilde + col_ind;
-    const int var_ub = delta_var_start + num_nonbound_constr_tilde + num_lb + col_ind;
-    
-    const bool lb_nonzero = !isZero(solution[var_lb]);
-    const bool ub_nonzero = !isZero(solution[var_ub]);
+    const bool lb_exists = !isInfinity(std::abs(solver->getColLower()[col_ind]));
+    const bool ub_exists = !isInfinity(std::abs(solver->getColUpper()[col_ind]));
+
+    const bool lb_nonzero = lb_exists && !isZero(solution[lb_ind]);
+    const bool ub_nonzero = ub_exists && !isZero(solution[ub_ind]);
     
     if (lb_nonzero && ub_nonzero) {
-      error_msg(errorstring, "Both lower and upper bound delta variables are nonzero for cut %d, col %d.\n", cut_ind, col_ind);
+      error_msg(errorstring, "Delta variables %d (lb) and %d (ub) are nonzero for cut %d, col %d.\n", lb_ind, ub_ind, cut_ind, col_ind);
       writeErrorToLog(errorstring, params.logfile);
       throw std::logic_error(errorstring);
     }
     else if (lb_nonzero) {
-      delta.push_back(var_lb);
+      delta.push_back(lb_ind);
       cols.push_back(col_ind);
     }
     else if (ub_nonzero) {
-      delta.push_back(var_ub);
+      delta.push_back(ub_ind);
       cols.push_back(col_ind);
     }
+
+    lb_ind += lb_exists;
+    ub_ind += ub_exists;
   } // loop over columns
 
   const int certificate_rank = computeRank(&Atilde, rows, cols);
@@ -1011,13 +1016,10 @@ void getCertificateFromRCVMILPSolution(
   const int num_nonbound_constr_tilde = solver->getNumRows() + disj->common_changed_var.size() + disj->common_ineqs.size();
 
   int num_lb = 0;
-  int num_ub = 0;
   for (int col = 0; col < solver->getNumCols(); col++) {
     const double lb = solver->getColLower()[col];
-    const double ub = solver->getColUpper()[col];
 
     num_lb += !isInfinity(std::abs(lb));
-    num_ub += !isInfinity(std::abs(ub));
   }
 
   // Check the binary delta variables,
@@ -1038,30 +1040,31 @@ void getCertificateFromRCVMILPSolution(
   // For the original variable bounds,
   // check if the lb or ub \delta variables are nonzero
   // Throw a warning if they are both nonzero...
+  int lb_ind = delta_var_start + num_nonbound_constr_tilde;
+  int ub_ind = delta_var_start + num_nonbound_constr_tilde + num_lb;
   for (int col_ind = 0; col_ind < solver->getNumCols(); col_ind++) {
-    const int var_lb = delta_var_start + num_nonbound_constr_tilde + col_ind;
-    const int var_ub = delta_var_start + num_nonbound_constr_tilde + num_lb + col_ind;
+    const bool lb_exists = !isInfinity(std::abs(solver->getColLower()[col_ind]));
+    const bool ub_exists = !isInfinity(std::abs(solver->getColUpper()[col_ind]));
 
-    // assert(cbc_model.isBinary(var_lb));
-    // assert(cbc_model.isBinary(var_ub));
-    
-    const bool lb_nonzero = !isZero(solution[var_lb]);
-    const bool ub_nonzero = !isZero(solution[var_ub]);
+    const bool lb_nonzero = lb_exists && !isZero(solution[lb_ind]);
+    const bool ub_nonzero = ub_exists && !isZero(solution[ub_ind]);
     
     if (lb_nonzero && ub_nonzero) {
-      // warning_msg(warnstring, "Both lower and upper bound delta variables are nonzero for cut %d, col %d.\n", cut_ind, col_ind);
-      error_msg(errorstring, "Both lower and upper bound delta variables are nonzero for cut %d, col %d.\n", cut_ind, col_ind);
+      error_msg(errorstring, "Delta variables %d (lb) and %d (ub) are nonzero for cut %d, col %d.\n", lb_ind, ub_ind, cut_ind, col_ind);
       writeErrorToLog(errorstring, logfile);
       throw std::logic_error(errorstring);
     }
     else if (lb_nonzero) {
-      delta.push_back(var_lb);
+      delta.push_back(lb_ind);
       cols.push_back(col_ind);
     }
     else if (ub_nonzero) {
-      delta.push_back(var_ub);
+      delta.push_back(ub_ind);
       cols.push_back(col_ind);
     }
+
+    lb_ind += lb_exists;
+    ub_ind += ub_exists;
   } // loop over columns
 
   // Help to keep track of where v^t variables start in solution, for term t
@@ -1110,27 +1113,33 @@ void getCertificateFromRCVMILPSolution(
     }
 
     // Set multipliers for variable bounds
+    int term_lb_ind = rcvmilp_term_uvar_start_ind + num_nonbound_constr_tilde;
+    int term_ub_ind = rcvmilp_term_uvar_start_ind + num_nonbound_constr_tilde + num_lb;
     for (int col_ind = 0; col_ind < solver->getNumCols(); col_ind++) {
-      const int v_ind = num_nonbound_constr_tilde + num_term_constr + col_ind;
-      const int var_lb = rcvmilp_term_uvar_start_ind + num_nonbound_constr_tilde + col_ind;
-      const int var_ub = rcvmilp_term_uvar_start_ind + num_nonbound_constr_tilde + num_lb + col_ind;
+      const bool lb_exists = !isInfinity(std::abs(solver->getColLower()[col_ind]));
+      const bool ub_exists = !isInfinity(std::abs(solver->getColUpper()[col_ind]));
 
-      const bool lb_nonzero = !isZero(solution[var_lb]);
-      const bool ub_nonzero = !isZero(solution[var_ub]);
+      const int v_ind = num_nonbound_constr_tilde + num_term_constr + col_ind;
+
+      const bool lb_nonzero = lb_exists && !isZero(solution[term_lb_ind]);
+      const bool ub_nonzero = ub_exists && !isZero(solution[term_ub_ind]);
 
       if (lb_nonzero && ub_nonzero) {
         // warning_msg(warnstring, "Both lower and upper bound delta variables are nonzero for cut %d, col %d.\n", cut_ind, col_ind);
-        error_msg(errorstring, "Both lower and upper bound delta variables are nonzero for cut %d, col %d.\n", cut_ind, col_ind);
+        error_msg(errorstring, "Delta variables %d (lb) and %d (ub) are nonzero for cut %d, col %d.\n", lb_ind, ub_ind, cut_ind, col_ind);
         writeErrorToLog(errorstring, logfile);
         throw std::logic_error(errorstring);
       }
       else if (lb_nonzero) {
-        v[term_ind][v_ind] = solution[var_lb] / theta;
+        v[term_ind][v_ind] = solution[term_lb_ind] / theta;
       }
       else if (ub_nonzero) {
-        v[term_ind][v_ind] = -1. * solution[var_ub] / theta;
+        v[term_ind][v_ind] = -1. * solution[term_ub_ind] / theta;
       }
-    }
+
+      term_lb_ind += lb_exists;
+      term_ub_ind += ub_exists;
+    } // loop over columns
   } // loop over terms to set CutCertificate
 } /* getCertificateFromRCVMILPSolution */
 
