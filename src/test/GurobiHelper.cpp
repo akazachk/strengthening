@@ -590,11 +590,12 @@ void doBranchAndBoundWithUserCutsGurobi(const Parameters& params,
 
   try {
     // Due to using the C++ interface, we need to access the variable list first
-    //GRBVar* grb_vars = model.getVars();
+    GRBVar* grb_vars = model.getVars();
     GurobiUserCutCallback cb = GurobiUserCutCallback(params,
         model.get(GRB_IntAttr_NumVars), model.get(GRB_DoubleAttr_ObjCon),
-        model.getVars(), cuts, addAsLazy);
+        grb_vars, cuts, addAsLazy);
     model.setCallback(&cb);
+    if (grb_vars) { delete[] grb_vars; }
 
     // Update the model
     model.update();
