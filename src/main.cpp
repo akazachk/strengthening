@@ -75,6 +75,9 @@ enum OverallTimeStats {
   STR_CALC_CERT_TIME,
   STR_APPLY_CERT_TIME,
   REG_TOTAL_TIME,
+  REG_GEN_ATILDE_TIME,
+  REG_RANK_ATILDE_TIME,
+  REG_ANALYZE_ORIG_CERT_TIME,
   REG_CALC_CERT_TIME,
   REG_APPLY_CERT_TIME,
   BB_TIME,
@@ -99,6 +102,9 @@ const std::vector<std::string> OverallTimeStatsName {
   "STR_CALC_CERT_TIME",
   "STR_APPLY_CERT_TIME",
   "REG_TOTAL_TIME",
+  "REG_GEN_ATILDE_TIME",
+  "REG_RANK_ATILDE_TIME",
+  "REG_ANALYZE_ORIG_CERT_TIME",
   "REG_CALC_CERT_TIME",
   "REG_APPLY_CERT_TIME",
   "BB_TIME",
@@ -538,6 +544,7 @@ int main(int argc, char** argv) {
 
     //====================================================================================================//
     // Analyze regularity and irregularity
+    timer.start_timer(OverallTimeStats::REG_TOTAL_TIME);
 
     // To start, obtain rank of coefficient matrix (after adding globally-valid inequalities)
     CoinPackedMatrix Atilde;
@@ -549,17 +556,25 @@ int main(int argc, char** argv) {
       const int num_bound_rows = calculateNumFiniteBounds(solver);
       printf("\n## Preparing Atilde matrix to analyze regularity (matrix will have %d rows = %d original constraints, %d globally-valid inequalities, %d finite lower+upper bounds). ##\n",
           mtilde, num_orig_rows, num_common_rows, num_bound_rows);
+      
+      timer.start_timer(OverallTimeStats::REG_GEN_ATILDE_TIME);
       prepareAtilde(Atilde, btilde, disj, solver, params.logfile);
+      timer.end_timer(OverallTimeStats::REG_GEN_ATILDE_TIME);
+
       printf("Finished preparing Atilde matrix. Next will compute rank.\n");
     }
+
+    timer.start_timer(OverallTimeStats::REG_RANK_ATILDE_TIME);
     const int Atilderank = (Atilde.getNumRows() > 0) ? computeRank(&Atilde, std::vector<int>(), std::vector<int>()) : solver->getNumCols();
+    timer.end_timer(OverallTimeStats::REG_RANK_ATILDE_TIME);
 
     // Analyze regularity of the existing certificate for each cut
     if (SHOULD_ANALYZE_REGULARITY >= 1 && currCuts.sizeCuts() > 0 && disj) {
+      timer.start_timer(OverallTimeStats::REG_ANALYZE_ORIG_CERT_TIME);
+
       // Calculate the rank of the existing certificate for each cut
       // (Do not compute regularity of the cut overall)
       printf("\n## Analyzing regularity of certificate computed for each cut. ##\n");
-      timer.start_timer(OverallTimeStats::REG_TOTAL_TIME);
 
       // For purposes of linear independence,
       // when a bound is used in the certificate on a certain variable
@@ -606,8 +621,8 @@ int main(int argc, char** argv) {
             static_cast<int>(status));
     #endif
       } // loop over certificates, analyzing each for regularity
-    
-      timer.end_timer(OverallTimeStats::REG_TOTAL_TIME);
+
+      timer.end_timer(OverallTimeStats::REG_ANALYZE_ORIG_CERT_TIME);
     } // analyze regularity of *certificate* (not cut overall)
 
     // Next, analyze regularity of cut overall, using all possible certificates, with the RCVMILP by Serra and Balas (2020)
@@ -619,7 +634,6 @@ int main(int argc, char** argv) {
 
     if (SHOULD_ANALYZE_REGULARITY >= 2 && currCuts.sizeCuts() > 0 && disj) {
       printf("\n## Analyzing regularity of cuts via RCVMILP of Serra and Balas (2020). ##\n");
-      timer.start_timer(OverallTimeStats::REG_TOTAL_TIME);
 
       // Copy to rcvmip_v the contents of v
       rcvmip_v = v;
@@ -673,8 +687,8 @@ int main(int argc, char** argv) {
       
       rcvmip_cuts.insert(rcvmipCurrCuts);
 
-      timer.end_timer(OverallTimeStats::REG_TOTAL_TIME);
     } // analyze regularity of *cut* (not just certificate)
+    timer.end_timer(OverallTimeStats::REG_TOTAL_TIME);
     
     //====================================================================================================//
     // Apply cuts
