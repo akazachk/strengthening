@@ -24,7 +24,7 @@
 #include <OsiSolverInterface.hpp>
 
 // Project files
-#include "analysis.hpp" // SummaryBoundInfo, SummaryCutInfo, Stat, SummaryStrengtheningInfo, printing to logfile
+#include "analysis.hpp" // SummaryBoundInfo, SummaryCutInfo, Stat, SummaryStrengtheningInfo, SummaryRegularityInfo, printing to logfile
 #include "BBHelper.hpp"
 #include "CglAdvCut.hpp"
 #include "CutCertificate.hpp" // TermCutCertificate and CutCertificate
@@ -131,6 +131,8 @@ SummaryDisjunctionInfo disjInfo;
 std::vector<SummaryCutInfo> cutInfoVec;
 SummaryCutInfo cutInfo, cutInfoGMICs, cutInfoUnstr;
 SummaryStrengtheningInfo strInfo, rcvmipStrInfo;
+SummaryRegularityInfo regInfo;
+std::vector<SummaryRegularityInfo> regInfoVec;
 
 // For output
 std::string cut_output = "", bb_output = "";
@@ -337,6 +339,7 @@ int main(int argc, char** argv) {
   std::vector<OsiCuts> mycuts_by_round(num_rounds);
   cutInfoVec.resize(num_rounds);
   boundInfoVec.resize(num_rounds);
+  regInfoVec.resize(num_rounds);
   int round_ind = 0;
   for (round_ind = 0; round_ind < num_rounds; ++round_ind) {
     if (num_rounds > 1) {
@@ -556,22 +559,22 @@ int main(int argc, char** argv) {
       // since we can multiply rows by -1 without changing the rank
       // std::vector<int> certificate_submx_rank(currCuts.sizeCuts(), 0);
       // std::vector<int> num_nonzero_multipliers(solver->getNumRows() + disj->common_changed_var.size() + solver->getNumCols(), 0);
-      cutInfoVec[round_ind].orig_cert_submx_rank.resize(currCuts.sizeCuts(), 0);
-      cutInfoVec[round_ind].orig_cert_submx_num_nnz_mult.resize(currCuts.sizeCuts(), 0);
+      regInfoVec[round_ind].orig_cert_submx_rank.resize(currCuts.sizeCuts(), 0);
+      regInfoVec[round_ind].orig_cert_submx_num_nnz_mult.resize(currCuts.sizeCuts(), 0);
       // assert(Atilde.getNumRows() == solver->getNumRows() + disj->common_changed_var.size());
       // assert(Atilde.getNumRows() + disj->terms[0].changed_var.size() + solver->getNumCols() == v[0][0].size()); // dimension matches for cut 0, term 0
 
       for (int cut_ind = 0; cut_ind < currCuts.sizeCuts(); cut_ind++) {
-        analyzeCertificateRegularity(cutInfoVec[round_ind].orig_cert_submx_rank[cut_ind],
-            cutInfoVec[round_ind].orig_cert_submx_num_nnz_mult[cut_ind], v[cut_ind],
+        analyzeCertificateRegularity(regInfoVec[round_ind].orig_cert_submx_rank[cut_ind],
+            regInfoVec[round_ind].orig_cert_submx_num_nnz_mult[cut_ind], v[cut_ind],
             disj, solver, Atilde, params);
         
     #ifdef TRACE
         fprintf(stdout, "Cut %d: rank = %d/%d, num_nonzero_multipliers = %d\n",
             cut_ind,
-            cutInfoVec[round_ind].orig_cert_submx_rank[cut_ind],
+            regInfoVec[round_ind].orig_cert_submx_rank[cut_ind],
             Atilderank,
-            cutInfoVec[round_ind].orig_cert_submx_num_nnz_mult[cut_ind]);
+            regInfoVec[round_ind].orig_cert_submx_num_nnz_mult[cut_ind]);
     #endif
       } // loop over certificates, analyzing each for regularity
     
@@ -595,16 +598,16 @@ int main(int argc, char** argv) {
       // std::vector<int> num_nonzero_multipliers;
 
       timer.start_timer(OverallTimeStats::REG_CALC_CERT_TIME);
-      analyzeCutRegularity(rcvmip_v, cutInfoVec[round_ind].rcvmip_cert_submx_rank, cutInfoVec[round_ind].rcvmip_cert_submx_num_nnz_mult, unstrCurrCuts, disj, solver, params);
+      analyzeCutRegularity(rcvmip_v, regInfoVec[round_ind].rcvmip_cert_submx_rank, regInfoVec[round_ind].rcvmip_cert_submx_num_nnz_mult, unstrCurrCuts, disj, solver, params);
       timer.end_timer(OverallTimeStats::REG_CALC_CERT_TIME);
     
     #ifdef TRACE
       for (int cut_ind = 0; cut_ind < currCuts.sizeCuts(); cut_ind++) {
         fprintf(stdout, "Cut %d: rank = %d/%d, num_nonzero_multipliers = %d\n",
             cut_ind,
-            cutInfoVec[round_ind].rcvmip_cert_submx_rank[cut_ind],
+            regInfoVec[round_ind].rcvmip_cert_submx_rank[cut_ind],
             Atilderank,
-            cutInfoVec[round_ind].rcvmip_cert_submx_num_nnz_mult[cut_ind]);
+            regInfoVec[round_ind].rcvmip_cert_submx_num_nnz_mult[cut_ind]);
       }
     #endif
 
@@ -967,6 +970,8 @@ int wrapUp(int retCode, int argc, char** argv) {
       printDisjInfo(disjInfo, params.logfile);
       // Str info
       printStrInfo(strInfo, params.logfile);
+      // Regularity info
+      printRegInfo(regInfoVec[0], params.logfile);
       // Cut, obj, fail info
       printCutInfo(cutInfoGMICs, cutInfo, cutInfoUnstr, params.logfile);
       // Full B&B info

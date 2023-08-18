@@ -26,6 +26,7 @@ struct SummaryBoundInfo; // analysis.hpp
 struct SummaryDisjunctionInfo; // analysis.hpp
 struct SummaryCutInfo; // analysis.hpp
 struct SummaryStrengtheningInfo; // analysis.hpp
+struct SummaryRegularityInfo; // analysis.hpp
 
 /// @brief Information about objective value at various points in the solution process
 /// @details Gives objective for the LP and IP, and after adding GMICs, L&PCs, VPCs, and combinations of these cuts
@@ -72,6 +73,7 @@ struct SummaryDisjunctionInfo {
   double avg_max_depth = 0.;
 }; /* SummaryDisjunctionInfo */
 
+ /// @brief Track statistics for a particular family of cuts
 struct SummaryCutInfo {
   int num_cuts = 0;
   int num_active_gmic = 0, num_active_lpc = 0, num_active_mycut, num_active_all = 0;
@@ -86,31 +88,44 @@ struct SummaryCutInfo {
   std::vector<int> numCutsOfType;
   std::vector<int> numCutsFromHeur, numObjFromHeur, numFailsFromHeur, numActiveFromHeur;
   std::vector<int> numFails;
-
-  std::vector<int> orig_cert_submx_rank; ///< rank of the submatrix of the original certificate
-  std::vector<int> orig_cert_submx_num_nnz_mult; ///< number of original problem constraints with nonzero multipliers in original certificate
-  std::vector<int> rcvmip_cert_submx_rank; ///< rank of the submatrix of the RCVMIP certificate
-  std::vector<int> rcvmip_cert_submx_num_nnz_mult; ///< number of original problem constraints with nonzero multipliers in the RCVMIP certificate
 }; /* SummaryCutInfo */
 
-/// @brief Container for types of statistics we want to keep
-enum class Stat { total = 0, avg, stddev, min, max, num_stats };
-
-/// @brief Summary statistics for what attempts at strengthening did
+/// @brief Summary statistics for strengthening attempts
 struct SummaryStrengtheningInfo {
   /// number of cuts affected by strengthening
   int num_str_cuts = 0;
-  /// use multipliers to find number of distinct facets of the cut-generating set S
-  double avg_num_cgs_facets = 0.;
-  /// number of cuts with less than n nonzero mutipliers
-  int num_irreg_less = 0;
-  /// number of cuts with more than n nonzero mutipliers
-  int num_irreg_more = 0;
   /// number of coefficients changed (one entry for each index in #Stat -- total, avg, stddev, min, max)
   std::vector<double> num_coeffs_strengthened = std::vector<double>(static_cast<int>(Stat::num_stats), 0.);
   /// number of times a certificate uses nonzero multipliers on both the upper and lower bounds on a variable
   int num_unmatched_bounds = 0;
 }; /* SummaryStrengtheningInfo */
+
+/// @brief Summary statistics for counting regularity / irregularity of cuts and certificates
+struct SummaryRegularityInfo {
+  std::vector<int> orig_cert_submx_rank; ///< rank of the submatrix of the original certificate
+  std::vector<int> orig_cert_submx_num_nnz_mult; ///< number of original problem constraints with nonzero multipliers in original certificate
+  std::vector<int> rcvmip_cert_submx_rank; ///< rank of the submatrix of the RCVMIP certificate
+  std::vector<int> rcvmip_cert_submx_num_nnz_mult; ///< number of original problem constraints with nonzero multipliers in the RCVMIP certificate
+
+  /// use multipliers to find number of distinct facets of the cut-generating set S using original certificates
+  double orig_cert_avg_num_cgs_facet = 0.;
+  /// number of original certificates leading to submx rank less than number of nonzero multipliers used
+  int orig_cert_num_irreg_less = 0;
+  /// number of original certificates leading to submx rank more than number of nonzero multipliers used
+  int orig_cert_num_irreg_more = 0;
+  
+  /// use multipliers to find number of distinct facets of the cut-generating set S using RCVMIP certificates
+  double rcvmip_cert_avg_num_cgs_facet = 0.;
+  /// number of RCVMIP certificates leading to submx rank less than number of nonzero multipliers used
+  int rcvmip_cert_num_irreg_less = 0;
+  /// number of RCVMIP certificates leading to submx rank more than number of nonzero multipliers used
+  int rcvmip_cert_num_irreg_more = 0;
+  /// number of cuts for which the RCVMIP certificate did not converge
+  int rcvmip_cert_num_not_converged = 0;
+}; /* SummaryRegularityInfo */
+
+/// @brief Container for types of statistics we want to keep
+enum class Stat { total = 0, avg, stddev, min, max, num_stats };
 
 void printHeader(const StrengtheningParameters::Parameters& params,
     const std::vector<std::string>& time_name,
@@ -131,6 +146,9 @@ void printDisjInfo(const SummaryDisjunctionInfo& disjInfo, FILE* logfile,
     const char SEP = ',');
 /// @brief Write to log statistics about the strengthening that was done as stored in #SummaryStrengtheningInfo
 void printStrInfo(const SummaryStrengtheningInfo& info, FILE* myfile,
+    const char SEP = ',');
+/// @brief Write to log statistics about the regularity investigation summarized in #SummaryRegularityInfo
+void printRegularityInfo(const SummaryRegularityInfo& info, FILE* const myfile,
     const char SEP = ',');
 void printCutInfo(const SummaryCutInfo& cutInfoGMICs,
     const SummaryCutInfo& cutInfo, const SummaryCutInfo& cutInfoUnstr,
