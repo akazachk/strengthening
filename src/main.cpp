@@ -592,7 +592,7 @@ int main(int argc, char** argv) {
             origCertInfoVec[round_ind].num_irreg_more++;
             break;
           default:
-            error_msg(errorstring, "Invalid status %d from origCertInfoVec for round %d cut %d.\n", status, round_ind, cut_ind);
+            error_msg(errorstring, "Invalid status %d from origCertInfoVec for round %d cut %d.\n", static_cast<int>(status), round_ind, cut_ind);
             writeErrorToLog(errorstring, params.logfile);
             exit(1);
         } // switch on status
@@ -650,7 +650,7 @@ int main(int argc, char** argv) {
             rcvmipCertInfoVec[round_ind].num_unconverged++;
             break;
           default:
-            error_msg(errorstring, "Invalid status %d from rcvmipCertInfoVec for round %d cut %d.\n", status, round_ind, cut_ind);
+            error_msg(errorstring, "Invalid status %d from rcvmipCertInfoVec for round %d cut %d.\n", static_cast<int>(status), round_ind, cut_ind);
             writeErrorToLog(errorstring, params.logfile);
             exit(1);
         } // switch on status
