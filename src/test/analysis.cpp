@@ -76,8 +76,8 @@ void printHeader(const StrengtheningParameters::Parameters& params,
   fprintf(logfile, "%s", "STRENGTHENING INFO");
   tmpstring.assign(countStrInfoEntries, SEP);
   fprintf(logfile, "%s", tmpstring.c_str());
-  fprintf(logfile, "%s", "REGULARITY INFO");
-  tmpstring.assign(countStrInfoEntries, SEP);
+  fprintf(logfile, "%s", "CERTIFICATE INFO");
+  tmpstring.assign(countCertInfoEntries, SEP);
   fprintf(logfile, "%s", tmpstring.c_str());
   fprintf(logfile, "%s", "CUT INFO");
   tmpstring.assign(countCutInfoEntries, SEP);
@@ -814,7 +814,7 @@ void printCertificateInfo(const SummaryCertificateInfo& orig_info, const Summary
     fprintf(logfile, "%s%c", stringValue(info.num_unconverged, "%g").c_str(), SEP); count++;
   }
   fflush(logfile);
-  assert(count == countStrInfoEntries);
+  assert(count == countCertInfoEntries);
 } /* printCertificateInfo */
 
 void printCutInfo(const SummaryCutInfo& cutInfoGMICs,
