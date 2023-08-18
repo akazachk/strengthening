@@ -122,10 +122,10 @@ void printHeader(const StrengtheningParameters::Parameters& params,
     fprintf(logfile, "%s%c", "NUM MYCUTS", SEP); count++; // 11
     fprintf(logfile, "%s%c", "MYCUTS OBJ", SEP); count++; // 12
     fprintf(logfile, "%s%c", "MYCUTS+GMIC BOUND", SEP); count++; // 13
-    fprintf(logfile, "%s%c", "NUM STR MYCUTS", SEP); count++; // 14
+    fprintf(logfile, "%s%c", "NUM AFFECTED STR MYCUTS", SEP); count++; // 14
     fprintf(logfile, "%s%c", "UNSTR MYCUTS OBJ", SEP); count++; // 15
     fprintf(logfile, "%s%c", "UNSTR MYCUTS+GMIC BOUND", SEP); count++; // 16
-    fprintf(logfile, "%s%c", "NUM RCVMIP-STR MYCUTS", SEP); count++; // 17
+    fprintf(logfile, "%s%c", "NUM AFFECTED RCVMIP-STR MYCUTS", SEP); count++; // 17
     fprintf(logfile, "%s%c", "RCVMIP MYCUTS OBJ", SEP); count++; // 18
     fprintf(logfile, "%s%c", "RCVMIP MYCUTS+GMIC BOUND", SEP); count++; // 19
     fprintf(logfile, "%s%c", "RCVMIP ALL BOUND", SEP); count++; // 20
