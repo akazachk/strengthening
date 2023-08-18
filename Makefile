@@ -7,6 +7,7 @@
 #   make --warn-undefined-variables
 ### Shell type ###
 # REMEMBER: use hard tabs only in a makefile
+HOSTNAME := $(shell hostname)
 UNAME := $(shell uname)
 ifeq ($(UNAME),Linux)
   CC     = g++
@@ -38,7 +39,6 @@ else
 endif
 EIG_LIB = $(REPOS_DIR)/eigen
 VPC_DIR = ${REPOS_DIR}/vpc
-COIN_OR = ${VPC_DIR}/lib/Cbc-${COIN_VERSION}
 
 ifeq ($(USER),otherperson)
   #COIN_OR = enter/dir/here
@@ -60,14 +60,21 @@ ifeq ($(USER),kazaalek)
 	EIG_LIB = ${HOME}/repos/eigen
 endif
 
-# HiPerGator
 ifeq ($(USER),akazachkov)
-  ifeq ($(UNAME),Linux)
-	  #COIN_OR = ${HOME}/repos/coin-or/Cbc-$(COIN_VERSION)
-    GUROBI_LINK = gurobi100
-    GUROBI_DIR = ${GUROBI_HOME}
-		CPLEX_DIR = ${CPLEX_HOME}
-		#CONDA_LIB = ${HOME}/.conda/envs/vpc/lib
+	ifeq ($(UNAME),Linux)
+		ifeq ($(HOSTNAME),ISE-D41L3Q3)
+			# w401
+			GUROBI_LINK = gurobi100
+			GUROBI_DIR = ${GUROBI_HOME}
+			CPLEX_DIR = ${CPLEX_HOME}
+		else
+			# HiPerGator
+			COIN_OR = ${HOME}/repos/coin-or/Cbc-$(COIN_VERSION)
+			GUROBI_LINK = gurobi95
+			GUROBI_DIR = ${GUROBI_LOCAL}
+			CPLEX_DIR = ${CPLEX_HOME}
+			CONDA_LIB = ${HOME}/.conda/envs/vpc/lib
+		endif
 	endif
 	# MacStudio
   ifeq ($(UNAME),Darwin)
