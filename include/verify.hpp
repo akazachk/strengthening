@@ -5,6 +5,7 @@
  */
 #pragma once
 
+#include <cstdio> /// FILE
 #include <vector>
 
 // COIN-OR files
