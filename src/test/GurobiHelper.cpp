@@ -76,6 +76,7 @@ GRBModel* buildGRBModelFromOsi(const OsiSolverInterface* const solver, FILE* con
   model->update();
 
   // Copy constraints
+  GRBVar* var = model->getVars();
   const CoinPackedMatrix* matrix = solver->getMatrixByRow();
   for (int row = 0; row < solver->getNumRows(); row++) {
     const double lb = solver->getRowLower()[row];
@@ -85,7 +86,7 @@ GRBModel* buildGRBModelFromOsi(const OsiSolverInterface* const solver, FILE* con
     for (CoinBigIndex j = matrix->getVectorStarts()[row]; j < matrix->getVectorStarts()[row] + matrix->getVectorLengths()[row]; j++) {
       const int col = matrix->getIndices()[j];
       const double coeff = matrix->getElements()[j];
-      expr += coeff * model->getVars()[col];
+      expr += coeff * var[col];
     }
     if (lb == ub) {
       model->addConstr(expr, GRB_EQUAL, lb, name);
@@ -104,6 +105,7 @@ GRBModel* buildGRBModelFromOsi(const OsiSolverInterface* const solver, FILE* con
   }
   model->update();
 
+  if (var) { delete[] var; }
   return model;
 } /* buildGRBModelFromOsi */
 
