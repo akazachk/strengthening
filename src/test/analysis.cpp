@@ -204,7 +204,7 @@ void printHeader(const StrengtheningParameters::Parameters& params,
   } // DISJ INFO
   
   // Certificate types will be used for STR and CERT info
-  std::vector<std::string> CERTIFICATE_TYPES = { "ORIG", "RCVMIP" };
+  std::vector<std::string> CERTIFICATE_TYPES = { "ORIG ", "RCVMIP " };
   { // STR INFO
     int count = 0;
     for (const std::string& type : CERTIFICATE_TYPES) {
