@@ -718,11 +718,11 @@ void genRCVMIPFromCut(
   }
   // u^t_0
   for (int t = 0; t < num_terms; t++) {
-    for (int i = 0; i < disj->terms[t].changed_var.size(); i++) {
+    for (int i = 0; i < (int) disj->terms[t].changed_var.size(); i++) {
       var_names.push_back("u0_" + std::to_string(t) + "_" + std::to_string(i));
     }
   }
-  assert(liftingSolver->getNumCols() == var_names.size());
+  assert(liftingSolver->getNumCols() == (int) var_names.size());
   liftingSolver->setColNames(var_names, 0, liftingSolver->getNumCols(), 0);
 
   // Set names of rows
@@ -740,7 +740,7 @@ void genRCVMIPFromCut(
   for (int extra_row_ind = num_cglp_constraints; extra_row_ind < liftingSolver->getNumRows(); extra_row_ind++) {
     row_names.push_back("par_rows_" + std::to_string(extra_row_ind - num_cglp_constraints));
   }
-  assert(liftingSolver->getNumRows() == row_names.size());
+  assert(liftingSolver->getNumRows() == (int) row_names.size());
   liftingSolver->setRowNames(row_names, 0, liftingSolver->getNumRows(), 0);
 } /* genRCVMIPFromCut */
 
@@ -906,7 +906,7 @@ void setRCVMIPStart(
   double scale = 1.;
   if (SHOULD_SCALE) {
     for (int term_ind = 0; term_ind < disj->num_terms; term_ind++) {
-      for (int i = 0; i < v[term_ind].size(); i++) {
+      for (int i = 0; i < (int) v[term_ind].size(); i++) {
         if (std::abs(v[term_ind][i]) > scale) {
           scale = std::abs(v[term_ind][i]);
         }
@@ -1703,7 +1703,7 @@ RegularityStatus analyzeCertificateRegularity(
     const StrengtheningParameters::Parameters& params) {
   std::vector<int> rows;
   std::vector<int> cols;
-  for (int row = 0; row < solver->getNumRows() + disj->common_changed_var.size(); row++) {
+  for (int row = 0; row < solver->getNumRows() + (int) disj->common_changed_var.size(); row++) {
     for (int term = 0; term < disj->num_terms; term++) {
       if (!isZero(v[term][row])) {
         rows.push_back(row);
@@ -1800,7 +1800,7 @@ void analyzeCutRegularity(
       StrengtheningParameters::BB_Strategy_Options::cbc);
       
 #ifdef USE_GUROBI
-  GRBModel* grbSolver;
+  GRBModel* grbSolver = NULL;
 #endif
   if (use_gurobi) {
 #ifndef USE_GUROBI
@@ -1814,7 +1814,7 @@ void analyzeCutRegularity(
   }
 
 #ifdef USE_CBC
-  CbcModel* cbcSolver;
+  CbcModel* cbcSolver = NULL;
 #endif
   if (use_cbc) {
 #ifndef USE_CBC
@@ -1867,7 +1867,7 @@ void analyzeCutRegularity(
 
     if (!reached_feasibility) {
       // Clear the certificate for the current cut, if one was provided
-      if (v.size() > cut_ind) {
+      if ((int) v.size() > cut_ind) {
         v[cut_ind].clear();
       }
 
