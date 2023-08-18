@@ -1098,7 +1098,7 @@ void analyzeStrength(
   // Finally, print effect when RCVMIP-strengthened cuts are used, if applicable
   if (boundInfo.num_rcvmip_str_affected_cuts > 0) {
     snprintf(tmpstring, sizeof(tmpstring) / sizeof(char),
-        "%-*.*s%s (%d cuts", NAME_WIDTH, NAME_WIDTH, "RCVMIP: ",
+        "%-*.*s%s (%d cuts affected by RCVMIP", NAME_WIDTH, NAME_WIDTH, "RCVMIP: ",
         stringValue(boundInfo.rcvmip_all_cuts_obj, "% -*.*g",
           INF,
           NUM_DIGITS_BEFORE_DEC,
