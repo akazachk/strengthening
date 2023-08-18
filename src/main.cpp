@@ -543,7 +543,14 @@ int main(int argc, char** argv) {
     CoinPackedMatrix Atilde;
     std::vector<double> btilde;
     if (SHOULD_ANALYZE_REGULARITY != 0 && disj != NULL) {
+      const int mtilde = calculateNumRowsAtilde(disj, solver);
+      const int num_orig_rows = solver->getNumRows();
+      const int num_common_rows = disj->common_changed_var.size();
+      const int num_bound_rows = calculateNumFiniteBounds(solver);
+      printf("\n## Preparing Atilde matrix to analyze regularity (matrix will have %d rows = %d original constraints, %d globally-valid inequalities, %d finite lower+upper bounds). ##\n",
+          mtilde, num_orig_rows, num_common_rows, num_bound_rows);
       prepareAtilde(Atilde, btilde, disj, solver, params.logfile);
+      printf("Finished preparing Atilde matrix. Next will compute rank.\n");
     }
     const int Atilderank = (Atilde.getNumRows() > 0) ? computeRank(&Atilde, std::vector<int>(), std::vector<int>()) : solver->getNumCols();
 

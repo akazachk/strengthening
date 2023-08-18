@@ -48,10 +48,9 @@ enum class RCVMIPStatus {
   ERROR                 ///< Error
 };
 
-/// @brief Calculate number of finite lower and upper bounds
 int calculateNumFiniteBounds(
   const OsiSolverInterface* const solver,
-  int* const num_lb = NULL, int* const num_ub = NULL) {
+  int* const num_lb, int* const num_ub) {
   if (num_lb) { *num_lb = 0; }
   if (num_ub) { *num_ub = 0; }
   int num_finite_bounds = 0;

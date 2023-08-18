@@ -21,6 +21,11 @@ class OsiSolverInterface;
 class OsiRowCut;
 class OsiCuts;
 
+/// @brief Calculate number of finite lower and upper bounds
+int calculateNumFiniteBounds(
+  const OsiSolverInterface* const solver,
+  int* const num_lb = NULL, int* const num_ub = NULL);
+
 /// @brief Calculate the number of rows of Atilde
 int calculateNumRowsAtilde(
     const Disjunction* const disj,
