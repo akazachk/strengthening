@@ -625,8 +625,6 @@ int main(int argc, char** argv) {
           rcvmipCertInfoVec[round_ind].num_iterations,
           unstrCurrCuts, disj, solver, params);
       timer.end_timer(OverallTimeStats::REG_CALC_CERT_TIME);
-      
-      setCertificateInfo(rcvmipCertInfoVec[round_ind], disj, rcvmip_v, solver->getNumRows(), solver->getNumCols(), rcvmip_str_cut_ind, CURR_EPS);
     
       for (int cut_ind = 0; cut_ind < currCuts.sizeCuts(); cut_ind++) {
         const RegularityStatus status = rcvmip_regularity_status[cut_ind];
@@ -658,11 +656,12 @@ int main(int argc, char** argv) {
             rcvmipCertInfoVec[round_ind].num_nnz_mult[cut_ind],
             static_cast<int>(status));
     #endif
-      }
+      } // loop over cuts, analyzing each for regularity
 
       // Apply the new strengthening certificates to get new cuts
       rcvmipCurrCuts = unstrCurrCuts; // assignment operator essentially inserts each of the unstrCurrCuts into rcvmipCurrCuts
       strengtheningHelper(rcvmipCurrCuts, rcvmip_v, rcvmip_str_cut_ind, rcvmipStrInfo, boundInfoVec[round_ind], disj, solver, ip_solution, false);
+      setCertificateInfo(rcvmipCertInfoVec[round_ind], disj, rcvmip_v, solver->getNumRows(), solver->getNumCols(), rcvmip_str_cut_ind, CURR_EPS);
       boundInfo.num_rcvmip_str_affected_cuts += rcvmip_str_cut_ind.size();
       
       rcvmip_cuts.insert(rcvmipCurrCuts);
