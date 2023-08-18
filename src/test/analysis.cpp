@@ -20,6 +20,7 @@
 using namespace StrengtheningParameters;
 #include "utility.hpp" // isInfinity, stringValue
 
+// Below values are used to doublecheck that the columns in the header are correctly counted
 const int countBoundInfoEntries = 20;
 const int countGapInfoEntries = 9;
 const int countSummaryBBInfoEntries = 4 * 2;
@@ -30,8 +31,10 @@ const int countDisjInfoEntries = 12;
 const int countCutInfoEntries = 13;
 const int countObjInfoEntries = 1;
 const int countFailInfoEntries = 1 + static_cast<int>(CglAdvCut::FailureType::NUM_FAILURE_TYPES);
-const int countStrInfoEntries = 6;
-const int countRegInfoEntries = 6;
+const std::vector<std::string> STR_INFO_CONTENTS = { "NUM STR AFFECTED CUTS", "NUM COEFFS STR AVG", "NUM COEFFS STR STDDEV", "NUM COEFFS STR MIN", "NUM COEFFS STR MAX" };
+const int countStrInfoEntries = STR_INFO_CONTENTS.size() * 2;
+const std::vector<std::string> CERT_INFO_CONTENTS = { "NUM UNMATCHED BOUNDS", "AVG NUM CGS FACETS", "NUM IRREG LESS", "NUM REGULAR", "NUM IRREG MORE", "NUM UNCONVERGED" };
+const int countCertInfoEntries = CERT_INFO_CONTENTS.size() * 2;
 const int countParamInfoEntries = intParam::NUM_INT_PARAMS + doubleParam::NUM_DOUBLE_PARAMS;
 int countTimeInfoEntries = 0; // set in printHeader
 const int countVersionInfoEntries = 6;
@@ -199,26 +202,39 @@ void printHeader(const StrengtheningParameters::Parameters& params,
     fprintf(logfile, "%s%c", "AVG PARTIAL BB MAX DEPTH", SEP); count++;
     assert(count == countDisjInfoEntries);
   } // DISJ INFO
+  
+  // Certificate types will be used for STR and CERT info
+  std::vector<std::string> CERTIFICATE_TYPES = { "ORIG", "RCVMIP" };
   { // STR INFO
     int count = 0;
-    fprintf(logfile, "%s%c", "NUM STR CUTS", SEP); count++;
-    fprintf(logfile, "%s%c", "NUM UNMATCHED BOUNDS", SEP); count++;
-    fprintf(logfile, "%s%c", "NUM COEFFS STR AVG", SEP); count++;
-    fprintf(logfile, "%s%c", "NUM COEFFS STR STDDEV", SEP); count++;
-    fprintf(logfile, "%s%c", "NUM COEFFS STR MIN", SEP); count++;
-    fprintf(logfile, "%s%c", "NUM COEFFS STR MAX", SEP); count++;
+    for (const std::string& type : CERTIFICATE_TYPES) {
+      for (const std::string& name : STR_INFO_CONTENTS) {
+        fprintf(logfile, "%s%c", (type + name).c_str(), SEP); count++;
+      }
+    }
+    // fprintf(logfile, "%s%c", "ORIG NUM STR AFFECTED CUTS", SEP); count++;
+    // fprintf(logfile, "%s%c", "ORIG NUM COEFFS STR AVG", SEP); count++;
+    // fprintf(logfile, "%s%c", "ORIG NUM COEFFS STR STDDEV", SEP); count++;
+    // fprintf(logfile, "%s%c", "ORIG NUM COEFFS STR MIN", SEP); count++;
+    // fprintf(logfile, "%s%c", "ORIG NUM COEFFS STR MAX", SEP); count++;
+    // fprintf(logfile, "%s%c", "RCVMIP NUM STR AFFECTED CUTS", SEP); count++;
+    // fprintf(logfile, "%s%c", "RCVMIP NUM COEFFS STR AVG", SEP); count++;
+    // fprintf(logfile, "%s%c", "RCVMIP NUM COEFFS STR STDDEV", SEP); count++;
+    // fprintf(logfile, "%s%c", "RCVMIP NUM COEFFS STR MIN", SEP); count++;
+    // fprintf(logfile, "%s%c", "RCVMIP NUM COEFFS STR MAX", SEP); count++;
     assert(count == countStrInfoEntries);
   } // STR INFO
-  { // REG INFO
+
+  { // CERTIFICATE INFO
     int count = 0;
-    fprintf(logfile, "%s%c", "ORIG AVG NUM CGS FACETS", SEP); count++;
-    fprintf(logfile, "%s%c", "ORIG NUM IRREG LESS", SEP); count++;
-    fprintf(logfile, "%s%c", "ORIG NUM IRREG MORE", SEP); count++;
-    fprintf(logfile, "%s%c", "RCVMIP AVG NUM CGS FACETS", SEP); count++;
-    fprintf(logfile, "%s%c", "RCVMIP NUM IRREG LESS", SEP); count++;
-    fprintf(logfile, "%s%c", "RCVMIP NUM IRREG MORE", SEP); count++;
-    assert(count == countRegInfoEntries);
-  } // REG INFO
+    for (const std::string& type : CERTIFICATE_TYPES) {
+      for (const std::string& name : CERT_INFO_CONTENTS) {
+        fprintf(logfile, "%s%c", (type + name).c_str(), SEP); count++;
+      }
+    }
+    assert(count == countCertInfoEntries);
+  } // CERTIFICATE INFO
+
   { // CUT INFO
     int count = 0;
     fprintf(logfile, "%s%c", "NUM ROUNDS", SEP); count++;
@@ -345,7 +361,7 @@ void printBoundAndGapInfo(const SummaryBoundInfo& boundInfo, FILE* logfile, cons
     } else {
       fprintf(logfile, "%c", SEP); count++;
     }
-    fprintf(logfile, "%s%c", stringValue(boundInfo.num_str_cuts).c_str(), SEP); count++;
+    fprintf(logfile, "%s%c", stringValue(boundInfo.num_str_affected_cuts).c_str(), SEP); count++;
     if (boundInfo.num_mycut > 0) {
       fprintf(logfile, "%s%c", stringValue(boundInfo.unstr_mycut_obj, "%2.20f").c_str(), SEP); count++;
     } else {
@@ -356,7 +372,7 @@ void printBoundAndGapInfo(const SummaryBoundInfo& boundInfo, FILE* logfile, cons
     } else {
       fprintf(logfile, "%c", SEP); count++;
     }
-    fprintf(logfile, "%s%c", stringValue(boundInfo.num_rcvmip_str_cuts).c_str(), SEP); count++;
+    fprintf(logfile, "%s%c", stringValue(boundInfo.num_rcvmip_str_affected_cuts).c_str(), SEP); count++;
     for (const auto& val : rcvmip_bounds) {
       if (!isInfinity(std::abs(val))) {
         fprintf(logfile, "%s%c", stringValue(val, "%2.20f").c_str(), SEP); count++;
@@ -764,35 +780,42 @@ void printDisjInfo(const SummaryDisjunctionInfo& disjInfo, FILE* logfile, const 
   assert(count == countDisjInfoEntries);
 } /* printDisjInfo */
 
-void printStrInfo(const SummaryStrengtheningInfo& info, FILE* logfile, const char SEP) {
+void printStrInfo(const SummaryStrengtheningInfo& orig_info, const SummaryStrengtheningInfo& rcvmip_info, FILE* const logfile, const char SEP) {
   if (!logfile)
     return;
 
+  std::vector<SummaryStrengtheningInfo> info_vec = {orig_info, rcvmip_info};
+
   int count = 0;
-  fprintf(logfile, "%s%c", stringValue(info.num_str_cuts, "%d").c_str(), SEP); count++;
-  fprintf(logfile, "%s%c", stringValue(info.num_unmatched_bounds, "%d").c_str(), SEP); count++;
-  fprintf(logfile, "%s%c", stringValue(info.num_coeffs_strengthened[(int) Stat::avg], "%g").c_str(), SEP); count++;
-  fprintf(logfile, "%s%c", stringValue(info.num_coeffs_strengthened[(int) Stat::stddev], "%g").c_str(), SEP); count++;
-  fprintf(logfile, "%s%c", stringValue(info.num_coeffs_strengthened[(int) Stat::min], "%g").c_str(), SEP); count++;
-  fprintf(logfile, "%s%c", stringValue(info.num_coeffs_strengthened[(int) Stat::max], "%g").c_str(), SEP); count++;
+  for (const auto& info : info_vec) {
+    fprintf(logfile, "%s%c", stringValue(info.num_str_affected_cuts, "%d").c_str(), SEP); count++;
+    fprintf(logfile, "%s%c", stringValue(info.num_coeffs_strengthened[(int) Stat::avg], "%g").c_str(), SEP); count++;
+    fprintf(logfile, "%s%c", stringValue(info.num_coeffs_strengthened[(int) Stat::stddev], "%g").c_str(), SEP); count++;
+    fprintf(logfile, "%s%c", stringValue(info.num_coeffs_strengthened[(int) Stat::min], "%g").c_str(), SEP); count++;
+    fprintf(logfile, "%s%c", stringValue(info.num_coeffs_strengthened[(int) Stat::max], "%g").c_str(), SEP); count++;
+  }
   fflush(logfile);
   assert(count == countStrInfoEntries);
 } /* printStrInfo */
 
-void printRegInfo(const SummaryRegularityInfo& info, FILE* const logfile, const char SEP) {
+void printCertificateInfo(const SummaryCertificateInfo& orig_info, const SummaryCertificateInfo& rcvmip_info, FILE* const logfile, const char SEP) {
   if (!logfile)
     return;
   
+  std::vector<SummaryCertificateInfo> info_vec = {orig_info, rcvmip_info};
+
   int count = 0;
-  fprintf(logfile, "%s%c", stringValue(info.orig_cert_avg_num_cgs_facet, "%g").c_str(), SEP); count++;
-  fprintf(logfile, "%s%c", stringValue(info.orig_cert_num_irreg_less, "%d").c_str(), SEP); count++;
-  fprintf(logfile, "%s%c", stringValue(info.orig_cert_num_irreg_more, "%d").c_str(), SEP); count++;
-  fprintf(logfile, "%s%c", stringValue(info.rcvmip_cert_avg_num_cgs_facet, "%g").c_str(), SEP); count++;
-  fprintf(logfile, "%s%c", stringValue(info.rcvmip_cert_num_irreg_less, "%d").c_str(), SEP); count++;
-  fprintf(logfile, "%s%c", stringValue(info.rcvmip_cert_num_irreg_more, "%d").c_str(), SEP); count++;
+  for (const auto& info : info_vec) {
+    fprintf(logfile, "%s%c", stringValue(info.num_unmatched_bounds, "%d").c_str(), SEP); count++;
+    fprintf(logfile, "%s%c", stringValue(info.avg_num_cgs_facet, "%g").c_str(), SEP); count++;
+    fprintf(logfile, "%s%c", stringValue(info.num_irreg_less, "%d").c_str(), SEP); count++;
+    fprintf(logfile, "%s%c", stringValue(info.num_reg, "%d").c_str(), SEP); count++;
+    fprintf(logfile, "%s%c", stringValue(info.num_irreg_more, "%d").c_str(), SEP); count++;
+    fprintf(logfile, "%s%c", stringValue(info.num_unconverged, "%g").c_str(), SEP); count++;
+  }
   fflush(logfile);
   assert(count == countStrInfoEntries);
-} /* printRegInfo */
+} /* printCertificateInfo */
 
 void printCutInfo(const SummaryCutInfo& cutInfoGMICs,
     const SummaryCutInfo& cutInfo, const SummaryCutInfo& cutInfoUnstr,
@@ -1010,7 +1033,7 @@ void analyzeStrength(
     output += tmpstring;
     output += ")\n";
   }
-  if (boundInfo.num_str_cuts > 0 && !isInfinity(std::abs(boundInfo.unstr_mycut_obj))) {
+  if (boundInfo.num_str_affected_cuts > 0 && !isInfinity(std::abs(boundInfo.unstr_mycut_obj))) {
     snprintf(tmpstring, sizeof(tmpstring) / sizeof(char),
         "%-*.*s%s (%d cuts", NAME_WIDTH, NAME_WIDTH, "unstr MYCUTs: ",
         stringValue(boundInfo.unstr_mycut_obj, "% -*.*g",
@@ -1020,7 +1043,7 @@ void analyzeStrength(
         boundInfo.num_mycut);
     output += tmpstring;
     snprintf(tmpstring, sizeof(tmpstring) / sizeof(char),
-        " -> %d strengthened", boundInfo.num_str_cuts);
+        " -> %d strengthened", boundInfo.num_str_affected_cuts);
     output += tmpstring;
     output += ")\n";
   }
@@ -1043,7 +1066,7 @@ void analyzeStrength(
     output += tmpstring;
     output += ")\n";
   }
-  if (boundInfo.num_str_cuts > 0 && !isInfinity(std::abs(boundInfo.unstr_mycut_obj))) {
+  if (boundInfo.num_str_affected_cuts > 0 && !isInfinity(std::abs(boundInfo.unstr_mycut_obj))) {
     if (boundInfo.num_gmic + boundInfo.num_lpc > 0) { // Even if there are no MYCUTs, but not if there are *only* MYCUTs
       snprintf(tmpstring, sizeof(tmpstring) / sizeof(char),
           "%-*.*s%s (%d cuts)\n", NAME_WIDTH, NAME_WIDTH, "unstr All: ",
@@ -1073,14 +1096,14 @@ void analyzeStrength(
   }
 
   // Finally, print effect when RCVMIP-strengthened cuts are used, if applicable
-  if (boundInfo.num_rcvmip_str_cuts > 0) {
+  if (boundInfo.num_rcvmip_str_affected_cuts > 0) {
     snprintf(tmpstring, sizeof(tmpstring) / sizeof(char),
         "%-*.*s%s (%d cuts", NAME_WIDTH, NAME_WIDTH, "RCVMIP: ",
         stringValue(boundInfo.rcvmip_all_cuts_obj, "% -*.*g",
           INF,
           NUM_DIGITS_BEFORE_DEC,
           NUM_DIGITS_AFTER_DEC).c_str(),
-        boundInfo.num_rcvmip_str_cuts);
+        boundInfo.num_rcvmip_str_affected_cuts);
     output += tmpstring;
     output += ")\n";
   }
@@ -1372,328 +1395,159 @@ void setCutInfo(SummaryCutInfo& cutInfo, const int num_rounds,
   }
 } /* setCutInfo (merge from multiple rounds) */
 
-/// @details For a single cut, count number of nonzero multipliers,
-/// and also find number of distinct facets of the convex cut-generating set
-/// defined by these multipliers (applied to \p disj)
-///
-/// TODO only works with bounds defining disjunctive terms for now
-void setStrInfo(
-    SummaryStrengtheningInfo& info,
-    const Disjunction* const disj,
-    /// [in] Index is [term][multiplier] where the first m multipliers are on original rows, then there are m0 on the disjunctive term ineqs, and finally n on columns
-    const CutCertificate& v,
-    const int num_rows,
-    const int num_cols,
-    const int num_str_cuts,
-    const double EPS) {
-  if (!disj) { return; }
-
-  assert( disj->common_ineqs.size() == 0 ); // TODO handle this case
-  const int num_common_rows = disj->common_changed_bound.size() + disj->common_ineqs.size();
-  
-  // K counts the number of nonzero multipliers for each constraint
-  // If the constraints form a basis, then the cut is "regular",
-  // assuming the corresponding point is not feasible for the disjunction
-  std::vector<int> K(num_rows + num_common_rows + num_cols, 0);
-  int num_nonzero_coeff = 0;
-
-  // Compute the convex set S using the multipliers on the disjunctive term ineqs
-  // These will all be stored as inequalities in >= form
-  std::vector<CoinPackedVector> facetLHS;
-  std::vector<double> facetRHS;
-  facetLHS.reserve(disj->num_terms);
-  facetRHS.reserve(disj->num_terms);
-  for (int term_ind = 0; term_ind < disj->num_terms; term_ind++) {
-    const DisjunctiveTerm& term = disj->terms[term_ind];
-    const int num_disj_ineqs = (int) term.changed_var.size();
-
-    // For each original inequality, check whether it has a nonzero multiplier
-    for (int row = 0; row < num_rows + num_common_rows; row++) {
-      const double ukt = v[term_ind][row];
-      if (!isZero(ukt, EPS)) {
-        if (K[row] == 0) num_nonzero_coeff++;
-        K[row]++;
-      }
-    } // loop over original rows
-    
-    // For each disj term inequality, do the aggregation using u^t_0
-    // TODO generalize for general inequalities (need to account for coefficients)
-    std::vector<int> indices;
-    indices.reserve(num_disj_ineqs);
-    std::vector<double> elements;
-    elements.reserve(num_disj_ineqs);
-    double rhs = 0.;
-    for (int bound_ind = 0; bound_ind < num_disj_ineqs; bound_ind++) {
-      const double uk0 = v[term_ind][num_rows + num_common_rows + bound_ind];
-      if (isZero(uk0, EPS)) continue;
-
-      const int var = term.changed_var[bound_ind];
-      const int bd = term.changed_bound[bound_ind]; // <= 0: lower bound, 1: upper bound
-      const double val = term.changed_value[bound_ind];
-      const double mult = (bd <= 0) ? 1. : -1.; // if bd == 1, then -x_k >= -val is the term
-      const double coeff = uk0 * mult;
-      const double curr_rhs = uk0 * val * mult;
-      
-      // Check if this variable appeared in a previous inequality for this term
-      // This could happen if we branch (x_k <= 1) v (x_k >= 2) and later (x_k <= 0) v (x_k >= 1)
-      // But in that case, only one of those should have a nonzero multiplier
-      // On the other hand, for disjunctions not restricted to variable branching,
-      // the situation can arise that a nonzero multiplier exists on two constraints containing the same var
-      int prev_ind = -1;
-      for (int i = 0; i < (int) indices.size(); i++) {
-        if (indices[i] == var) {
-          prev_ind = i;
-          break;
-        }
-      }
-
-      rhs += curr_rhs;
-      if (prev_ind == -1) {
-        indices.push_back(var);
-        elements.push_back(coeff);
-      } else {
-        elements[prev_ind] += coeff;
-      }
-    } // loop over disj term ineqs
-    if ((int) indices.size() > 0) {
-      facetLHS.push_back(CoinPackedVector((int) indices.size(), indices.data(), elements.data()));
-      facetRHS.push_back(rhs);
-    }
-  } // loop over terms
-
-#ifdef TRACE
-  // Print facets generated
-  std::string cgsName = "";
-  for (int facet_ind = 0; facet_ind < (int) facetLHS.size(); facet_ind++) {
-    CoinPackedVector& vec = facetLHS[facet_ind];
-    const double rhs = facetRHS[facet_ind];
-    const int num_elem = vec.getNumElements();
-    const int* indices = vec.getIndices();
-    const double* elements = vec.getElements();
-    Disjunction::setCgsName(cgsName, num_elem, indices, elements, rhs, false);
-  }
-  printf("setStrInfo: After aggregating disjunctive terms, convex cut-generating set has following name:\n");
-  printf("%s\n", cgsName.c_str());
-#endif
-
-  // Loop over the new facets and check which are distinct
-  int num_facets = 0;
-  std::vector<int> sameAsFacet(facetLHS.size(), -1);
-  for (int facet_ind = 0; facet_ind < (int) facetLHS.size(); facet_ind++) {
-    CoinPackedVector& vec1 = facetLHS[facet_ind];
-    const double rhs1 = facetRHS[facet_ind];
-    int f = 0;
-    for (f = 0; f < facet_ind; f++) {
-      if (sameAsFacet[f] != -1) continue;
-      CoinPackedVector& vec2 = facetLHS[f];
-      const double rhs2 = facetRHS[f];
-      const int howDifferent = isRowDifferent(&vec1, rhs1, &vec2, rhs2, EPS);
-      if (howDifferent == 0) {
-        sameAsFacet[facet_ind] = f;
-        break;
-      }
-    } // loop over previous facets
-    if (sameAsFacet[facet_ind] == -1) {
-      num_facets++;
-    }
-  } // loop over cgs facets
-  info.avg_num_cgs_facets += (double) num_facets / num_str_cuts;
-
-  // Update number of unmatched bounds (times both a lower and upper bound on a variable have
-  // nonzero multipliers, which can be detected by the sign on the corresponding bound in v)
-  for (int var = 0; var < num_cols; var++) {
-    int lt_zero_ind = -1, gt_zero_ind = -1;
-    for (int term_ind = 0; term_ind < disj->num_terms; term_ind++) {
-      const int num_disj_ineqs = (int) disj->terms[term_ind].changed_var.size();
-      const double ukt = v[term_ind][num_rows + num_common_rows + num_disj_ineqs + var];
-      if (lessThanVal(ukt, 0, EPS)) {
-        if (lt_zero_ind == -1) lt_zero_ind = term_ind;
-      } else if (greaterThanVal(ukt, 0, EPS)) {
-        if (gt_zero_ind == -1) gt_zero_ind = term_ind;
-      }
-      if (lt_zero_ind != -1 && gt_zero_ind != -1) break;
-
-      if (!isZero(ukt, EPS)) {
-        if (K[num_rows + num_common_rows + var] == 0) num_nonzero_coeff++;
-        K[num_rows + num_common_rows + var]++;
-      }
-    } // loop over terms
-    info.num_unmatched_bounds += (lt_zero_ind != -1 && gt_zero_ind != -1);
-  } // loop over vars 
-
-  info.num_irreg_less += (num_nonzero_coeff < num_cols);
-  info.num_irreg_more += (num_nonzero_coeff > num_cols);
-} /* setStrInfo (single cut) */
-
 /// @details For a collection of cuts, count number of nonzero multipliers,
 /// and also find number of distinct facets of the convex cut-generating set
 /// defined by these multipliers (applied to \p disj)
 ///
 /// TODO only works with bounds defining disjunctive terms for now
-void setStrInfo(
-    SummaryStrengtheningInfo& info,
-    const Disjunction* const disj,
-    /// [in] Indexed at [cut][term][multiplier] where the first m multipliers are on original rows, then there are m0 on the disjunctive term ineqs, and finally n on columns
-    const std::vector<CutCertificate>& v,
-    const int num_rows,
-    const int num_cols,
-    /// [in] Indices of strengthened cuts
-    const std::vector<int>& str_cut_ind,
-    /// [in] Epsilon to be used for gathering statistics
-    const double EPS) {
-  if (!disj) { return; }
-
-  const int num_str_cuts = (int) str_cut_ind.size();
-  info.num_str_cuts = num_str_cuts;
-  for (const int cut_ind : str_cut_ind) {
-    setStrInfo(info, disj, v[cut_ind], num_rows, num_cols, num_str_cuts, EPS);
-  }
-} /* setStrInfo (set of cuts) */
-
-void setRegInfo(
-    SummaryRegularityInfo& info,
+void setCertificateInfo(
+    SummaryCertificateInfo& info,
     const Disjunction* const disj,
     /// [in] Index is [term][multiplier] where the first m multipliers are on original rows, then there are m0 on the disjunctive term ineqs, and finally n on columns
     const CutCertificate& v,
     const int num_rows,
     const int num_cols,
-    const int num_str_cuts,
+    /// [in] Indices of strengthened cuts
+    const std::vector<int>& str_cut_ind,
     const double EPS) {
   if (!disj) { return; }
 
   assert( disj->common_ineqs.size() == 0 ); // TODO handle this case
   const int num_common_rows = disj->common_changed_bound.size() + disj->common_ineqs.size();
+  const int num_str_cuts = (int) str_cut_ind.size();
   
-  // K counts the number of nonzero multipliers for each constraint
-  // If the constraints form a basis, then the cut is "regular",
-  // assuming the corresponding point is not feasible for the disjunction
-  std::vector<int> K(num_rows + num_common_rows + num_cols, 0);
-  int num_nonzero_coeff = 0;
+  for (const int cut_ind : str_cut_ind) {
+    // K counts the number of nonzero multipliers for each constraint
+    // If the constraints form a basis, then the cut is "regular",
+    // assuming the corresponding point is not feasible for the disjunction
+    std::vector<int> K(num_rows + num_common_rows + num_cols, 0);
+    int num_nonzero_coeff = 0;
 
-  // Compute the convex set S using the multipliers on the disjunctive term ineqs
-  // These will all be stored as inequalities in >= form
-  std::vector<CoinPackedVector> facetLHS;
-  std::vector<double> facetRHS;
-  facetLHS.reserve(disj->num_terms);
-  facetRHS.reserve(disj->num_terms);
-  for (int term_ind = 0; term_ind < disj->num_terms; term_ind++) {
-    const DisjunctiveTerm& term = disj->terms[term_ind];
-    const int num_disj_ineqs = (int) term.changed_var.size();
-
-    // For each original inequality, check whether it has a nonzero multiplier
-    for (int row = 0; row < num_rows + num_common_rows; row++) {
-      const double ukt = v[term_ind][row];
-      if (!isZero(ukt, EPS)) {
-        if (K[row] == 0) num_nonzero_coeff++;
-        K[row]++;
-      }
-    } // loop over original rows
-    
-    // For each disj term inequality, do the aggregation using u^t_0
-    // TODO generalize for general inequalities (need to account for coefficients)
-    std::vector<int> indices;
-    indices.reserve(num_disj_ineqs);
-    std::vector<double> elements;
-    elements.reserve(num_disj_ineqs);
-    double rhs = 0.;
-    for (int bound_ind = 0; bound_ind < num_disj_ineqs; bound_ind++) {
-      const double uk0 = v[term_ind][num_rows + num_common_rows + bound_ind];
-      if (isZero(uk0, EPS)) continue;
-
-      const int var = term.changed_var[bound_ind];
-      const int bd = term.changed_bound[bound_ind]; // <= 0: lower bound, 1: upper bound
-      const double val = term.changed_value[bound_ind];
-      const double mult = (bd <= 0) ? 1. : -1.; // if bd == 1, then -x_k >= -val is the term
-      const double coeff = uk0 * mult;
-      const double curr_rhs = uk0 * val * mult;
-      
-      // Check if this variable appeared in a previous inequality for this term
-      // This could happen if we branch (x_k <= 1) v (x_k >= 2) and later (x_k <= 0) v (x_k >= 1)
-      // But in that case, only one of those should have a nonzero multiplier
-      // On the other hand, for disjunctions not restricted to variable branching,
-      // the situation can arise that a nonzero multiplier exists on two constraints containing the same var
-      int prev_ind = -1;
-      for (int i = 0; i < (int) indices.size(); i++) {
-        if (indices[i] == var) {
-          prev_ind = i;
-          break;
-        }
-      }
-
-      rhs += curr_rhs;
-      if (prev_ind == -1) {
-        indices.push_back(var);
-        elements.push_back(coeff);
-      } else {
-        elements[prev_ind] += coeff;
-      }
-    } // loop over disj term ineqs
-    if ((int) indices.size() > 0) {
-      facetLHS.push_back(CoinPackedVector((int) indices.size(), indices.data(), elements.data()));
-      facetRHS.push_back(rhs);
-    }
-  } // loop over terms
-
-#ifdef TRACE
-  // Print facets generated
-  std::string cgsName = "";
-  for (int facet_ind = 0; facet_ind < (int) facetLHS.size(); facet_ind++) {
-    CoinPackedVector& vec = facetLHS[facet_ind];
-    const double rhs = facetRHS[facet_ind];
-    const int num_elem = vec.getNumElements();
-    const int* indices = vec.getIndices();
-    const double* elements = vec.getElements();
-    Disjunction::setCgsName(cgsName, num_elem, indices, elements, rhs, false);
-  }
-  printf("setStrInfo: After aggregating disjunctive terms, convex cut-generating set has following name:\n");
-  printf("%s\n", cgsName.c_str());
-#endif
-
-  // Loop over the new facets and check which are distinct
-  int num_facets = 0;
-  std::vector<int> sameAsFacet(facetLHS.size(), -1);
-  for (int facet_ind = 0; facet_ind < (int) facetLHS.size(); facet_ind++) {
-    CoinPackedVector& vec1 = facetLHS[facet_ind];
-    const double rhs1 = facetRHS[facet_ind];
-    int f = 0;
-    for (f = 0; f < facet_ind; f++) {
-      if (sameAsFacet[f] != -1) continue;
-      CoinPackedVector& vec2 = facetLHS[f];
-      const double rhs2 = facetRHS[f];
-      const int howDifferent = isRowDifferent(&vec1, rhs1, &vec2, rhs2, EPS);
-      if (howDifferent == 0) {
-        sameAsFacet[facet_ind] = f;
-        break;
-      }
-    } // loop over previous facets
-    if (sameAsFacet[facet_ind] == -1) {
-      num_facets++;
-    }
-  } // loop over cgs facets
-  info.avg_num_cgs_facets += (double) num_facets / num_str_cuts;
-
-  // Update number of unmatched bounds (times both a lower and upper bound on a variable have
-  // nonzero multipliers, which can be detected by the sign on the corresponding bound in v)
-  for (int var = 0; var < num_cols; var++) {
-    int lt_zero_ind = -1, gt_zero_ind = -1;
+    // Compute the convex set S using the multipliers on the disjunctive term ineqs
+    // These will all be stored as inequalities in >= form
+    std::vector<CoinPackedVector> facetLHS;
+    std::vector<double> facetRHS;
+    facetLHS.reserve(disj->num_terms);
+    facetRHS.reserve(disj->num_terms);
     for (int term_ind = 0; term_ind < disj->num_terms; term_ind++) {
-      const int num_disj_ineqs = (int) disj->terms[term_ind].changed_var.size();
-      const double ukt = v[term_ind][num_rows + num_common_rows + num_disj_ineqs + var];
-      if (lessThanVal(ukt, 0, EPS)) {
-        if (lt_zero_ind == -1) lt_zero_ind = term_ind;
-      } else if (greaterThanVal(ukt, 0, EPS)) {
-        if (gt_zero_ind == -1) gt_zero_ind = term_ind;
-      }
-      if (lt_zero_ind != -1 && gt_zero_ind != -1) break;
+      const DisjunctiveTerm& term = disj->terms[term_ind];
+      const int num_disj_ineqs = (int) term.changed_var.size();
 
-      if (!isZero(ukt, EPS)) {
-        if (K[num_rows + num_common_rows + var] == 0) num_nonzero_coeff++;
-        K[num_rows + num_common_rows + var]++;
+      // For each original inequality, check whether it has a nonzero multiplier
+      for (int row = 0; row < num_rows + num_common_rows; row++) {
+        const double ukt = v[term_ind][row];
+        if (!isZero(ukt, EPS)) {
+          if (K[row] == 0) num_nonzero_coeff++;
+          K[row]++;
+        }
+      } // loop over original rows
+      
+      // For each disj term inequality, do the aggregation using u^t_0
+      // TODO generalize for general inequalities (need to account for coefficients)
+      std::vector<int> indices;
+      indices.reserve(num_disj_ineqs);
+      std::vector<double> elements;
+      elements.reserve(num_disj_ineqs);
+      double rhs = 0.;
+      for (int bound_ind = 0; bound_ind < num_disj_ineqs; bound_ind++) {
+        const double uk0 = v[term_ind][num_rows + num_common_rows + bound_ind];
+        if (isZero(uk0, EPS)) continue;
+
+        const int var = term.changed_var[bound_ind];
+        const int bd = term.changed_bound[bound_ind]; // <= 0: lower bound, 1: upper bound
+        const double val = term.changed_value[bound_ind];
+        const double mult = (bd <= 0) ? 1. : -1.; // if bd == 1, then -x_k >= -val is the term
+        const double coeff = uk0 * mult;
+        const double curr_rhs = uk0 * val * mult;
+        
+        // Check if this variable appeared in a previous inequality for this term
+        // This could happen if we branch (x_k <= 1) v (x_k >= 2) and later (x_k <= 0) v (x_k >= 1)
+        // But in that case, only one of those should have a nonzero multiplier
+        // On the other hand, for disjunctions not restricted to variable branching,
+        // the situation can arise that a nonzero multiplier exists on two constraints containing the same var
+        int prev_ind = -1;
+        for (int i = 0; i < (int) indices.size(); i++) {
+          if (indices[i] == var) {
+            prev_ind = i;
+            break;
+          }
+        }
+
+        rhs += curr_rhs;
+        if (prev_ind == -1) {
+          indices.push_back(var);
+          elements.push_back(coeff);
+        } else {
+          elements[prev_ind] += coeff;
+        }
+      } // loop over disj term ineqs
+      if ((int) indices.size() > 0) {
+        facetLHS.push_back(CoinPackedVector((int) indices.size(), indices.data(), elements.data()));
+        facetRHS.push_back(rhs);
       }
     } // loop over terms
-    info.num_unmatched_bounds += (lt_zero_ind != -1 && gt_zero_ind != -1);
-  } // loop over vars 
 
-  info.num_irreg_less += (num_nonzero_coeff < num_cols);
-  info.num_irreg_more += (num_nonzero_coeff > num_cols);
-} /* setRegInfo */
+  #ifdef TRACE
+    // Print facets generated
+    std::string cgsName = "";
+    for (int facet_ind = 0; facet_ind < (int) facetLHS.size(); facet_ind++) {
+      CoinPackedVector& vec = facetLHS[facet_ind];
+      const double rhs = facetRHS[facet_ind];
+      const int num_elem = vec.getNumElements();
+      const int* indices = vec.getIndices();
+      const double* elements = vec.getElements();
+      Disjunction::setCgsName(cgsName, num_elem, indices, elements, rhs, false);
+    }
+    printf("setCertificateInfo: After aggregating disjunctive terms, convex cut-generating set has following name:\n");
+    printf("%s\n", cgsName.c_str());
+  #endif
+
+    // Loop over the new facets and check which are distinct
+    int num_facets = 0;
+    std::vector<int> sameAsFacet(facetLHS.size(), -1);
+    for (int facet_ind = 0; facet_ind < (int) facetLHS.size(); facet_ind++) {
+      CoinPackedVector& vec1 = facetLHS[facet_ind];
+      const double rhs1 = facetRHS[facet_ind];
+      int f = 0;
+      for (f = 0; f < facet_ind; f++) {
+        if (sameAsFacet[f] != -1) continue;
+        CoinPackedVector& vec2 = facetLHS[f];
+        const double rhs2 = facetRHS[f];
+        const int howDifferent = isRowDifferent(&vec1, rhs1, &vec2, rhs2, EPS);
+        if (howDifferent == 0) {
+          sameAsFacet[facet_ind] = f;
+          break;
+        }
+      } // loop over previous facets
+      if (sameAsFacet[facet_ind] == -1) {
+        num_facets++;
+      }
+    } // loop over cgs facets
+    info.avg_num_cgs_facet += (double) num_facets / num_str_cuts;
+
+    // Update number of unmatched bounds (times both a lower and upper bound on a variable have
+    // nonzero multipliers, which can be detected by the sign on the corresponding bound in v)
+    for (int var = 0; var < num_cols; var++) {
+      int lt_zero_ind = -1, gt_zero_ind = -1;
+      for (int term_ind = 0; term_ind < disj->num_terms; term_ind++) {
+        const int num_disj_ineqs = (int) disj->terms[term_ind].changed_var.size();
+        const double ukt = v[term_ind][num_rows + num_common_rows + num_disj_ineqs + var];
+        if (lessThanVal(ukt, 0, EPS)) {
+          if (lt_zero_ind == -1) lt_zero_ind = term_ind;
+        } else if (greaterThanVal(ukt, 0, EPS)) {
+          if (gt_zero_ind == -1) gt_zero_ind = term_ind;
+        }
+        if (lt_zero_ind != -1 && gt_zero_ind != -1) break;
+
+        if (!isZero(ukt, EPS)) {
+          if (K[num_rows + num_common_rows + var] == 0) num_nonzero_coeff++;
+          K[num_rows + num_common_rows + var]++;
+        }
+      } // loop over terms
+      info.num_unmatched_bounds += (lt_zero_ind != -1 && gt_zero_ind != -1);
+    } // loop over vars 
+
+    info.num_irreg_less += (num_nonzero_coeff < num_cols);
+    info.num_irreg_more += (num_nonzero_coeff > num_cols);
+  } // loop over each strengthened cut
+} /* setCertificateInfo */

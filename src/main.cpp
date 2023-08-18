@@ -24,7 +24,7 @@
 #include <OsiSolverInterface.hpp>
 
 // Project files
-#include "analysis.hpp" // SummaryBoundInfo, SummaryCutInfo, Stat, SummaryStrengtheningInfo, SummaryRegularityInfo, printing to logfile
+#include "analysis.hpp" // SummaryBoundInfo, SummaryCutInfo, Stat, SummaryStrengtheningInfo, SummaryCertificateInfo, printing to logfile
 #include "BBHelper.hpp"
 #include "CglAdvCut.hpp"
 #include "CutCertificate.hpp" // TermCutCertificate and CutCertificate
@@ -131,8 +131,8 @@ SummaryDisjunctionInfo disjInfo;
 std::vector<SummaryCutInfo> cutInfoVec;
 SummaryCutInfo cutInfo, cutInfoGMICs, cutInfoUnstr;
 SummaryStrengtheningInfo strInfo, rcvmipStrInfo;
-SummaryRegularityInfo regInfo;
-std::vector<SummaryRegularityInfo> regInfoVec;
+std::vector<SummaryCertificateInfo> origCertInfoVec;
+std::vector<SummaryCertificateInfo> rcvmipCertInfoVec;
 
 // For output
 std::string cut_output = "", bb_output = "";
@@ -334,12 +334,13 @@ int main(int argc, char** argv) {
 
   //====================================================================================================//
   // Now do rounds of cuts, until a limit is reached (e.g., time, number failures, number cuts, or all rounds are exhausted)
-  boundInfo.num_mycut = 0, boundInfo.num_gmic = 0, boundInfo.num_str_cuts = 0, boundInfo.num_rcvmip_str_cuts = 0;
+  boundInfo.num_mycut = 0, boundInfo.num_gmic = 0, boundInfo.num_str_affected_cuts = 0, boundInfo.num_rcvmip_str_affected_cuts = 0;
   int num_rounds = params.get(ROUNDS);
   std::vector<OsiCuts> mycuts_by_round(num_rounds);
   cutInfoVec.resize(num_rounds);
   boundInfoVec.resize(num_rounds);
-  regInfoVec.resize(num_rounds);
+  origCertInfoVec.resize(num_rounds);
+  rcvmipCertInfoVec.resize(num_rounds);
   int round_ind = 0;
   for (round_ind = 0; round_ind < num_rounds; ++round_ind) {
     if (num_rounds > 1) {
@@ -353,8 +354,8 @@ int main(int argc, char** argv) {
     boundInfoVec[round_ind].lp_obj = roundOrigSolver->getObjValue();
     boundInfoVec[round_ind].num_mycut = 0;
     boundInfoVec[round_ind].num_gmic = 0;
-    boundInfoVec[round_ind].num_str_cuts = 0;
-    boundInfoVec[round_ind].num_rcvmip_str_cuts = 0;
+    boundInfoVec[round_ind].num_str_affected_cuts = 0;
+    boundInfoVec[round_ind].num_rcvmip_str_affected_cuts = 0;
 
     timer.start_timer(OverallTimeStats::CUT_TOTAL_TIME);
 
@@ -527,8 +528,9 @@ int main(int argc, char** argv) {
 
     timer.start_timer(OverallTimeStats::STR_TOTAL_TIME);
     strengtheningHelper(currCuts, v, str_cut_ind, strInfo, boundInfoVec[round_ind], disj, solver, ip_solution);
-    boundInfo.num_str_cuts += str_cut_ind.size();
-    setStrInfo(strInfo, disj, v, solver->getNumRows(), solver->getNumCols(), str_cut_ind, CURR_EPS);
+    boundInfo.num_str_affected_cuts += str_cut_ind.size();
+    strInfo.num_str_affected_cuts += str_cut_ind.size();
+    // setStrInfo(strInfo, disj, v, solver->getNumRows(), solver->getNumCols(), str_cut_ind, CURR_EPS);
     timer.end_timer(OverallTimeStats::STR_TOTAL_TIME);
 
     mycuts.insert(currCuts);
@@ -559,22 +561,22 @@ int main(int argc, char** argv) {
       // since we can multiply rows by -1 without changing the rank
       // std::vector<int> certificate_submx_rank(currCuts.sizeCuts(), 0);
       // std::vector<int> num_nonzero_multipliers(solver->getNumRows() + disj->common_changed_var.size() + solver->getNumCols(), 0);
-      regInfoVec[round_ind].orig_cert_submx_rank.resize(currCuts.sizeCuts(), 0);
-      regInfoVec[round_ind].orig_cert_submx_num_nnz_mult.resize(currCuts.sizeCuts(), 0);
+      origCertInfoVec[round_ind].submx_rank.resize(currCuts.sizeCuts(), 0);
+      origCertInfoVec[round_ind].submx_num_nnz_mult.resize(currCuts.sizeCuts(), 0);
       // assert(Atilde.getNumRows() == solver->getNumRows() + disj->common_changed_var.size());
       // assert(Atilde.getNumRows() + disj->terms[0].changed_var.size() + solver->getNumCols() == v[0][0].size()); // dimension matches for cut 0, term 0
 
       for (int cut_ind = 0; cut_ind < currCuts.sizeCuts(); cut_ind++) {
-        analyzeCertificateRegularity(regInfoVec[round_ind].orig_cert_submx_rank[cut_ind],
-            regInfoVec[round_ind].orig_cert_submx_num_nnz_mult[cut_ind], v[cut_ind],
+        analyzeCertificateRegularity(origCertInfoVec[round_ind].submx_rank[cut_ind],
+            origCertInfoVec[round_ind].submx_num_nnz_mult[cut_ind], v[cut_ind],
             disj, solver, Atilde, params);
         
     #ifdef TRACE
         fprintf(stdout, "Cut %d: rank = %d/%d, num_nonzero_multipliers = %d\n",
             cut_ind,
-            regInfoVec[round_ind].orig_cert_submx_rank[cut_ind],
+            origCertInfoVec[round_ind].submx_rank[cut_ind],
             Atilderank,
-            regInfoVec[round_ind].orig_cert_submx_num_nnz_mult[cut_ind]);
+            origCertInfoVec[round_ind].submx_num_nnz_mult[cut_ind]);
     #endif
       } // loop over certificates, analyzing each for regularity
     
@@ -598,24 +600,25 @@ int main(int argc, char** argv) {
       // std::vector<int> num_nonzero_multipliers;
 
       timer.start_timer(OverallTimeStats::REG_CALC_CERT_TIME);
-      analyzeCutRegularity(rcvmip_v, regInfoVec[round_ind].rcvmip_cert_submx_rank, regInfoVec[round_ind].rcvmip_cert_submx_num_nnz_mult, unstrCurrCuts, disj, solver, params);
+      analyzeCutRegularity(rcvmip_v, rcvmipCertInfoVec[round_ind].submx_rank, rcvmipCertInfoVec[round_ind].submx_num_nnz_mult, unstrCurrCuts, disj, solver, params);
       timer.end_timer(OverallTimeStats::REG_CALC_CERT_TIME);
     
     #ifdef TRACE
       for (int cut_ind = 0; cut_ind < currCuts.sizeCuts(); cut_ind++) {
         fprintf(stdout, "Cut %d: rank = %d/%d, num_nonzero_multipliers = %d\n",
             cut_ind,
-            regInfoVec[round_ind].rcvmip_cert_submx_rank[cut_ind],
+            rcvmipCertInfoVec[round_ind].submx_rank[cut_ind],
             Atilderank,
-            regInfoVec[round_ind].rcvmip_cert_submx_num_nnz_mult[cut_ind]);
+            rcvmipCertInfoVec[round_ind].submx_num_nnz_mult[cut_ind]);
       }
     #endif
 
       // Apply the new strengthening certificates to get new cuts
       rcvmipCurrCuts = unstrCurrCuts; // assignment operator essentially inserts each of the unstrCurrCuts into rcvmipCurrCuts
       strengtheningHelper(rcvmipCurrCuts, rcvmip_v, rcvmip_str_cut_ind, rcvmipStrInfo, boundInfoVec[round_ind], disj, solver, ip_solution, false);
-      boundInfo.num_rcvmip_str_cuts += rcvmip_str_cut_ind.size();
-      setStrInfo(rcvmipStrInfo, disj, rcvmip_v, solver->getNumRows(), solver->getNumCols(), rcvmip_str_cut_ind, CURR_EPS);
+      boundInfo.num_rcvmip_str_affected_cuts += rcvmip_str_cut_ind.size();
+      rcvmipStrInfo.num_str_affected_cuts += rcvmip_str_cut_ind.size();
+      // setStrInfo(rcvmipStrInfo, disj, rcvmip_v, solver->getNumRows(), solver->getNumCols(), rcvmip_str_cut_ind, CURR_EPS);
       
       rcvmip_cuts.insert(rcvmipCurrCuts);
 
@@ -665,7 +668,7 @@ int main(int argc, char** argv) {
     boundInfo.all_cuts_obj = boundInfo.gmic_mycut_obj;
 
     // In addition, we measure effect of unstrengthened cuts on their own
-    const bool unstr_str_cuts_different = (unstrCurrCuts.sizeCuts() > 0 && boundInfo.num_str_cuts > 0); // if false, unstr info is same as str info
+    const bool unstr_str_cuts_different = (unstrCurrCuts.sizeCuts() > 0 && strInfo.num_str_affected_cuts > 0); // if false, unstr info is same as str info
     if (unstr_str_cuts_different) {
       OsiSolverInterface* unstrCutSolver = roundOrigSolver->clone();
       
@@ -687,7 +690,7 @@ int main(int argc, char** argv) {
     }
 
     // Repeat for RCVMIP-strengthened cuts
-    const bool rcvmip_cuts_different = (SHOULD_ANALYZE_REGULARITY > 1 && rcvmipCurrCuts.sizeCuts() > 0 && boundInfo.num_rcvmip_str_cuts > 0); // if false, rcvmip info is same as unstr or str info
+    const bool rcvmip_cuts_different = (SHOULD_ANALYZE_REGULARITY > 1 && rcvmipCurrCuts.sizeCuts() > 0 && boundInfo.num_rcvmip_str_affected_cuts > 0); // if false, rcvmip info is same as unstr or str info
     if (rcvmip_cuts_different) {
       OsiSolverInterface* rcvmipCutSolver = roundOrigSolver->clone();
       
@@ -748,12 +751,12 @@ int main(int argc, char** argv) {
         stringValue(boundInfo.unstr_all_cuts_obj, "%1.6f").c_str());
     fflush(stdout);
     printf("Obj value (%d/%d strengthened): %s.\n",
-        boundInfo.num_str_cuts, boundInfoVec[round_ind].num_mycut,
+        strInfo.num_str_affected_cuts, boundInfoVec[round_ind].num_mycut,
         stringValue(boundInfo.all_cuts_obj, "%1.6f").c_str());
     fflush(stdout);
     if (SHOULD_ANALYZE_REGULARITY > 1 && !isInfinity(boundInfo.rcvmip_all_cuts_obj)) {
       printf("Obj value (%d/%d RCVMIP strengthened): %s.\n",
-          boundInfo.num_rcvmip_str_cuts, boundInfoVec[round_ind].num_mycut,
+          boundInfo.num_rcvmip_str_affected_cuts, boundInfoVec[round_ind].num_mycut,
           stringValue(boundInfo.rcvmip_all_cuts_obj, "%1.6f").c_str());
     }
     fflush(stdout);
@@ -794,7 +797,7 @@ int main(int argc, char** argv) {
       "\n## Finished with %d cuts and %d GMICs. Initial obj value: %s.",
       boundInfo.num_mycut, boundInfo.num_gmic,
       stringValue(boundInfo.lp_obj, "%1.6f").c_str());
-  if (boundInfo.num_str_cuts > 0) printf(
+  if (strInfo.num_str_affected_cuts > 0) printf(
       " Unstrengthened obj value: %s.",
       stringValue(boundInfo.unstr_mycut_obj, "%1.6f").c_str());
   if (boundInfo.num_mycut > 0) printf(" Final strcut obj value: %s.",
@@ -969,9 +972,9 @@ int wrapUp(int retCode, int argc, char** argv) {
       // Disj info
       printDisjInfo(disjInfo, params.logfile);
       // Str info
-      printStrInfo(strInfo, params.logfile);
+      printStrInfo(strInfo, rcvmipStrInfo, params.logfile);
       // Regularity info
-      printRegInfo(regInfoVec[0], params.logfile);
+      printCertificateInfo(origCertInfoVec[0], rcvmipCertInfoVec[0], params.logfile);
       // Cut, obj, fail info
       printCutInfo(cutInfoGMICs, cutInfo, cutInfoUnstr, params.logfile);
       // Full B&B info
@@ -1453,7 +1456,7 @@ void strengtheningHelper(
   applyStrengtheningCertificateHelper(currCuts, v, str_cut_ind, strInfo, boundInfo, disj, solver, ip_solution);
 
   // Print the results
-  fprintf(stdout, "\nFinished strengthening (%d / %d cuts affected).\n", strInfo.num_str_cuts, boundInfo.num_mycut);
+  fprintf(stdout, "\nFinished strengthening (%d / %d cuts affected).\n", strInfo.num_str_affected_cuts, boundInfo.num_mycut);
   fprintf(stdout, "Number coeffs changed:\n");
   fprintf(stdout, "\ttotal: %g\n", strInfo.num_coeffs_strengthened[(int) Stat::total]);
   fprintf(stdout, "\tavg: %g\n", strInfo.num_coeffs_strengthened[(int) Stat::avg]);
@@ -1540,11 +1543,11 @@ void applyStrengtheningCertificateHelper(
 
     // Update stats
     if (is_rcvmip) {
-      boundInfo.num_rcvmip_str_cuts += curr_num_coeffs_str > 0;
+      boundInfo.num_rcvmip_str_affected_cuts += curr_num_coeffs_str > 0;
     } else {
-      boundInfo.num_str_cuts += curr_num_coeffs_str > 0;
+      boundInfo.num_str_affected_cuts += curr_num_coeffs_str > 0;
     }
-    strInfo.num_str_cuts += curr_num_coeffs_str > 0;
+    strInfo.num_str_affected_cuts += curr_num_coeffs_str > 0;
     strInfo.num_coeffs_strengthened[(int) Stat::total] += curr_num_coeffs_str;
     strInfo.num_coeffs_strengthened[(int) Stat::avg] += (double) curr_num_coeffs_str / num_cuts;
     strInfo.num_coeffs_strengthened[(int) Stat::stddev] += (double) curr_num_coeffs_str * curr_num_coeffs_str / num_cuts;
