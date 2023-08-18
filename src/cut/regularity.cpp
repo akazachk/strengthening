@@ -753,6 +753,7 @@ int computeRankOfRCVMIPSolution(
   delta_var_inds.reserve(solver->getNumCols());
 
   const int num_nonbound_constr_tilde = solver->getNumRows() + disj->common_changed_var.size() + disj->common_ineqs.size();
+  const int mtilde = calculateNumRowsAtilde(disj, solver);
 
   int num_lb = 0;
   calculateNumFiniteBounds(solver, &num_lb);
@@ -763,43 +764,104 @@ int computeRankOfRCVMIPSolution(
   // through the \delta_i \ge u^t_i constraints (or \delta_i \ge -u^t_i for <= constraints)
   const int delta_var_start = 1;
   for (int row_ind = 0; row_ind < num_nonbound_constr_tilde; row_ind++) {
-    const int var = delta_var_start + row_ind;
-    if (isZero(solution[var])) {
+    const int atilde_row_ind = getRowAtildeIndex(solver, disj, row_ind);
+    assert( atilde_row_ind >= 0 );
+    const int rcvmip_delta_ind = delta_var_start + atilde_row_ind;
+    
+    if (isZero(solution[rcvmip_delta_ind])) {
       continue;
     }
-    delta_var_inds.push_back(var);
+
+    // It is possible that the delta var is 1 but the corresponding row is not used
+    // Check the multipliers for each term
+    bool is_used = false;
+    for (int term_ind = 0; term_ind < disj->num_terms; term_ind++) {
+      const int rcvmip_var_ind = getUtStartIndex(solver, disj, term_ind, mtilde) + atilde_row_ind;
+      if (!isZero(solution[rcvmip_var_ind])) {
+        is_used = true;
+        break;
+      }
+    }
+
+    if (!is_used) {
+      continue;
+    }
+
+    delta_var_inds.push_back(rcvmip_delta_ind);
     rows.push_back(row_ind);
   }
 
   // For the original variable bounds,
   // check if the lb or ub \delta variables are nonzero
-  // Throw a warning if they are both nonzero...
-  int lb_ind = delta_var_start + num_nonbound_constr_tilde;
-  int ub_ind = delta_var_start + num_nonbound_constr_tilde + num_lb;
+  // Throw an error if they are both nonzero...
+  // (cannot be independent rows, so we have already said this is not possible with a constraint)
+  int num_prev_bound = 0;
   for (int col_ind = 0; col_ind < solver->getNumCols(); col_ind++) {
-    const bool lb_exists = !isInfinity(std::abs(solver->getColLower()[col_ind]));
-    const bool ub_exists = !isInfinity(std::abs(solver->getColUpper()[col_ind]));
+    const int atilde_row_ind = getLBAtildeIndex(solver, disj, col_ind, num_prev_bound);
+    if (atilde_row_ind < 0) {
+      // There are no RCVMIP variables associated to this column
+      continue;
+    } else {
+      num_prev_bound += 1;
+    }
+    const int rcvmip_delta_ind = delta_var_start + atilde_row_ind;
 
-    const bool lb_nonzero = lb_exists && !isZero(solution[lb_ind]);
-    const bool ub_nonzero = ub_exists && !isZero(solution[ub_ind]);
-    
-    if (lb_nonzero && ub_nonzero) {
-      error_msg(errorstring, "Delta variables %d (lb) and %d (ub) are nonzero for cut %d, col %d.\n", lb_ind, ub_ind, cut_ind, col_ind);
-      writeErrorToLog(errorstring, params.logfile);
-      throw std::logic_error(errorstring);
-    }
-    else if (lb_nonzero) {
-      delta_var_inds.push_back(lb_ind);
-      cols.push_back(col_ind);
-    }
-    else if (ub_nonzero) {
-      delta_var_inds.push_back(ub_ind);
-      cols.push_back(col_ind);
+    if (isZero(solution[rcvmip_delta_ind])) {
+      continue;
     }
 
-    lb_ind += lb_exists;
-    ub_ind += ub_exists;
-  } // loop over columns
+    // It is possible that the delta var is 1 but the corresponding row is not used
+    // Check the multipliers for each term
+    bool is_used = false;
+    for (int term_ind = 0; term_ind < disj->num_terms; term_ind++) {
+      const int rcvmip_var_ind = getUtStartIndex(solver, disj, term_ind, mtilde) + atilde_row_ind;
+      if (!isZero(solution[rcvmip_var_ind])) {
+        is_used = true;
+        break;
+      }
+    }
+
+    if (!is_used) {
+      continue;
+    }
+
+    delta_var_inds.push_back(rcvmip_delta_ind);
+    cols.push_back(col_ind);
+  } // loop over column for lb
+
+  // Repeat for ub
+  for (int col_ind = 0; col_ind < solver->getNumCols(); col_ind++) {
+    const int atilde_row_ind = getUBAtildeIndex(solver, disj, col_ind, num_prev_bound);
+    if (atilde_row_ind < 0) {
+      // There are no RCVMIP variables associated to this column
+      continue;
+    } else {
+      num_prev_bound += 1;
+    }
+    const int rcvmip_delta_ind = delta_var_start + atilde_row_ind;
+
+    if (isZero(solution[rcvmip_delta_ind])) {
+      continue;
+    }
+
+    // It is possible that the delta var is 1 but the corresponding row is not used
+    // Check the multipliers for each term
+    bool is_used = false;
+    for (int term_ind = 0; term_ind < disj->num_terms; term_ind++) {
+      const int rcvmip_var_ind = getUtStartIndex(solver, disj, term_ind, mtilde) + atilde_row_ind;
+      if (!isZero(solution[rcvmip_var_ind])) {
+        is_used = true;
+        break;
+      }
+    }
+
+    if (!is_used) {
+      continue;
+    }
+
+    delta_var_inds.push_back(rcvmip_delta_ind);
+    cols.push_back(col_ind);
+  } // loop over column for lb
 
   const int certificate_rank = computeRank(&Atilde, rows, cols);
   return certificate_rank;
@@ -849,6 +911,7 @@ void setRCVMIPStart(
   num_vars_set++;
 
   // Set delta and u^t variables for original + globally-valid constraints
+  const int delta_var_start = 1;
   for (int row_ind = 0; row_ind < num_nonbound_constrs; row_ind++) {
     const int atilde_row_ind = getRowAtildeIndex(solver, disj, row_ind);
 
@@ -870,7 +933,7 @@ void setRCVMIPStart(
       }
     }
 
-    const int rcvmip_delta_ind = 1 + atilde_row_ind;
+    const int rcvmip_delta_ind = delta_var_start + atilde_row_ind;
     if (set_delta) {
       vars[rcvmip_delta_ind].set(GRB_DoubleAttr::GRB_DoubleAttr_Start, 1.);
     } else {
@@ -910,7 +973,7 @@ void setRCVMIPStart(
       num_vars_set++;
     } // loop over terms for lb
     
-    const int rcvmip_delta_ind = 1 + atilde_row_ind;
+    const int rcvmip_delta_ind = delta_var_start + atilde_row_ind;
     if (set_delta) {
       vars[rcvmip_delta_ind].set(GRB_DoubleAttr::GRB_DoubleAttr_Start, 1.);
     } else {
@@ -949,7 +1012,7 @@ void setRCVMIPStart(
       num_vars_set++;
     } // loop over terms for lb
     
-    const int rcvmip_delta_ind = 1 + atilde_row_ind;
+    const int rcvmip_delta_ind = delta_var_start + atilde_row_ind;
     if (set_delta) {
       vars[rcvmip_delta_ind].set(GRB_DoubleAttr::GRB_DoubleAttr_Start, 1.);
     } else {
