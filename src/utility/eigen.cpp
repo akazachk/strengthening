@@ -76,7 +76,8 @@ void createEigenMatrix(
   const bool doAll = (rows.size() + cols.size()) == 0;
   const int num_cols = mat->getNumCols();
   const int num_selected_rows = doAll ? mat->getNumRows() + mat->getNumCols() : rows.size() + cols.size();
-  int num_elem_removed = 0, num_rows_removed = 0;
+  int num_elem_removed = 0;
+  //int num_rows_removed = 0;
 
   // Prepare sparse matrix
   M.resize(num_selected_rows, num_cols);
@@ -95,7 +96,7 @@ void createEigenMatrix(
       tmp_ind++;
     } else {
       num_elem_removed += mat->getVectorSize(row);
-      num_rows_removed++;
+      //num_rows_removed++;
     }
   }
 
@@ -301,13 +302,6 @@ void calculateCertificateEigen(
 } /* calculateCertificateEigen */
 
 int computeRank(
-    const Eigen::SparseMatrix<double,Eigen::RowMajor>& A,
-    /// [in] Precision when taking submatrix rank
-    const double MATRIX_EPS) {
-  return computeRank(Eigen::MatrixXd(A), MATRIX_EPS);
-} /* computeRank (Eigen::SparseMatrix) */
-
-int computeRank(
     const Eigen::MatrixXd& M,
     /// [in] Precision when taking submatrix rank
     const double MATRIX_EPS) {
@@ -315,6 +309,13 @@ int computeRank(
 	lu.setThreshold(MATRIX_EPS);
 	return (int) lu.rank();
 } /* computeRank (Eigen::MatrixXd) */
+
+int computeRank(
+    const Eigen::SparseMatrix<double,Eigen::RowMajor>& A,
+    /// [in] Precision when taking submatrix rank
+    const double MATRIX_EPS) {
+  return computeRank(Eigen::MatrixXd(A), MATRIX_EPS);
+} /* computeRank (Eigen::SparseMatrix) */
 
 int computeRank(
     /// [in] CoinPackedMatrix from which rank will be computed
