@@ -44,6 +44,15 @@ if [ "$(uname)" == "Darwin" ]; then
   export INSTANCE_DIR=${REPOS_DIR}/instances
 fi
 
+if [ "$(hostname)" == "ISE-D41L3Q3"]; then
+  # w401
+  export LOCAL_DIR=${HOME}
+  export INSTANCE_DIR=${LOCAL_DIR}/instances
+  export RESULTS_DIR=${LOCAL_DIR}/results
+  export SOL_DIR=${INSTANCE_DIR}/solutions
+  export INSTANCE_LIST=${VPC_DIR}/presolved.instances
+fi
+
 # Accept user options for instance list, results directory, and mode
 if [ ! -z $1 ]; then
   INSTANCE_LIST=$1
