@@ -900,7 +900,8 @@ int BalJer79_Algorithm2(
 
   std::vector<double> gamma_t0(num_terms, 0.);
   std::vector<double> gamma_tk(num_terms, 0.);
-  double sum_gamma_t0 = 0., sum_gamma_tk = 0.;
+  double sum_gamma_t0 = 0.;
+  //double sum_gamma_tk = 0.;
   for (int t = 0; t < num_terms; t++) {
     const DisjunctiveTerm& term = disj->terms[t];
     const int num_disj_ineqs = (int) disj->common_changed_var.size() + term.changed_var.size();
@@ -911,7 +912,7 @@ int BalJer79_Algorithm2(
       gamma_t0[t] += v[t][solver->getNumRows() + bound_ind] * mult * term.changed_value[bound_ind];
       gamma_tk[t] += v[t][solver->getNumRows() + bound_ind] * mult;
       sum_gamma_t0 += gamma_t0[t];
-      sum_gamma_tk += gamma_tk[t];
+      //sum_gamma_tk += gamma_tk[t];
     }
   } // loop over terms to set up gamma_t0 and gamma_tk
 
