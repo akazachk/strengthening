@@ -38,6 +38,7 @@ else
 endif
 EIG_LIB = $(REPOS_DIR)/eigen
 VPC_DIR = ${REPOS_DIR}/vpc
+COIN_OR = ${VPC_DIR}/lib/Cbc-${COIN_VERSION}
 
 ifeq ($(USER),otherperson)
   #COIN_OR = enter/dir/here
@@ -62,11 +63,11 @@ endif
 # HiPerGator
 ifeq ($(USER),akazachkov)
   ifeq ($(UNAME),Linux)
-	  COIN_OR = ${HOME}/repos/coin-or/Cbc-$(COIN_VERSION)
-    GUROBI_LINK = gurobi95
-    GUROBI_DIR = ${GUROBI_LOCAL}
+	  #COIN_OR = ${HOME}/repos/coin-or/Cbc-$(COIN_VERSION)
+    GUROBI_LINK = gurobi100
+    GUROBI_DIR = ${GUROBI_HOME}
 		CPLEX_DIR = ${CPLEX_HOME}
-		CONDA_LIB = ${HOME}/.conda/envs/vpc/lib
+		#CONDA_LIB = ${HOME}/.conda/envs/vpc/lib
 	endif
 	# MacStudio
   ifeq ($(UNAME),Darwin)

@@ -564,9 +564,11 @@ int main(int argc, char** argv) {
       printf("Finished preparing Atilde matrix. Next will compute rank.\n");
     }
 
+#ifdef TRACE
     timer.start_timer(OverallTimeStats::REG_RANK_ATILDE_TIME);
     const int Atilderank = (Atilde.getNumRows() > 0) ? computeRank(&Atilde, std::vector<int>(), std::vector<int>()) : solver->getNumCols();
     timer.end_timer(OverallTimeStats::REG_RANK_ATILDE_TIME);
+#endif
 
     // Analyze regularity of the existing certificate for each cut
     if (SHOULD_ANALYZE_REGULARITY >= 1 && currCuts.sizeCuts() > 0 && disj) {
