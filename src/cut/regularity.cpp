@@ -1182,7 +1182,11 @@ int solveRCVMIP(
     /// [in] Index of the cut for which we are checking the certificate
     const int cut_ind) {
   int return_code = 0;
+#ifdef TRACE
   const bool write_lp = true && !params.get(StrengtheningParameters::LOGFILE).empty();
+#else
+  const bool write_lp = false && !params.get(StrengtheningParameters::LOGFILE).empty();
+#endif
   std::string lp_filename_stub = "", LP_EXT = ".lp";
   if (write_lp) {
     // Write to file, using logfile as the output directory
@@ -1222,9 +1226,11 @@ int solveRCVMIP(
       reached_feasibility = true;
     }
 
+#ifdef TRACE
     // Print value of theta variable (should decrease across rounds)
     const double theta_val = solution.size() > 0 ? solution[0] : -1.;
     printf("Iter %d: theta = %f\tcert_rank = %d\tcert_size = %d\n", num_iters, theta_val, certificate_rank, (int) delta_var_inds.size());
+#endif
   } // iterate while !reached_feasibility
   printf("solveRCVMIP (Gurobi): Terminated in %d / %d iterations. Reached feasibility: %d.\n", num_iters, MAX_ITERS, reached_feasibility);
 
@@ -1391,7 +1397,11 @@ int solveRCVMIP(
     /// [in] Index of the cut for which we are checking the certificate
     const int cut_ind) {
   int return_code = 0;
+#ifdef TRACE
   const bool write_lp = true && !params.get(StrengtheningParameters::LOGFILE).empty();
+#else
+  const bool write_lp = false && !params.get(StrengtheningParameters::LOGFILE).empty();
+#endif
   std::string lp_filename_stub = "", LP_EXT = ".lp";
   if (write_lp) {
     // Write to file, using logfile as the output directory
