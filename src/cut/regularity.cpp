@@ -335,7 +335,7 @@ void prepareAtilde(
  *    u^t_0 = m_t
  * = 1 + m' + m' * |T| + \sum_{t \in T} m_t.
  */
-void genRCVMILPFromCut(
+void genRCVMIPFromCut(
     /// [out] Cut-generating linear program to be generated
     OsiSolverInterface* const liftingSolver,
     /// [in] Cut \alpha^T x \ge \beta for which we are seeking a certificate
@@ -346,7 +346,7 @@ void genRCVMILPFromCut(
     const OsiSolverInterface* const solver,
     /// [in] Parameters (for logfile and deciding where to print the MILP)
     const StrengtheningParameters::Parameters& params,
-    /// [in] Whether to use original RCVMILP or one with min sum delta objective and sum delta >= n constraint
+    /// [in] Whether to use original RCVMIP or one with min sum delta objective and sum delta >= n constraint
     const bool use_min_sum_delta) {
   const int num_terms = disj->terms.size();
   const int num_rows = solver->getNumRows();
@@ -392,7 +392,7 @@ void genRCVMILPFromCut(
   // We want Atilde.getVector(i) to return column i of Atilde, which is multiplied by -1. and inputted as row i of common_mx
   Atilde.reverseOrdering(); // make it col-ordered
   if (!Atilde.isColOrdered()) {
-      throw std::logic_error("genRCVMILPFromCut:: Atilde is not col-ordered!");
+      throw std::logic_error("genRCVMIPFromCut:: Atilde is not col-ordered!");
   }
   for (int col = 0; col < Atilde.getNumCols(); col++) {
       common_mx.appendRow(-1. * Atilde.getVector(col));
@@ -421,7 +421,7 @@ void genRCVMILPFromCut(
   // Verify size of common_mx, and if incorrect, throw an error giving the sizes
   if (common_mx.getNumRows() != num_cols + 1 + mprime) {
       error_msg(errorstring,
-          "genRCVMILPFromCut:: Num rows (mx, actual, predicted) = (Atilde, %d, %d); (common_mx, %d, %d).\n",
+          "genRCVMIPFromCut:: Num rows (mx, actual, predicted) = (Atilde, %d, %d); (common_mx, %d, %d).\n",
           Atilde.getNumRows(), mprime, common_mx.getNumRows(), num_cols + 1 + mprime);
       writeErrorToLog(errorstring, params.logfile);
       exit(1);
@@ -730,12 +730,12 @@ void genRCVMILPFromCut(
   }
   assert(liftingSolver->getNumRows() == row_names.size());
   liftingSolver->setRowNames(row_names, 0, liftingSolver->getNumRows(), 0);
-} /* genRCVMILPFromCut */
+} /* genRCVMIPFromCut */
 
-int computeRankOfRCVMILPSolution(
+int computeRankOfRCVMIPSolution(
     /// [out] Indices of nonzero multipliers
     std::vector<int>& delta_var_inds,
-    /// [in] Solution to RCVMILP, where variables are theta then delta then {u^t}_{t \in T} then {u^t_0}_{t \in T}
+    /// [in] Solution to RCVMIP, where variables are theta then delta then {u^t}_{t \in T} then {u^t_0}_{t \in T}
     const double* const solution,
     /// [in] Disjunction from which cuts were generated
     const Disjunction* const disj,
@@ -803,13 +803,15 @@ int computeRankOfRCVMILPSolution(
 
   const int certificate_rank = computeRank(&Atilde, rows, cols);
   return certificate_rank;
-} /* computeRankOfRCVMILPSolution */
+} /* computeRankOfRCVMIPSolution */
 
 #ifdef USE_GUROBI
 /// @brief Add warm start if existing certificate provided
 void setRCVMIPStart(
-    /// [in/out] Gurobi RCVMILP instance 
+    /// [in/out] Gurobi RCVMIP instance 
     GRBModel* const model,
+    /// [out] Solution derived from certificate, having indices for variables theta then delta (m') then {u^t}_t then {u^t_0}_t
+    std::vector<double>& solution,
     /// [in] Certificate of cut (in-version used to set MIP start), [term][Farkas multiplier]; per term, m + m_t + n indices correspond to rows (including globally-valid constraints) + disj term ineqs + cols
     const CutCertificate& v,
     /// [in] Disjunction from which cuts were generated
@@ -838,10 +840,13 @@ void setRCVMIPStart(
     }
   }
 
+  // Get variables (delete at end)
   GRBVar* const vars = model->getVars(); // vector of variables, theta then delta (length m') then {u^t}_t then {u^t_0}_t
+  int num_vars_set = 0;
 
   // Set theta
   vars[getThetaIndex()].set(GRB_DoubleAttr::GRB_DoubleAttr_Start, 1. / scale);
+  num_vars_set++;
 
   // Set delta and u^t variables for original + globally-valid constraints
   for (int row_ind = 0; row_ind < num_nonbound_constrs; row_ind++) {
@@ -858,6 +863,7 @@ void setRCVMIPStart(
       const double v_val = v[term_ind][term_cert_var_ind];
 
       vars[curr_rcvmip_ind].set(GRB_DoubleAttr::GRB_DoubleAttr_Start, v_val / scale);
+      num_vars_set++;
 
       if (!set_delta && !isZero(v_val)) {
         set_delta = true;
@@ -870,6 +876,7 @@ void setRCVMIPStart(
     } else {
       vars[rcvmip_delta_ind].set(GRB_DoubleAttr::GRB_DoubleAttr_Start, 0.);
     }
+    num_vars_set++;
   }
 
   // Set delta and u^t variables for variable lower bounds
@@ -900,6 +907,7 @@ void setRCVMIPStart(
       } else {
         vars[curr_rcvmip_ind].set(GRB_DoubleAttr::GRB_DoubleAttr_Start, 0.);
       }
+      num_vars_set++;
     } // loop over terms for lb
     
     const int rcvmip_delta_ind = 1 + atilde_row_ind;
@@ -908,6 +916,7 @@ void setRCVMIPStart(
     } else {
       vars[rcvmip_delta_ind].set(GRB_DoubleAttr::GRB_DoubleAttr_Start, 0.);
     }
+    num_vars_set++;
   } // loop over columns for lb
   
   // Set delta and u^t variables for variable upper bounds
@@ -937,6 +946,7 @@ void setRCVMIPStart(
       } else {
         vars[curr_rcvmip_ind].set(GRB_DoubleAttr::GRB_DoubleAttr_Start, 0.);
       }
+      num_vars_set++;
     } // loop over terms for lb
     
     const int rcvmip_delta_ind = 1 + atilde_row_ind;
@@ -945,6 +955,7 @@ void setRCVMIPStart(
     } else {
       vars[rcvmip_delta_ind].set(GRB_DoubleAttr::GRB_DoubleAttr_Start, 0.);
     }
+    num_vars_set++;
   } // loop over columns for ub
 
   // Set u^t_0 variables
@@ -959,17 +970,26 @@ void setRCVMIPStart(
       const int cert_ind = num_nonbound_constrs + i;
       const double v_val = v[term_ind][cert_ind];
       vars[rcvmip_ind].set(GRB_DoubleAttr::GRB_DoubleAttr_Start, v_val / scale);
+      num_vars_set++;
     }
   }
 
   model->update();
+
+  const int num_rcvmip_vars = model->get(GRB_IntAttr::GRB_IntAttr_NumVars);
+  assert( num_rcvmip_vars == num_vars_set );
+
+  solution.resize(num_rcvmip_vars);
+  for (int i = 0; i < num_rcvmip_vars; i++) {
+    solution[i] = vars[i].get(GRB_DoubleAttr::GRB_DoubleAttr_Start);
+  }
 
   if (vars) { delete[] vars; }
 } /* setRCVMIPStart */
 
 /// @brief Append row to Gurobi \p model restricting sum of delta variables to be <= \p rank
 void addRankConstraint(
-    /// [in/out] Gurobi RCVMILP instance 
+    /// [in/out] Gurobi RCVMIP instance 
     GRBModel* const model,
     /// [in] Indices of delta variables
     const std::vector<int>& delta,
@@ -998,7 +1018,7 @@ void addRankConstraint(
   expr.addTerms(coeffs.data(), vars.data(), num_nonzero_multipliers);
 
   // Add constraint
-  std::string constr_name = iter_num > 0 ? "rank_" + std::to_string(iter_num) : "";
+  std::string constr_name = iter_num >= 0 ? "rank_" + std::to_string(iter_num) : "";
   model->addConstr(expr, GRB_LESS_EQUAL, rank, constr_name);
 
   // Update model
@@ -1009,10 +1029,10 @@ void addRankConstraint(
   }
 } /* addRankConstraint (Gurobi) */
 
-void updateRCVMILPFromCut(
-    /// [in] RCVMILP to be updated
+void updateRCVMIPFromCut(
+    /// [in] RCVMIP to be updated
     GRBModel* const model,
-    /// [in] Cut to be added to the RCVMILP
+    /// [in] Cut to be added to the RCVMIP
     const OsiRowCut* const cut,
     /// [in] Disjunction that the cut is from
     const Disjunction* const disj,
@@ -1079,14 +1099,14 @@ void updateRCVMILPFromCut(
 
   if (constrs) { delete[] constrs; }
   if (vars) { delete[] vars; }
-} /* updateRCVMILPFromCut (Gurobi) */
+} /* updateRCVMIPFromCut (Gurobi) */
 
-/// @details Solves the RCVMILP and populates the certificate
+/// @details Solves the RCVMIP and populates the certificate
 /// @return 0 if problem solved to optimality or terminated by limit, 1 if problem proved infeasible
-int solveRCVMILP(
-    /// [in/out] RCVMILP instance
+int solveRCVMIP(
+    /// [in/out] RCVMIP instance
     GRBModel* const model,
-    /// [out] Solution to the RCVMILP, where order of variables is theta, delta, {v^t}_{t \in T}
+    /// [out] Solution to the RCVMIP, where order of variables is theta, delta, {v^t}_{t \in T}
     std::vector<double>& solution,
     /// [in] Disjunction from which cuts were generated
     const Disjunction* const disj,
@@ -1113,13 +1133,13 @@ int solveRCVMILP(
   bool reached_feasibility = false;
   int num_iters = 0;
   const int MAX_ITERS = 100;
-  printf("\n## solveRCVMILP (Gurobi): Solving CGLP from cut %d. ##\n", cut_ind);
+  printf("\n## solveRCVMIP (Gurobi): Solving CGLP from cut %d. ##\n", cut_ind);
   while (!reached_feasibility && num_iters < MAX_ITERS) {
     return_code = solveGRBModel(*model, params.logfile);
 
     if (return_code == GRB_INFEASIBLE || return_code == GRB_UNBOUNDED || return_code == GRB_INF_OR_UNBD) {
       error_msg(errorstring,
-          "solveRCVMILP (Gurobi): Branch and bound is infeasible or unbounded for cut %d in iteration %d.\n", cut_ind, num_iters);
+          "solveRCVMIP (Gurobi): Branch and bound is infeasible or unbounded for cut %d in iteration %d.\n", cut_ind, num_iters);
       writeErrorToLog(errorstring, params.logfile);
       throw std::logic_error(errorstring);
     } else {
@@ -1132,7 +1152,7 @@ int solveRCVMILP(
 
     // Check rank of solution vs number of nonzero multipliers
     std::vector<int> delta_var_inds;
-    const int certificate_rank = computeRankOfRCVMILPSolution(delta_var_inds, solution.data(), disj, solver, Atilde, params, cut_ind);
+    const int certificate_rank = computeRankOfRCVMIPSolution(delta_var_inds, solution.data(), disj, solver, Atilde, params, cut_ind);
     if (certificate_rank < (int) delta_var_inds.size()) {
       addRankConstraint(model, delta_var_inds, certificate_rank, num_iters);
     } else {
@@ -1143,22 +1163,22 @@ int solveRCVMILP(
     const double theta_val = solution.size() > 0 ? solution[0] : -1.;
     printf("Iter %d: theta = %f\tcert_rank = %d\tcert_size = %d\n", num_iters, theta_val, certificate_rank, (int) delta_var_inds.size());
   } // iterate while !reached_feasibility
-  printf("solveRCVMILP (Gurobi): Terminated in %d / %d iterations. Reached feasibility: %d.\n", num_iters, MAX_ITERS, reached_feasibility);
+  printf("solveRCVMIP (Gurobi): Terminated in %d / %d iterations. Reached feasibility: %d.\n", num_iters, MAX_ITERS, reached_feasibility);
 
   if (write_lp) {
     const std::string lp_filename = lp_filename_stub + LP_EXT;
-    printf("Saving RCVMILP (Gurobi) to file: %s\n", lp_filename.c_str());
+    printf("Saving RCVMIP (Gurobi) to file: %s\n", lp_filename.c_str());
     model->write(lp_filename);
   }
 
   return return_code;
-} /* solveRCVMILP (Gurobi) */
+} /* solveRCVMIP (Gurobi) */
 #endif // USE_GUROBI
 
 #ifdef USE_CBC
 /// @brief Append row to \p model restricting sum of delta variables to be <= \p rank
 void addRankConstraint(
-    /// [in/out] CbcModel RCVMILP instance 
+    /// [in/out] CbcModel RCVMIP instance
     CbcModel* const model,
     /// [in] Indices of delta variables
     const std::vector<int>& delta,
@@ -1189,10 +1209,10 @@ void addRankConstraint(
   model->solver()->addRow(row, lb, ub, name);
 } /* addRankConstraint (Cbc) */
 
-void updateRCVMILPFromCut(
-    /// [in] RCVMILP to be updated
+void updateRCVMIPFromCut(
+    /// [in] RCVMIP to be updated
     CbcModel* const cbc_model,
-    /// [in] Cut to be added to the RCVMILP
+    /// [in] Cut to be added to the RCVMIP
     const OsiRowCut* const cut,
     /// [in] Disjunction that the cut is from
     const Disjunction* const disj,
@@ -1288,14 +1308,14 @@ void updateRCVMILPFromCut(
   if (oldSolver && cbc_model->modelOwnsSolver()) {
     delete oldSolver;
   }
-} /* updateRCVMILPFromCut (Cbc) */
+} /* updateRCVMIPFromCut (Cbc) */
 
-/// @details Solves the RCVMILP and populates the certificate
+/// @details Solves the RCVMIP and populates the certificate
 /// @return 0 if problem solved to optimality or terminated by limit, 1 if problem proved infeasible
-int solveRCVMILP(
-    /// [in/out] RCVMILP instance
+int solveRCVMIP(
+    /// [in/out] RCVMIP instance
     CbcModel* const cbc_model,
-    /// [out] Solution to the RCVMILP, where order of variables is theta, delta, {v^t}_{t \in T}
+    /// [out] Solution to the RCVMIP, where order of variables is theta, delta, {v^t}_{t \in T}
     std::vector<double>& solution,
     /// [in] Disjunction from which cuts were generated
     const Disjunction* const disj,
@@ -1323,7 +1343,7 @@ int solveRCVMILP(
   int num_iters = 0;
   const int MAX_ITERS = 100;
   while (!reached_feasibility && num_iters < MAX_ITERS) {
-    printf("\n## solveRCVMILP (Cbc): Solving CGLP (iter %d) from cut %d. ##\n", num_iters, cut_ind);
+    printf("\n## solveRCVMIP (Cbc): Solving CGLP (iter %d) from cut %d. ##\n", num_iters, cut_ind);
 
     if (write_lp) {
       const std::string lp_filename = lp_filename_stub + LP_EXT;
@@ -1334,12 +1354,12 @@ int solveRCVMILP(
     cbc_model->branchAndBound(params.get(StrengtheningParameters::VERBOSITY));
     
     if (cbc_model->status() == 1) { // time limit, max nodes, or max iters reached
-      warning_msg(warnstring, "solveRCVMILP (Cbc): Cbc stopped with status = 1 for cut %d.\n", cut_ind);
+      warning_msg(warnstring, "solveRCVMIP (Cbc): Cbc stopped with status = 1 for cut %d.\n", cut_ind);
       return_code = 1;
       break;
     } else {
       error_msg(errorstring,
-          "solveRCVMILP (Cbc): Branch and bound is infeasible or unbounded for cut %d in iteration %d.\n", cut_ind, num_iters);
+          "solveRCVMIP (Cbc): Branch and bound is infeasible or unbounded for cut %d in iteration %d.\n", cut_ind, num_iters);
       writeErrorToLog(errorstring, params.logfile);
       throw std::logic_error(errorstring);
     }
@@ -1352,23 +1372,23 @@ int solveRCVMILP(
 
     // Check rank of solution vs number of nonzero multipliers
     std::vector<int> delta;
-    const int certificate_rank = computeRankOfRCVMILPSolution(delta, solution.data(), disj, solver, Atilde, params, cut_ind);
+    const int certificate_rank = computeRankOfRCVMIPSolution(delta, solution.data(), disj, solver, Atilde, params, cut_ind);
     if (certificate_rank < (int) delta.size()) {
       addRankConstraint(cbc_model, delta, certificate_rank, num_iters);
     } else {
       reached_feasibility = true;
     }
   } // iterate while !reached_feasibility
-  printf("solveRCVMILP (Cbc): Terminated in %d / %d iterations. Reached feasibility: %d.\n", num_iters, MAX_ITERS, reached_feasibility);
+  printf("solveRCVMIP (Cbc): Terminated in %d / %d iterations. Reached feasibility: %d.\n", num_iters, MAX_ITERS, reached_feasibility);
 
   return return_code;
-} /* solveRCVMILP (Cbc) */
+} /* solveRCVMIP (Cbc) */
 #endif // USE_CBC
 
-void getCertificateFromRCVMILPSolution(
+void getCertificateFromRCVMIPSolution(
     /// [out] Certificate of cut, [term][Farkas multiplier]; per term, m + m_t + n indices correspond to rows + disj term ineqs + cols
     CutCertificate& v,
-    /// [in] Solution to the RCVMILP, where order of variables is theta, delta (length equal to m' := #calculateNumRowsAtilde), {u^t}_{t \in T}, {u^t_0}_{t \in T}
+    /// [in] Solution to the RCVMIP, where order of variables is theta, delta (length equal to m' := #calculateNumRowsAtilde), {u^t}_{t \in T}, {u^t_0}_{t \in T}
     const std::vector<double>& solution,
     /// [in] Disjunction from which cuts were generated
     const Disjunction* const disj,
@@ -1448,14 +1468,14 @@ void getCertificateFromRCVMILPSolution(
   const double theta = solution[0];
   if (!greaterThanVal(theta, 0.)) {
     error_msg(errorstring,
-      "getCertificateFromRCVMILPSolution: Theta = %e, which is not positive.\n", theta);
+      "getCertificateFromRCVMIPSolution: Theta = %e, which is not positive.\n", theta);
     writeErrorToLog(errorstring, logfile);
     throw std::logic_error(errorstring);
   }
   for (int term_ind = 0; term_ind < disj->num_terms; term_ind++) {
     const int num_term_constr = disj->terms[term_ind].changed_var.size();
-    const int rcvmilp_term_uvar_start_ind = delta_var_start + mprime + term_ind * mprime;
-    const int rcvmilp_term_u0var_start_ind = delta_var_start + mprime + disj->num_terms * mprime + m_t_previous;
+    const int RCVMIP_term_uvar_start_ind = delta_var_start + mprime + term_ind * mprime;
+    const int RCVMIP_term_u0var_start_ind = delta_var_start + mprime + disj->num_terms * mprime + m_t_previous;
     m_t_previous += num_term_constr;
     
     const int size_certificate = num_nonbound_constr_tilde + num_term_constr + solver->getNumCols();
@@ -1465,20 +1485,20 @@ void getCertificateFromRCVMILPSolution(
     // Set multipliers for original (+ globally-valid) constraints
     for (int row_ind = 0; row_ind < num_nonbound_constr_tilde; row_ind++) {
       const int v_ind = row_ind;
-      const int var = rcvmilp_term_uvar_start_ind + row_ind;
+      const int var = RCVMIP_term_uvar_start_ind + row_ind;
       v[term_ind][v_ind] = solution[var] / theta;
     }
 
     // Set multilpliers for term-specific constraints
     for (int row_ind = 0; row_ind < num_term_constr; row_ind++) {
       const int v_ind = num_nonbound_constr_tilde + row_ind;
-      const int var = rcvmilp_term_u0var_start_ind + row_ind;
+      const int var = RCVMIP_term_u0var_start_ind + row_ind;
       v[term_ind][v_ind] = solution[var] / theta;
     }
 
     // Set multipliers for variable bounds
-    int term_lb_ind = rcvmilp_term_uvar_start_ind + num_nonbound_constr_tilde;
-    int term_ub_ind = rcvmilp_term_uvar_start_ind + num_nonbound_constr_tilde + num_lb;
+    int term_lb_ind = RCVMIP_term_uvar_start_ind + num_nonbound_constr_tilde;
+    int term_ub_ind = RCVMIP_term_uvar_start_ind + num_nonbound_constr_tilde + num_lb;
     for (int col_ind = 0; col_ind < solver->getNumCols(); col_ind++) {
       const bool lb_exists = !isInfinity(std::abs(solver->getColLower()[col_ind]));
       const bool ub_exists = !isInfinity(std::abs(solver->getColUpper()[col_ind]));
@@ -1505,7 +1525,7 @@ void getCertificateFromRCVMILPSolution(
       term_ub_ind += ub_exists;
     } // loop over columns
   } // loop over terms to set CutCertificate
-} /* getCertificateFromRCVMILPSolution */
+} /* getCertificateFromRCVMIPSolution */
 
 void analyzeCertificateRegularity(
     /// [out] Rank of submatrix associated to the certificate
@@ -1593,7 +1613,7 @@ void analyzeCutRegularity(
   // TODO: Probably should just input directly to other solver if we are not using Cbc...
   OsiSolverInterface* liftingSolver = new SolverInterface;
   setLPSolverParameters(liftingSolver, params.get(StrengtheningParameters::VERBOSITY));
-  genRCVMILPFromCut(liftingSolver, cuts.rowCutPtr(0), disj, solver, params);
+  genRCVMIPFromCut(liftingSolver, cuts.rowCutPtr(0), disj, solver, params);
 
   // Check that if Gurobi is selected, then USE_GUROBI is defined
   const bool use_gurobi = use_bb_option(params.get(StrengtheningParameters::intParam::BB_STRATEGY),
@@ -1630,64 +1650,77 @@ void analyzeCutRegularity(
   }
 
   if (!use_gurobi && !use_cbc) {
-    error_msg(errorstring, "analyzeCutRegularity: Implementation for solving RCVMILP is available only for Cbc and Gurobi.\n");
+    error_msg(errorstring, "analyzeCutRegularity: Implementation for solving RCVMIP is available only for Cbc and Gurobi.\n");
     writeErrorToLog(errorstring, params.logfile);
     throw std::logic_error(errorstring);
   }
 
   v.resize(cuts.sizeCuts());
   for (int cut_ind = 0; cut_ind < cuts.sizeCuts(); cut_ind++) {
+    std::vector<double> solution; // RCVMIP solution
+    bool reached_feasibility = false;
+
     // Set theta column for the current cut
     if (cut_ind > 0) {
       if (use_gurobi) {
 #ifdef USE_GUROBI
-        updateRCVMILPFromCut(grbSolver, cuts.rowCutPtr(cut_ind), disj, solver, params.logfile);
+        updateRCVMIPFromCut(grbSolver, cuts.rowCutPtr(cut_ind), disj, solver, params.logfile);
 #endif
       } else {
-        updateRCVMILPFromCut(cbcSolver, cuts.rowCutPtr(cut_ind), disj, solver, params.logfile);
+        updateRCVMIPFromCut(cbcSolver, cuts.rowCutPtr(cut_ind), disj, solver, params.logfile);
       }
     }
 
     // Set MIP start for current cut
 #ifdef USE_GUROBI
     if (use_gurobi) {
-      setRCVMIPStart(grbSolver, v[cut_ind], disj, solver);
+      setRCVMIPStart(grbSolver, solution, v[cut_ind], disj, solver);
+
+      std::vector<int> delta_var_inds;
+      const int certificate_rank = computeRankOfRCVMIPSolution(delta_var_inds, solution.data(), disj, solver, Atilde, params, cut_ind);
+
+      if (certificate_rank < (int) delta_var_inds.size()) {
+        addRankConstraint(grbSolver, delta_var_inds, certificate_rank, 0);
+      } else {
+        reached_feasibility = true;
+      }
     }
 #endif
 
-    // Clear the certificate for the current cut, if one was provided
-    if (v.size() > cut_ind) {
-      v[cut_ind].clear();
-    }
+    if (!reached_feasibility) {
+      // Clear the certificate for the current cut, if one was provided
+      if (v.size() > cut_ind) {
+        v[cut_ind].clear();
+      }
 
-    // Solve the RCVMILP
-    std::vector<double> solution;
-    int return_code = 0;
-    if (use_gurobi) {
-#ifdef USE_GUROBI
-      return_code = solveRCVMILP(grbSolver, solution, disj, solver, Atilde, params, cut_ind);
-#endif
-    } else {
-      return_code = solveRCVMILP(cbcSolver, solution, disj, solver, Atilde, params, cut_ind);
-    }
-    
-    if (return_code > 0) {
-      error_msg(errorstring, "Solver does not terminate with optimal solution for cut %d.\n", cut_ind);
-      writeErrorToLog(errorstring, params.logfile);
+      // Solve the RCVMIP
+      int return_code = 0;
+      if (use_gurobi) {
+  #ifdef USE_GUROBI
+        return_code = solveRCVMIP(grbSolver, solution, disj, solver, Atilde, params, cut_ind);
+  #endif
+      } else {
+        return_code = solveRCVMIP(cbcSolver, solution, disj, solver, Atilde, params, cut_ind);
+      }
       
-      if (liftingSolver) { if (!use_cbc || !cbcSolver || !cbcSolver->modelOwnsSolver()) { delete liftingSolver; } }
-#ifdef USE_GUROBI
-      if (use_gurobi && grbSolver) { delete grbSolver; }
-#endif
-#ifdef USE_CBC
-      if (use_cbc && cbcSolver) { delete cbcSolver; }
-#endif
-      
-      throw std::logic_error(errorstring);
-    }
+      if (return_code > 0) {
+        error_msg(errorstring, "Solver does not terminate with optimal solution for cut %d.\n", cut_ind);
+        writeErrorToLog(errorstring, params.logfile);
+        
+        if (liftingSolver) { if (!use_cbc || !cbcSolver || !cbcSolver->modelOwnsSolver()) { delete liftingSolver; } }
+  #ifdef USE_GUROBI
+        if (use_gurobi && grbSolver) { delete grbSolver; }
+  #endif
+  #ifdef USE_CBC
+        if (use_cbc && cbcSolver) { delete cbcSolver; }
+  #endif
+        
+        throw std::logic_error(errorstring);
+      }
 
-    // Retrieve certificate from solution
-    getCertificateFromRCVMILPSolution(v[cut_ind], solution, disj, solver, cut_ind, params.logfile);
+      // Retrieve certificate from solution
+      getCertificateFromRCVMIPSolution(v[cut_ind], solution, disj, solver, cut_ind, params.logfile);
+    } // make sure initial solution is not already feasible
 
     // Verify the certificate using dense cut coefficient vector
     const OsiRowCut* cut = cuts.rowCutPtr(cut_ind);

@@ -35,7 +35,7 @@ void prepareAtilde(
     FILE* logfile);
 
 /// @brief Generate a CGLP from a cut
-void genRCVMILPFromCut(
+void genRCVMIPFromCut(
     OsiSolverInterface* const liftingSolver,
     const OsiRowCut* const cut,
     const Disjunction* const disj, 
@@ -43,15 +43,15 @@ void genRCVMILPFromCut(
     const StrengtheningParameters::Parameters& params,
     const bool use_min_sum_delta = false);
 
-/// @brief Given an existing RCVMILP, update the coefficients related to the cut
-void updateRCVMILPFromCut(
+/// @brief Given an existing RCVMIP, update the coefficients related to the cut
+void updateRCVMIPFromCut(
     OsiSolverInterface* const liftingSolver,
     const OsiRowCut* const cut,
     const Disjunction* const disj, 
     const OsiSolverInterface* const solver);
 
-/// @brief  Given a solution to the RCVMILP, compute the rank of the submatrix given by the \p solution to the RCVMILP
-int computeRankOfRCVMILPSolution(
+/// @brief  Given a solution to the RCVMIP, compute the rank of the submatrix given by the \p solution to the RCVMIP
+int computeRankOfRCVMIPSolution(
     std::vector<int>& delta,
     const double* const solution,
     const Disjunction* const disj,
@@ -60,8 +60,8 @@ int computeRankOfRCVMILPSolution(
     const StrengtheningParameters::Parameters& params,
     const int cut_ind);
 
-/// @brief Obtain solution to RCVMILP
-int solveRCVMILP(
+/// @brief Obtain solution to RCVMIP
+int solveRCVMIP(
     OsiSolverInterface* const liftingSolver,
     std::vector<double>& solution,
     const Disjunction* const disj,
@@ -70,8 +70,8 @@ int solveRCVMILP(
     const StrengtheningParameters::Parameters& params,
     const int cut_ind);
 
-/// @brief Given a solution to the RCVMILP, extract the Farkas multipliers
-void getCertificateFromRCVMILPSolution(
+/// @brief Given a solution to the RCVMIP, extract the Farkas multipliers
+void getCertificateFromRCVMIPSolution(
     CutCertificate& v,
     const std::vector<double>& solution,
     const Disjunction* const disj,
