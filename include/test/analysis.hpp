@@ -104,12 +104,13 @@ struct SummaryStrengtheningInfo {
 /// @brief Summary statistics for counting regularity / irregularity of cuts and certificates
 struct SummaryCertificateInfo {
   std::vector<int> submx_rank; ///< rank of the submatrix of the certificate
-  std::vector<int> submx_num_nnz_mult; ///< number of original problem constraints with nonzero multipliers in certificate
+  std::vector<int> num_nnz_mult; ///< number of original problem constraints with nonzero multipliers in certificate
 
   /// number of times certificate uses nonzero multipliers on both the upper and lower bounds on a variable
   int num_unmatched_bounds = 0;
   /// use multipliers to find number of distinct facets of the cut-generating set S using certificates
   double avg_num_cgs_facet = 0.;
+  
   /// number of certificates leading to submx rank less than number of nonzero multipliers used
   int num_irreg_less = 0;
   /// number of regular certificates (submx rank equals number of nonzero multipliers used)
@@ -118,6 +119,8 @@ struct SummaryCertificateInfo {
   int num_irreg_more = 0;
   /// number of cuts for which certificate could not be ascertained
   int num_unconverged = 0;
+  /// number of iterations needed to compute certificate
+  std::vector<int> num_iterations;
 }; /* SummaryCertificateInfo */
 
 void printHeader(const StrengtheningParameters::Parameters& params,
@@ -186,7 +189,7 @@ void setCutInfo(SummaryCutInfo& cutInfo, const int num_rounds, const SummaryCutI
 void setCertificateInfo(
     SummaryCertificateInfo& info,
     const Disjunction* const disj,
-    const std::vector<CutCertificate>& v,
+    const std::vector<CutCertificate>& v_vec,
     const int num_rows, const int num_cols,
     const std::vector<int>& str_cut_ind,
     const double EPS);

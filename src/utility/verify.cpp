@@ -156,7 +156,9 @@ void checkCut(
   for (int i = 0; i < solver->getNumCols(); i++) {
     const double diff = cut_coeff[i] - new_coeff[i];
     if (greaterThanVal(std::abs(diff), 0.0)) {
-      fprintf(stderr, "%d: cut: %g\tcalc: %g\tdiff: %g\n", i, cut_coeff[i], new_coeff[i], diff);
+      warning_msg(warnstring,
+        "Discrepancy with coefficient %d: cut: %g\tcalc: %g\tdiff: %g\n",
+        i, cut_coeff[i], new_coeff[i], diff);
       num_errors++;
       total_diff += std::abs(diff);
     }
@@ -195,24 +197,13 @@ int checkCutHelper(
       error_msg(errorstring,
           "checkCutHelper: Number of differences between true and calculated cuts: %d. Total difference: %g. Exiting.\n",
           num_errors, total_diff);
+#ifdef TRACE
+      fprintf(stderr, "v:\n");
+      for (int i = 0; i < (int) v.size(); i++) {
+        fprintf(stderr, "v[%d] = %g\n", i, v[i]);
+      }
+#endif
       throw std::logic_error(errorstring);
-    }
-// #ifdef USE_EIGEN
-//     fprintf(stderr, "x:\n");
-//     for (int i = 0; i < solver->getNumCols(); i++) {
-//       fprintf(stderr, "x[%d] = %g\n", i, x(i));
-//     }
-//     fprintf(stderr, "b:\n");
-//     for (int i = 0; i < solver->getNumCols(); i++) {
-//       fprintf(stderr, "b[%d] = %g\n", i, b(i));
-//     }
-// #endif // USE_EIGEN
-    fprintf(stderr, "v:\n");
-    for (int i = 0; i < (int) v.size(); i++) {
-      fprintf(stderr, "v[%d] = %g\n", i, v[i]);
-    }
-    if (!should_continue) {
-      exit(1);
     }
   } // num_errors > 0
 

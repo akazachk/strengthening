@@ -811,7 +811,7 @@ void printCertificateInfo(const SummaryCertificateInfo& orig_info, const Summary
     fprintf(logfile, "%s%c", stringValue(info.num_irreg_less, "%d").c_str(), SEP); count++;
     fprintf(logfile, "%s%c", stringValue(info.num_reg, "%d").c_str(), SEP); count++;
     fprintf(logfile, "%s%c", stringValue(info.num_irreg_more, "%d").c_str(), SEP); count++;
-    fprintf(logfile, "%s%c", stringValue(info.num_unconverged, "%g").c_str(), SEP); count++;
+    fprintf(logfile, "%s%c", stringValue(info.num_unconverged, "%d").c_str(), SEP); count++;
   }
   fflush(logfile);
   assert(count == countCertInfoEntries);
@@ -1404,7 +1404,7 @@ void setCertificateInfo(
     SummaryCertificateInfo& info,
     const Disjunction* const disj,
     /// [in] Index is [term][multiplier] where the first m multipliers are on original rows, then there are m0 on the disjunctive term ineqs, and finally n on columns
-    const CutCertificate& v,
+    const std::vector<CutCertificate>& v_vec,
     const int num_rows,
     const int num_cols,
     /// [in] Indices of strengthened cuts
@@ -1417,11 +1417,13 @@ void setCertificateInfo(
   const int num_str_cuts = (int) str_cut_ind.size();
   
   for (const int cut_ind : str_cut_ind) {
+    const CutCertificate& v = v_vec[cut_ind];
+
     // K counts the number of nonzero multipliers for each constraint
     // If the constraints form a basis, then the cut is "regular",
     // assuming the corresponding point is not feasible for the disjunction
     std::vector<int> K(num_rows + num_common_rows + num_cols, 0);
-    int num_nonzero_coeff = 0;
+    // int num_nonzero_coeff = 0;
 
     // Compute the convex set S using the multipliers on the disjunctive term ineqs
     // These will all be stored as inequalities in >= form
@@ -1437,7 +1439,7 @@ void setCertificateInfo(
       for (int row = 0; row < num_rows + num_common_rows; row++) {
         const double ukt = v[term_ind][row];
         if (!isZero(ukt, EPS)) {
-          if (K[row] == 0) num_nonzero_coeff++;
+          // if (K[row] == 0) num_nonzero_coeff++;
           K[row]++;
         }
       } // loop over original rows
@@ -1540,14 +1542,11 @@ void setCertificateInfo(
         if (lt_zero_ind != -1 && gt_zero_ind != -1) break;
 
         if (!isZero(ukt, EPS)) {
-          if (K[num_rows + num_common_rows + var] == 0) num_nonzero_coeff++;
+          // if (K[num_rows + num_common_rows + var] == 0) num_nonzero_coeff++;
           K[num_rows + num_common_rows + var]++;
         }
       } // loop over terms
       info.num_unmatched_bounds += (lt_zero_ind != -1 && gt_zero_ind != -1);
-    } // loop over vars 
-
-    info.num_irreg_less += (num_nonzero_coeff < num_cols);
-    info.num_irreg_more += (num_nonzero_coeff > num_cols);
+    } // loop over vars
   } // loop over each strengthened cut
 } /* setCertificateInfo */

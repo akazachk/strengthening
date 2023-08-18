@@ -58,7 +58,6 @@ namespace StrengtheningParameters {
 /********** PARAMETERS **********/
 /// Integer-valued parameters
 enum intParam {
-  ANALYZE_REGULARITY, ///< 0: no, 1: yes, only first certificate 2: yes, use MIP to check for alternate certificates
   CUTLIMIT, ///< max number of cuts generated; 0 = none, -k = k * # fractional variables at root
   DISJ_TERMS, ///< number of disjunctive terms or number of disjunctions, depending on ::MODE
   GOMORY, ///< Gomory cut mode, 0: none, +/-1: use CglGMI class to generate cuts (-1: do not add them to LP before generating cuts; 1: do add them)
@@ -89,6 +88,9 @@ enum intParam {
   /// \li  strong_branching_on = 16384
   BB_STRATEGY,
   BB_MODE, ///< 111: each bit represents whether to branch with gmics, vpcs, and no cuts (from largest to smallest bit)
+  // Regularity options
+  ANALYZE_REGULARITY, ///< 0: no, 1: yes, only first certificate 2: yes, use MIP to check for alternate certificates
+  RCVMIP_MAX_ITERS, ///< maximum number of iterations to try to get RCVMIP to feasibility (iteration = row generation)
   NUM_INT_PARAMS ///< number of integer params
 }; /* intParam */
 /// Double-valued parameters
@@ -431,6 +433,12 @@ struct Parameters {
   /// @brief int parameter values
   /// unordered_map gets printed in reverse order; advantage over map is constant access time on average
   std::unordered_map<intParam, IntParameter, EnumClassHash> intParamValues {
+    {intParam::RCVMIP_MAX_ITERS,
+        IntParameter(intParam::RCVMIP_MAX_ITERS, "RCVMIP_MAX_ITERS",
+            100, 0, std::numeric_limits<int>::max())},
+    {intParam::ANALYZE_REGULARITY,
+        IntParameter(intParam::ANALYZE_REGULARITY, "ANALYZE_REGULARITY",
+            0, 0, 2)},
     /// BB_MODE: 010 = branch with mycuts only
     {intParam::BB_MODE,
         IntParameter(intParam::BB_MODE, "BB_MODE",
@@ -481,9 +489,6 @@ struct Parameters {
     {intParam::CUTLIMIT,
         IntParameter(intParam::CUTLIMIT, "CUTLIMIT",
             -1, std::numeric_limits<int>::min(), std::numeric_limits<int>::max())},
-    {intParam::ANALYZE_REGULARITY,
-        IntParameter(intParam::ANALYZE_REGULARITY, "ANALYZE_REGULARITY",
-            0, 0, 2)},
   }; /* intParamValues */
 
   /// @brief double parameter values

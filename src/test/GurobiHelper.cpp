@@ -107,7 +107,27 @@ GRBModel* buildGRBModelFromOsi(const OsiSolverInterface* const solver, FILE* con
   return model;
 } /* buildGRBModelFromOsi */
 
+/// @details This function is used to solve a model with Gurobi
+///
 /// @return GRB_IntAttr_Status value
+///
+/// The possible return statuses are:
+/// \li GRB_LOADED = 1: Model is loaded, but no solution information is available.
+/// \li GRB_OPTIMAL: Model was solved to optimality (subject to tolerances), and an optimal solution is available.
+/// \li GRB_INFEASIBLE: Model was proven to be infeasible.
+/// \li GRB_INF_OR_UNBD: Model was proven to be either infeasible or unbounded. To obtain a more definitive conclusion, set the DualReductions parameter to 0 and reoptimize.
+/// \li GRB_UNBOUNDED: Model was proven to be unbounded. Important note: an unbounded status indicates the presence of an unbounded ray that allows the objective to improve without limit. It says nothing about whether the model has a feasible solution. If you require information on feasibility, you should set the objective to zero and reoptimize.
+/// \li GRB_CUTOFF: Optimal objective for model was proven to be worse than the value specified in the Cutoff parameter. No solution information is available.
+/// \li GRB_ITERATION_LIMIT: Optimization terminated because the total number of simplex iterations performed exceeded the value specified in the IterationLimit parameter, or because the total number of barrier iterations exceeded the value specified in the BarIterLimit parameter.
+/// \li GRB_NODE_LIMIT: Optimization terminated because the total number of branch-and-cut nodes explored exceeded the value specified in the NodeLimit parameter.
+/// \li GRB_TIME_LIMIT: Optimization terminated because the time expended exceeded the value specified in the TimeLimit parameter.
+/// \li GRB_SOLUTION_LIMIT: Optimization terminated because the number of solutions found reached the value specified in the SolutionLimit parameter.
+/// \li GRB_INTERRUPTED: Optimization was terminated by the user.
+/// \li GRB_NUMERIC: Optimization was terminated due to unrecoverable numerical difficulties.
+/// \li GRB_SUBOPTIMAL: Unable to satisfy optimality tolerances; a sub-optimal solution is available.
+/// \li GRB_INPROGRESS: A non-blocking optimization call was made (by setting the NonBlocking parameter to 1 in a Gurobi Compute Server environment), but the associated optimization run is not yet complete.
+/// \li GRB_USER_OBJ_LIMIT: Optimization terminated because the user objective function has reached the value specified in the ObjLimit parameter and no better solution has been found.
+/// \li GRB_WORK_LIMIT: Optimization terminated because the total work expended exceeded the value specified in the WorkLimit parameter.
 int solveGRBModel(GRBModel& model, FILE* const logfile) {
   int optimstatus = -1;
   try {
@@ -122,12 +142,6 @@ int solveGRBModel(GRBModel& model, FILE* const logfile) {
         model.optimize();
         optimstatus = model.get(GRB_IntAttr_Status);
       }
-    }
-
-    if (optimstatus == GRB_INFEASIBLE || optimstatus == GRB_UNBOUNDED || optimstatus == GRB_INF_OR_UNBD) {
-      error_msg(errorstring, "Gurobi: Failed to optimize MIP.\n");
-      writeErrorToLog(errorstring, logfile);
-      exit(1);
     }
   } catch (GRBException& e) {
     error_msg(errorstring, "Gurobi: Exception caught: %s\n", e.getMessage().c_str());

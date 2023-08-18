@@ -79,8 +79,11 @@ void getCertificateFromRCVMIPSolution(
     const int cut_ind,
     FILE* const logfile);
 
+/// @brief Container for types of statistics we want to keep
+enum class RegularityStatus { IRREG_LESS = -1, REG = 0, IRREG_MORE = 1, UNCONVERGED = 2, UNKNOWN = 3 };
+
 /// @brief Use existing \p Atilde matrix (or recalculate it) to compute rank of submatrix given by the #CutCertificate \p v
-void analyzeCertificateRegularity(
+RegularityStatus analyzeCertificateRegularity(
     int& certificate_rank,
     int& num_nonzero_multipliers,
     const CutCertificate& v,
@@ -94,6 +97,8 @@ void analyzeCutRegularity(
     std::vector<CutCertificate>& v,
     std::vector<int>& certificate_submx_rank,
     std::vector<int>& num_nonzero_multipliers,
+    std::vector<RegularityStatus>& regularity_status,
+    std::vector<int>& num_iters,
     const OsiCuts& cuts,
     const Disjunction* const disj,
     const OsiSolverInterface* const solver,

@@ -529,8 +529,7 @@ int main(int argc, char** argv) {
     timer.start_timer(OverallTimeStats::STR_TOTAL_TIME);
     strengtheningHelper(currCuts, v, str_cut_ind, strInfo, boundInfoVec[round_ind], disj, solver, ip_solution);
     boundInfo.num_str_affected_cuts += str_cut_ind.size();
-    strInfo.num_str_affected_cuts += str_cut_ind.size();
-    // setStrInfo(strInfo, disj, v, solver->getNumRows(), solver->getNumCols(), str_cut_ind, CURR_EPS);
+    setCertificateInfo(origCertInfoVec[round_ind], disj, v, solver->getNumRows(), solver->getNumCols(), str_cut_ind, CURR_EPS);
     timer.end_timer(OverallTimeStats::STR_TOTAL_TIME);
 
     mycuts.insert(currCuts);
@@ -562,21 +561,42 @@ int main(int argc, char** argv) {
       // std::vector<int> certificate_submx_rank(currCuts.sizeCuts(), 0);
       // std::vector<int> num_nonzero_multipliers(solver->getNumRows() + disj->common_changed_var.size() + solver->getNumCols(), 0);
       origCertInfoVec[round_ind].submx_rank.resize(currCuts.sizeCuts(), 0);
-      origCertInfoVec[round_ind].submx_num_nnz_mult.resize(currCuts.sizeCuts(), 0);
+      origCertInfoVec[round_ind].num_nnz_mult.resize(currCuts.sizeCuts(), 0);
       // assert(Atilde.getNumRows() == solver->getNumRows() + disj->common_changed_var.size());
       // assert(Atilde.getNumRows() + disj->terms[0].changed_var.size() + solver->getNumCols() == v[0][0].size()); // dimension matches for cut 0, term 0
 
       for (int cut_ind = 0; cut_ind < currCuts.sizeCuts(); cut_ind++) {
-        analyzeCertificateRegularity(origCertInfoVec[round_ind].submx_rank[cut_ind],
-            origCertInfoVec[round_ind].submx_num_nnz_mult[cut_ind], v[cut_ind],
-            disj, solver, Atilde, params);
+        int curr_submx_rank = -1;
+        int curr_num_nnz_mult = -1;
+        const RegularityStatus status = analyzeCertificateRegularity(
+            curr_submx_rank, curr_num_nnz_mult,
+            v[cut_ind], disj, solver, Atilde, params);
+        origCertInfoVec[round_ind].submx_rank[cut_ind] = curr_submx_rank;
+        origCertInfoVec[round_ind].num_nnz_mult[cut_ind] = curr_num_nnz_mult;
+
+        switch (static_cast<int>(status)) {
+          case static_cast<int>(RegularityStatus::IRREG_LESS):
+            origCertInfoVec[round_ind].num_irreg_less++;
+            break;
+          case static_cast<int>(RegularityStatus::REG):
+            origCertInfoVec[round_ind].num_reg++;
+            break;
+          case static_cast<int>(RegularityStatus::IRREG_MORE):
+            origCertInfoVec[round_ind].num_irreg_more++;
+            break;
+          default:
+            error_msg(errorstring, "Invalid status %d from origCertInfoVec for round %d cut %d.\n", status, round_ind, cut_ind);
+            writeErrorToLog(errorstring, params.logfile);
+            exit(1);
+        } // switch on status
         
     #ifdef TRACE
-        fprintf(stdout, "Cut %d: rank = %d/%d, num_nonzero_multipliers = %d\n",
+        fprintf(stdout, "Cut %d: rank = %d/%d,\tnum_nonzero_multipliers = %d,\tregularity status = %d\n",
             cut_ind,
             origCertInfoVec[round_ind].submx_rank[cut_ind],
             Atilderank,
-            origCertInfoVec[round_ind].submx_num_nnz_mult[cut_ind]);
+            origCertInfoVec[round_ind].num_nnz_mult[cut_ind],
+            static_cast<int>(status));
     #endif
       } // loop over certificates, analyzing each for regularity
     
@@ -588,6 +608,7 @@ int main(int argc, char** argv) {
     std::vector<CutCertificate> rcvmip_v; // [cut][term][Farkas multiplier] in the end, per term, this will be of dimension rows + disj term ineqs + cols
     OsiCuts rcvmipCurrCuts;
     std::vector<int> rcvmip_str_cut_ind; // indices of cuts that were strengthened
+    std::vector<RegularityStatus> rcvmip_regularity_status;
 
     if (SHOULD_ANALYZE_REGULARITY >= 2 && currCuts.sizeCuts() > 0 && disj) {
       printf("\n## Analyzing regularity of cuts via RCVMILP of Serra and Balas (2020). ##\n");
@@ -595,30 +616,54 @@ int main(int argc, char** argv) {
 
       // Copy to rcvmip_v the contents of v
       rcvmip_v = v;
-  
-      // std::vector<int> certificate_submx_rank; // rank of the submatrix of the certificate
-      // std::vector<int> num_nonzero_multipliers;
 
       timer.start_timer(OverallTimeStats::REG_CALC_CERT_TIME);
-      analyzeCutRegularity(rcvmip_v, rcvmipCertInfoVec[round_ind].submx_rank, rcvmipCertInfoVec[round_ind].submx_num_nnz_mult, unstrCurrCuts, disj, solver, params);
+      analyzeCutRegularity(rcvmip_v,
+          rcvmipCertInfoVec[round_ind].submx_rank,
+          rcvmipCertInfoVec[round_ind].num_nnz_mult,
+          rcvmip_regularity_status,
+          rcvmipCertInfoVec[round_ind].num_iterations,
+          unstrCurrCuts, disj, solver, params);
       timer.end_timer(OverallTimeStats::REG_CALC_CERT_TIME);
+      
+      setCertificateInfo(rcvmipCertInfoVec[round_ind], disj, rcvmip_v, solver->getNumRows(), solver->getNumCols(), rcvmip_str_cut_ind, CURR_EPS);
     
-    #ifdef TRACE
       for (int cut_ind = 0; cut_ind < currCuts.sizeCuts(); cut_ind++) {
-        fprintf(stdout, "Cut %d: rank = %d/%d, num_nonzero_multipliers = %d\n",
+        const RegularityStatus status = rcvmip_regularity_status[cut_ind];
+
+        switch (static_cast<int>(status)) {
+          case static_cast<int>(RegularityStatus::IRREG_LESS):
+            rcvmipCertInfoVec[round_ind].num_irreg_less++;
+            break;
+          case static_cast<int>(RegularityStatus::REG):
+            rcvmipCertInfoVec[round_ind].num_reg++;
+            break;
+          case static_cast<int>(RegularityStatus::IRREG_MORE):
+            rcvmipCertInfoVec[round_ind].num_irreg_more++;
+            break;
+          case static_cast<int>(RegularityStatus::UNCONVERGED):
+            rcvmipCertInfoVec[round_ind].num_unconverged++;
+            break;
+          default:
+            error_msg(errorstring, "Invalid status %d from rcvmipCertInfoVec for round %d cut %d.\n", status, round_ind, cut_ind);
+            writeErrorToLog(errorstring, params.logfile);
+            exit(1);
+        } // switch on status
+
+    #ifdef TRACE
+        fprintf(stdout, "Cut %d: rank = %d/%d,\tnum_nonzero_multipliers = %d,\tregularity status = %d\n",
             cut_ind,
             rcvmipCertInfoVec[round_ind].submx_rank[cut_ind],
             Atilderank,
-            rcvmipCertInfoVec[round_ind].submx_num_nnz_mult[cut_ind]);
-      }
+            rcvmipCertInfoVec[round_ind].num_nnz_mult[cut_ind],
+            static_cast<int>(status));
     #endif
+      }
 
       // Apply the new strengthening certificates to get new cuts
       rcvmipCurrCuts = unstrCurrCuts; // assignment operator essentially inserts each of the unstrCurrCuts into rcvmipCurrCuts
       strengtheningHelper(rcvmipCurrCuts, rcvmip_v, rcvmip_str_cut_ind, rcvmipStrInfo, boundInfoVec[round_ind], disj, solver, ip_solution, false);
       boundInfo.num_rcvmip_str_affected_cuts += rcvmip_str_cut_ind.size();
-      rcvmipStrInfo.num_str_affected_cuts += rcvmip_str_cut_ind.size();
-      // setStrInfo(rcvmipStrInfo, disj, rcvmip_v, solver->getNumRows(), solver->getNumCols(), rcvmip_str_cut_ind, CURR_EPS);
       
       rcvmip_cuts.insert(rcvmipCurrCuts);
 
@@ -1186,6 +1231,7 @@ int processArgs(int argc, char** argv) {
       {"mode",                  required_argument, 0, 'm'},
       {"optfile",               required_argument, 0, 'o'},
       {"rounds",                required_argument, 0, 'r'},
+      {"rcvmip_max_iters",      required_argument, 0, 'r'*'1'},
       {"solfile",               required_argument, 0, 's'*'1'},
       {"strengthen",            required_argument, 0, 's'},
       {"temp",                  required_argument, 0, 't'*'1'},
@@ -1310,6 +1356,16 @@ int processArgs(int argc, char** argv) {
                    params.set(param, val);
                    break;
                  }
+      case 'r' * '1': {
+                        int val;
+                        intParam param = intParam::RCVMIP_MAX_ITERS;
+                        if (!parseInt(optarg, val)) {
+                          error_msg(errorstring, "Error reading %s. Given value: %s.\n", params.name(param).c_str(), optarg);
+                          exit(1);
+                        }
+                        params.set(param, val);
+                        break;
+                      }
       case 's': {
                    int val;
                    intParam param = intParam::STRENGTHEN;
@@ -1372,7 +1428,6 @@ int processArgs(int argc, char** argv) {
                 helpstring += "--solfile=solfile\n\tWhere to find integer optimum solution information (e.g., a mst/sol file produced by Gurobi/CPLEX/etc).\n";
                 helpstring += "-v level, --verbosity=level\n\tVerbosity level (0: print little, 1: let solver output be visible).\n";
                 helpstring += "\n# General cut options #\n";
-                helpstring += "-a 0/1/2, --analyze_regularity=0/1/2\n\t0: no, 1: yes, only first certificate 2: yes, use MIP to check for alternate certificates.\n";
                 helpstring += "-c num cuts, --cutlimit=num cuts\n\tMaximum number of cuts to generate (0+ = as given, -k = k * # fractional variables at root).\n";
                 helpstring += "-d num terms, --disj_terms=num terms\n\tMaximum number of disjunctive terms or disjunctions to generate (depending on mode).\n";
                 helpstring += "-g +/- 0-3, --gomory=+/- 0-3\n\t0: do not use Gomory cuts, 1: generate Gomory cuts via CglGMI, 2: generate Gomory cuts via gmic.cpp, 3: try closed-form strengthening (<0: only gen, >0: also apply to LP).\n";
@@ -1384,6 +1439,9 @@ int processArgs(int argc, char** argv) {
                 helpstring += "-b 0+ --bb_runs=0+\n\tNumber of branch-and-bound repeats.\n";
                 helpstring += "-B strategy --bb_strategy=strategy\n\tBranch-and-bound strategy (see BBHelper.hpp).\n";
                 helpstring += "--bb_mode={0,1,10,11,100,...,111}\n\tWhich branch-and-bound experiments to run (ones = no cuts, tens = mycuts, hundreds = gmics).\n";
+                helpstring += "\n# Regularity options #\n";
+                helpstring += "-a 0/1/2, --analyze_regularity=0/1/2\n\t0: no, 1: yes, only first certificate 2: yes, use MIP to check for alternate certificates.\n";
+                helpstring += "--rcvmip_max_iters=num iters\n\tMaximum number of iterations for RCVMIP.\n";
                 helpstring += "## END OF HELP ##\n";
                 std::cout << helpstring << std::endl;
                 status = 1;
