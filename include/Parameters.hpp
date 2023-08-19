@@ -98,8 +98,8 @@ enum doubleParam {
   EPS, ///< global epsilon (may be further refined based on instance-specific data)
   IP_OBJ, ///< way to give just the objective for this instance rather than reading it from a file
   MIN_ORTHOGONALITY, ///< minimum orthogonality between cuts added to the collection
-  RCVMIP_TOTAL_TIMELIMIT, ///< total time limit for generating certificates with RCVMIP; when specified, supercedes RCVMIP_CUT_TIMELIMIT
-  RCVMIP_CUT_TIMELIMIT, ///< time limit for generating certificate for one cut with RCVMIP
+  RCVMIP_TOTAL_TIMELIMIT, ///< total seconds allotted for generating certificates with RCVMIP; when specified, supercedes RCVMIP_CUT_TIMELIMIT
+  RCVMIP_CUT_TIMELIMIT, ///< number of seconds allotted for generating certificate per cut with RCVMIP
   TIMELIMIT, ///< time limit used for overall cut generation process
   NUM_DOUBLE_PARAMS ///< number of double params
 }; /* doubleParam */
