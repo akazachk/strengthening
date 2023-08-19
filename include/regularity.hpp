@@ -21,6 +21,12 @@ class OsiSolverInterface;
 class OsiRowCut;
 class OsiCuts;
 
+/// @brief Regularity status enumeration to track whether we have identified that a cut is regular or not
+enum class RegularityStatus { IRREG_LESS = -1, REG = 0, IRREG_MORE = 1, UNCONVERGED = 2, UNKNOWN = 3 };
+
+/// @brief Return string with regularity status name
+const std::string getRegularityStatusName(const RegularityStatus& status);
+
 /// @brief Calculate number of finite lower and upper bounds
 int calculateNumFiniteBounds(
   const OsiSolverInterface* const solver,
@@ -84,9 +90,6 @@ void getCertificateFromRCVMIPSolution(
     const int cut_ind,
     FILE* const logfile);
 
-/// @brief Container for types of statistics we want to keep
-enum class RegularityStatus { IRREG_LESS = -1, REG = 0, IRREG_MORE = 1, UNCONVERGED = 2, UNKNOWN = 3 };
-
 /// @brief Use existing \p Atilde matrix (or recalculate it) to compute rank of submatrix given by the #CutCertificate \p v
 RegularityStatus analyzeCertificateRegularity(
     int& certificate_rank,
@@ -107,4 +110,5 @@ void analyzeCutRegularity(
     const OsiCuts& cuts,
     const Disjunction* const disj,
     const OsiSolverInterface* const solver,
-    const StrengtheningParameters::Parameters &params);
+    const StrengtheningParameters::Parameters& params,
+  const bool USE_INPUT_CERTIFICATE = true);

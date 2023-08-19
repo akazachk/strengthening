@@ -572,12 +572,14 @@ int main(int argc, char** argv) {
 #endif
 
     // Analyze regularity of the existing certificate for each cut
+    std::vector<RegularityStatus> orig_regularity_status;
     if (SHOULD_ANALYZE_REGULARITY >= 1 && currCuts.sizeCuts() > 0 && disj) {
       timer.start_timer(OverallTimeStats::REG_ANALYZE_ORIG_CERT_TIME);
 
       // Calculate the rank of the existing certificate for each cut
       // (Do not compute regularity of the cut overall)
       printf("\n## Analyzing regularity of certificate computed for each cut. ##\n");
+      orig_regularity_status.resize(currCuts.sizeCuts(), RegularityStatus::UNKNOWN);
 
       // For purposes of linear independence,
       // when a bound is used in the certificate on a certain variable
@@ -605,6 +607,7 @@ int main(int argc, char** argv) {
             break;
           case static_cast<int>(RegularityStatus::REG):
             origCertInfoVec[round_ind].num_reg++;
+            orig_regularity_status[cut_ind] = RegularityStatus::REG; // only change for regular because others may be inaccurate
             break;
           case static_cast<int>(RegularityStatus::IRREG_MORE):
             origCertInfoVec[round_ind].num_irreg_more++;
@@ -616,19 +619,20 @@ int main(int argc, char** argv) {
         } // switch on status
         
     #ifdef TRACE
-        fprintf(stdout, "Cut %d: rank = %d/%d,\tnum_nonzero_multipliers = %d,\tregularity status = %d\n",
+        fprintf(stdout, "Cut %d: rank = %d/%d,\tnum_nonzero_multipliers = %d,\tregularity status = % d (%s)\n",
             cut_ind,
             origCertInfoVec[round_ind].submx_rank[cut_ind],
             Atilderank,
             origCertInfoVec[round_ind].num_nnz_mult[cut_ind],
-            static_cast<int>(status));
+            static_cast<int>(status),
+            getRegularityStatusName(status).c_str());
     #endif
       } // loop over certificates, analyzing each for regularity
 
       timer.end_timer(OverallTimeStats::REG_ANALYZE_ORIG_CERT_TIME);
     } // analyze regularity of *certificate* (not cut overall)
 
-    // Next, analyze regularity of cut overall, using all possible certificates, with the RCVMILP by Serra and Balas (2020)
+    // Next, analyze regularity of cut overall, using all possible certificates, with the RCVMIP by Serra and Balas (2020)
     // If this is performed, we can obtain new strengthened cuts to compare against the existing ones
     std::vector<CutCertificate> rcvmip_v; // [cut][term][Farkas multiplier] in the end, per term, this will be of dimension rows + disj term ineqs + cols
     OsiCuts rcvmipCurrCuts;
@@ -636,10 +640,13 @@ int main(int argc, char** argv) {
     std::vector<RegularityStatus> rcvmip_regularity_status;
 
     if (SHOULD_ANALYZE_REGULARITY >= 2 && currCuts.sizeCuts() > 0 && disj) {
-      printf("\n## Analyzing regularity of cuts via RCVMILP of Serra and Balas (2020). ##\n");
+      printf("\n## Analyzing regularity of cuts via RCVMIP of Serra and Balas (2020). ##\n");
 
       // Copy to rcvmip_v the contents of v
       rcvmip_v = v;
+      rcvmip_regularity_status = orig_regularity_status;
+      rcvmipCertInfoVec[round_ind].submx_rank = origCertInfoVec[round_ind].submx_rank;
+      rcvmipCertInfoVec[round_ind].num_nnz_mult = origCertInfoVec[round_ind].num_nnz_mult;
 
       timer.start_timer(OverallTimeStats::REG_CALC_CERT_TIME);
       analyzeCutRegularity(rcvmip_v,
@@ -673,12 +680,13 @@ int main(int argc, char** argv) {
         } // switch on status
 
     #ifdef TRACE
-        fprintf(stdout, "Cut %d: rank = %d/%d,\tnum_nonzero_multipliers = %d,\tregularity status = %d\n",
+        fprintf(stdout, "Cut %d: rank = %d/%d,\tnum_nonzero_multipliers = %d,\tregularity status = % d (%s)\n",
             cut_ind,
             rcvmipCertInfoVec[round_ind].submx_rank[cut_ind],
             Atilderank,
             rcvmipCertInfoVec[round_ind].num_nnz_mult[cut_ind],
-            static_cast<int>(status));
+            static_cast<int>(status),
+            getRegularityStatusName(status).c_str());
     #endif
       } // loop over cuts, analyzing each for regularity
 
@@ -1255,6 +1263,8 @@ int processArgs(int argc, char** argv) {
       {"optfile",               required_argument, 0, 'o'},
       {"rounds",                required_argument, 0, 'r'},
       {"rcvmip_max_iters",      required_argument, 0, 'r'*'1'},
+      {"rcvmip_total_timelimit",required_argument, 0, 'r'*'2'},
+      {"rcvmip_cut_timelimit",  required_argument, 0, 'r'*'3'},
       {"solfile",               required_argument, 0, 's'*'1'},
       {"strengthen",            required_argument, 0, 's'},
       {"temp",                  required_argument, 0, 't'*'1'},
@@ -1389,6 +1399,28 @@ int processArgs(int argc, char** argv) {
                         params.set(param, val);
                         break;
                       }
+
+      case 'r' * '2': {
+                        double val;
+                        doubleParam param = doubleParam::RCVMIP_TOTAL_TIMELIMIT;
+                        if (!parseDouble(optarg, val)) {
+                          error_msg(errorstring, "Error reading %s. Given value: %s.\n", params.name(param).c_str(), optarg);
+                          exit(1);
+                        }
+                        params.set(param, val);
+                        break;
+                      }
+
+      case 'r' * '3': {
+                        double val;
+                        doubleParam param = doubleParam::RCVMIP_CUT_TIMELIMIT;
+                        if (!parseDouble(optarg, val)) {
+                          error_msg(errorstring, "Error reading %s. Given value: %s.\n", params.name(param).c_str(), optarg);
+                          exit(1);
+                        }
+                        params.set(param, val);
+                        break;
+                      }
       case 's': {
                    int val;
                    intParam param = intParam::STRENGTHEN;
@@ -1465,6 +1497,8 @@ int processArgs(int argc, char** argv) {
                 helpstring += "\n# Regularity options #\n";
                 helpstring += "-a 0/1/2, --analyze_regularity=0/1/2\n\t0: no, 1: yes, only first certificate 2: yes, use MIP to check for alternate certificates.\n";
                 helpstring += "--rcvmip_max_iters=num iters\n\tMaximum number of iterations for RCVMIP.\n";
+                helpstring += "--rcvmip_total_timelimit=num seconds\n\tTotal number of seconds allotted for RCVMIP (0: infinity). When specified, supercedes RCVMIP_CUT_TIMELIMIT.\n";
+                helpstring += "--rcvmip_cut_timelimit=num seconds\n\tNumber of seconds allotted for generating certificate per cut with RCVMIP (0: infinity).\n";
                 helpstring += "## END OF HELP ##\n";
                 std::cout << helpstring << std::endl;
                 status = 1;

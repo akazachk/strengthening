@@ -35,6 +35,66 @@
 #include "debug.hpp"
 #endif
 
+// For timing
+#include "TimeStats.hpp"
+
+const std::string getRegularityStatusName(const RegularityStatus& status) {
+  const std::vector<std::string> RegularityStatusName = { "IRREG_LESS", "REG", "IRREG_MORE", "UNCONVERGED", "UNKNOWN" };
+  const int FIRST_INDEX_VALUE = static_cast<int>(RegularityStatus::IRREG_LESS);
+  return RegularityStatusName[static_cast<int>(status) - FIRST_INDEX_VALUE];
+}
+
+/// @brief Return name in RCVMIP timer for cut \p cut_ind (if negative, return total time name)
+inline const std::string getRCVMIPTimeStatsName(const int cut_ind) {
+  if (cut_ind < 0) {
+    return "RCVMIP_TOTAL_TIME";
+  } else {
+    return "RCVMIP_CUT_" + std::to_string(cut_ind) + "_TIME";
+  }
+} /* getRCVMIPTimeStatsName */
+
+/// @brief Return total time name for RCVMIP timer
+inline const std::string getRCVMIPTotalTimeStatsName() {
+  return getRCVMIPTimeStatsName(-1);
+} /* getRCVMIPTotalTimeStatsName */
+
+/// @brief Call TimeStats::reachedTimeLimit(const std::string&,const double) const
+inline bool reachedRCVMIPTimeLimit(
+    const TimeStats& rcvmip_timer,
+    const double max_time_per_cut, 
+    const double max_total_time,
+    const std::string& currCutTimeName = "") {
+  const std::string& totalTimeName = getRCVMIPTimeStatsName(-1);
+  const bool hit_time_per_cut = (max_time_per_cut > 0 && !currCutTimeName.empty()) ?
+      rcvmip_timer.reachedTimeLimit(currCutTimeName, max_time_per_cut) :
+      false;
+  const bool hit_total_time = (max_total_time > 0) ? rcvmip_timer.reachedTimeLimit(totalTimeName, max_total_time) : false;
+  return hit_time_per_cut || hit_total_time;
+} /* reachedRCVMIPTimeLimit */
+
+/// @brief Calculate remaining time limit for RCVMIP
+inline double getRCVMIPRemainingTimeLimit(
+    const TimeStats& rcvmip_timer,
+    const double max_time_per_cut,
+    const double max_total_time) {
+  if (max_total_time <= 0. && max_time_per_cut <= 0.) {
+    return std::numeric_limits<double>::max();
+  }
+
+  const std::string& totalTimeName = getRCVMIPTimeStatsName(-1);
+  const double elapsed_time = rcvmip_timer.get_total_time(totalTimeName);
+  if (max_total_time > 0. && elapsed_time >= max_total_time) {
+    return 0;
+  } else {
+    const double remaining_time = (max_total_time == 0) ? std::numeric_limits<double>::max() : max_total_time - elapsed_time;
+    if (max_time_per_cut > 0. && remaining_time > max_time_per_cut) {
+      return max_time_per_cut;
+    } else {
+      return remaining_time;
+    }
+  }
+} /* getRCVMIPRemainingTimeLimit */
+
 /// @brief Status of RCVMIP after termination of #solveRCVMIP
 enum class RCVMIPStatus {
   OPTIMAL_REG = 0,      ///< Optimal regular solution found
@@ -744,7 +804,7 @@ void genRCVMIPFromCut(
   liftingSolver->setRowNames(row_names, 0, liftingSolver->getNumRows(), 0);
 } /* genRCVMIPFromCut */
 
-int computeRankOfRCVMIPSolution(
+int computeNonzeroIndicesAndRankOfRCVMIPSolution(
     /// [out] Indices of nonzero multipliers
     std::vector<int>& delta_var_inds,
     /// [in] Solution to RCVMIP, where variables are theta then delta then {u^t}_{t \in T} then {u^t_0}_{t \in T}
@@ -758,7 +818,9 @@ int computeRankOfRCVMIPSolution(
     /// [in] Parameters
     const StrengtheningParameters::Parameters& params,
     /// [in] Cut index
-    const int cut_ind) {
+    const int cut_ind,
+    /// [in] Whether to compute the rank of Atilde
+    const bool SHOULD_COMPUTE_RANK = true) {
   std::vector<int> rows, cols;
 
   delta_var_inds.clear();
@@ -875,13 +937,13 @@ int computeRankOfRCVMIPSolution(
     cols.push_back(col_ind);
   } // loop over column for lb
 
-  const int certificate_rank = computeRank(&Atilde, rows, cols);
+  const int certificate_rank = SHOULD_COMPUTE_RANK ? computeRank(&Atilde, rows, cols) : -1;
   return certificate_rank;
-} /* computeRankOfRCVMIPSolution */
+} /* computeNonzeroIndicesAndRankOfRCVMIPSolution */
 
 #ifdef USE_GUROBI
-/// @brief Add warm start if existing certificate provided
-void setRCVMIPStart(
+/// @brief Add variable hint if existing certificate provided
+void setRCVMIPHintOrStart(
     /// [in/out] Gurobi RCVMIP instance 
     GRBModel* const model,
     /// [out] Solution derived from certificate, having indices for variables theta then delta (m') then {u^t}_t then {u^t_0}_t
@@ -891,8 +953,12 @@ void setRCVMIPStart(
     /// [in] Disjunction from which cuts were generated
     const Disjunction* const disj,
     /// [in] Solver corresponding to instance for which cuts are valid
-    const OsiSolverInterface* const solver) {    
+    const OsiSolverInterface* const solver,
+    /// [in] Whether to set as hint or as start
+    const bool set_as_hint = true) {
   if (v.size() == 0) return;
+
+  const GRB_DoubleAttr GRB_HINT_OR_START = set_as_hint ? GRB_DoubleAttr::GRB_DoubleAttr_VarHintVal : GRB_DoubleAttr::GRB_DoubleAttr_Start;
 
   // Recall that the certificate v is a vector of length m + m_t + n
   // The delta variable for constraint row_ind will be set to one if v[t][row_ind] > 0 for some t \in num_terms
@@ -919,7 +985,7 @@ void setRCVMIPStart(
   int num_vars_set = 0;
 
   // Set theta
-  vars[getThetaIndex()].set(GRB_DoubleAttr::GRB_DoubleAttr_Start, 1. / scale);
+  vars[getThetaIndex()].set(GRB_HINT_OR_START, 1. / scale);
   num_vars_set++;
 
   // Set delta and u^t variables for original + globally-valid constraints
@@ -937,7 +1003,7 @@ void setRCVMIPStart(
       const int term_cert_var_ind = row_ind;
       const double v_val = v[term_ind][term_cert_var_ind];
 
-      vars[curr_rcvmip_ind].set(GRB_DoubleAttr::GRB_DoubleAttr_Start, v_val / scale);
+      vars[curr_rcvmip_ind].set(GRB_HINT_OR_START, v_val / scale);
       num_vars_set++;
 
       if (!set_delta && !isZero(v_val)) {
@@ -947,9 +1013,9 @@ void setRCVMIPStart(
 
     const int rcvmip_delta_ind = delta_var_start + atilde_row_ind;
     if (set_delta) {
-      vars[rcvmip_delta_ind].set(GRB_DoubleAttr::GRB_DoubleAttr_Start, 1.);
+      vars[rcvmip_delta_ind].set(GRB_HINT_OR_START, 1.);
     } else {
-      vars[rcvmip_delta_ind].set(GRB_DoubleAttr::GRB_DoubleAttr_Start, 0.);
+      vars[rcvmip_delta_ind].set(GRB_HINT_OR_START, 0.);
     }
     num_vars_set++;
   }
@@ -977,19 +1043,19 @@ void setRCVMIPStart(
 
       // If positive then this is corresponds to a multiplier on the lower bound
       if (greaterThanVal(v_val, 0.)) {
-        vars[curr_rcvmip_ind].set(GRB_DoubleAttr::GRB_DoubleAttr_Start, v_val / scale);
+        vars[curr_rcvmip_ind].set(GRB_HINT_OR_START, v_val / scale);
         set_delta = true;
       } else {
-        vars[curr_rcvmip_ind].set(GRB_DoubleAttr::GRB_DoubleAttr_Start, 0.);
+        vars[curr_rcvmip_ind].set(GRB_HINT_OR_START, 0.);
       }
       num_vars_set++;
     } // loop over terms for lb
     
     const int rcvmip_delta_ind = delta_var_start + atilde_row_ind;
     if (set_delta) {
-      vars[rcvmip_delta_ind].set(GRB_DoubleAttr::GRB_DoubleAttr_Start, 1.);
+      vars[rcvmip_delta_ind].set(GRB_HINT_OR_START, 1.);
     } else {
-      vars[rcvmip_delta_ind].set(GRB_DoubleAttr::GRB_DoubleAttr_Start, 0.);
+      vars[rcvmip_delta_ind].set(GRB_HINT_OR_START, 0.);
     }
     num_vars_set++;
   } // loop over columns for lb
@@ -1016,19 +1082,19 @@ void setRCVMIPStart(
 
       // If positive then this is corresponds to a multiplier on the lower bound
       if (lessThanVal(v_val, 0.)) {
-        vars[curr_rcvmip_ind].set(GRB_DoubleAttr::GRB_DoubleAttr_Start, v_val / scale);
+        vars[curr_rcvmip_ind].set(GRB_HINT_OR_START, v_val / scale);
         set_delta = true;
       } else {
-        vars[curr_rcvmip_ind].set(GRB_DoubleAttr::GRB_DoubleAttr_Start, 0.);
+        vars[curr_rcvmip_ind].set(GRB_HINT_OR_START, 0.);
       }
       num_vars_set++;
     } // loop over terms for lb
     
     const int rcvmip_delta_ind = delta_var_start + atilde_row_ind;
     if (set_delta) {
-      vars[rcvmip_delta_ind].set(GRB_DoubleAttr::GRB_DoubleAttr_Start, 1.);
+      vars[rcvmip_delta_ind].set(GRB_HINT_OR_START, 1.);
     } else {
-      vars[rcvmip_delta_ind].set(GRB_DoubleAttr::GRB_DoubleAttr_Start, 0.);
+      vars[rcvmip_delta_ind].set(GRB_HINT_OR_START, 0.);
     }
     num_vars_set++;
   } // loop over columns for ub
@@ -1044,7 +1110,7 @@ void setRCVMIPStart(
       const int rcvmip_ind = rcvmip_term_var_start_ind + i;
       const int cert_ind = num_nonbound_constrs + i;
       const double v_val = v[term_ind][cert_ind];
-      vars[rcvmip_ind].set(GRB_DoubleAttr::GRB_DoubleAttr_Start, v_val / scale);
+      vars[rcvmip_ind].set(GRB_HINT_OR_START, v_val / scale);
       num_vars_set++;
     }
   }
@@ -1056,11 +1122,11 @@ void setRCVMIPStart(
 
   solution.resize(num_rcvmip_vars);
   for (int i = 0; i < num_rcvmip_vars; i++) {
-    solution[i] = vars[i].get(GRB_DoubleAttr::GRB_DoubleAttr_Start);
+    solution[i] = vars[i].get(GRB_HINT_OR_START);
   }
 
   if (vars) { delete[] vars; }
-} /* setRCVMIPStart */
+} /* setRCVMIPHintOrStart */
 
 /// @brief Append row to Gurobi \p model restricting sum of delta variables to be <= \p rank
 void addRankConstraint(
@@ -1183,6 +1249,8 @@ RCVMIPStatus solveRCVMIP(
     GRBModel* const model,
     /// [out] Solution to the RCVMIP, where order of variables is theta, delta, {v^t}_{t \in T}
     std::vector<double>& solution,
+    /// [out] Number of iterations taken
+    int& num_iters,
     /// [in] Disjunction from which cuts were generated
     const Disjunction* const disj,
     /// [in] Solver corresponding to instance for which cuts are valid
@@ -1193,8 +1261,8 @@ RCVMIPStatus solveRCVMIP(
     const StrengtheningParameters::Parameters& params,
     /// [in] Index of the cut for which we are checking the certificate
     const int cut_ind,
-    /// [out] Number of iterations taken
-    int& num_iters) {
+    /// [in] Timer
+    const TimeStats& rcvmip_timer) {
   RCVMIPStatus return_code = RCVMIPStatus::ERROR;
 
 #ifdef TRACE
@@ -1217,6 +1285,13 @@ RCVMIPStatus solveRCVMIP(
   const int MAX_ITERS = params.get(StrengtheningParameters::intParam::RCVMIP_MAX_ITERS);
   printf("\n## solveRCVMIP (Gurobi): Solving CGLP from cut %d. ##\n", cut_ind);
   while (!reached_feasibility && num_iters < MAX_ITERS) {
+    if (reachedRCVMIPTimeLimit(rcvmip_timer,
+            params.get(StrengtheningParameters::RCVMIP_CUT_TIMELIMIT),
+            params.get(StrengtheningParameters::RCVMIP_TOTAL_TIMELIMIT),
+            getRCVMIPTimeStatsName(cut_ind))) {
+      break;
+    }
+
     const int grb_return_code = solveGRBModel(*model, params.logfile);
     num_iters++;
 
@@ -1255,7 +1330,7 @@ RCVMIPStatus solveRCVMIP(
 
     // Check rank of solution vs number of nonzero multipliers
     std::vector<int> delta_var_inds;
-    const int certificate_rank = computeRankOfRCVMIPSolution(delta_var_inds, solution.data(), disj, solver, Atilde, params, cut_ind);
+    const int certificate_rank = computeNonzeroIndicesAndRankOfRCVMIPSolution(delta_var_inds, solution.data(), disj, solver, Atilde, params, cut_ind);
     if (certificate_rank < (int) delta_var_inds.size()) {
       addRankConstraint(model, delta_var_inds, certificate_rank, num_iters);
     } else {
@@ -1442,6 +1517,8 @@ RCVMIPStatus solveRCVMIP(
     CbcModel* const cbc_model,
     /// [out] Solution to the RCVMIP, where order of variables is theta, delta, {v^t}_{t \in T}
     std::vector<double>& solution,
+    /// [out] Number of iterations taken
+    int& num_iters,
     /// [in] Disjunction from which cuts were generated
     const Disjunction* const disj,
     /// [in] Solver corresponding to instance for which cuts are valid
@@ -1452,8 +1529,8 @@ RCVMIPStatus solveRCVMIP(
     const StrengtheningParameters::Parameters& params,
     /// [in] Index of the cut for which we are checking the certificate
     const int cut_ind,
-    /// [out] Number of iterations taken
-    int& num_iters) {
+    /// [in] Timer
+    TimeStats& timer) {
   RCVMIPStatus return_code = RCVMIPStatus::ERROR;
   return return_code; // not yet implemented
 
@@ -1512,7 +1589,7 @@ RCVMIPStatus solveRCVMIP(
 
     // Check rank of solution vs number of nonzero multipliers
     std::vector<int> delta;
-    const int certificate_rank = computeRankOfRCVMIPSolution(delta, solution.data(), disj, solver, Atilde, params, cut_ind);
+    const int certificate_rank = computeNonzeroIndicesAndRankOfRCVMIPSolution(delta, solution.data(), disj, solver, Atilde, params, cut_ind);
     if (certificate_rank < (int) delta.size()) {
       addRankConstraint(cbc_model, delta, certificate_rank, num_iters);
     } else {
@@ -1740,13 +1817,13 @@ RegularityStatus analyzeCertificateRegularity(
 } /* analyzeCertificateRegularity */
 
 void analyzeCutRegularity(
-    /// [in/out] Certificate of cut (in-version used to set MIP start), [term][Farkas multiplier]; per term, m + m_t + n indices correspond to rows (including globally-valid constraints) + disj term ineqs + cols
+    /// [in/out] Certificate of cut (in-version is from original certificate), [term][Farkas multiplier]; per term, m + m_t + n indices correspond to rows (including globally-valid constraints) + disj term ineqs + cols
     std::vector<CutCertificate>& v,
-    /// [out] Rank of submatrix associated to the certificate for each cut
+    /// [in/out] Rank of submatrix associated to the certificate for each cut (in-version is from original certificate)
     std::vector<int>& certificate_submx_rank,
-    /// [out] Number of original (+ globally valid) constraints that have nonzero multipliers in the certificate
+    /// [in/out] Number of original (+ globally valid) constraints that have nonzero multipliers in the certificate  (in-version is from original certificate)
     std::vector<int>& num_nonzero_multipliers,
-    /// [out] Regularity status (-1 if rank < num_nonzero_multipliers, 0 if equal, 1 if greater)
+    /// [in/out] Regularity status (-1 if rank < num_nonzero_multipliers, 0 if equal, 1 if greater) (in-version is from original certificate)
     std::vector<RegularityStatus>& regularity_status,
     /// [out] Number of iterations to converge to certificate
     std::vector<int>& num_iters,
@@ -1757,25 +1834,58 @@ void analyzeCutRegularity(
     /// [in] Solver corresponding to instance for which cuts are valid
     const OsiSolverInterface* const solver,
     /// [in] Parameters for setting verbosity and logfile
-    const StrengtheningParameters::Parameters& params) {
+    const StrengtheningParameters::Parameters& params,
+    /// [in] Indicate whether warm start is provided
+    const bool USE_INPUT_CERTIFICATE) {
   if (cuts.sizeCuts() == 0) return;
   
    // Check that disjunction has not been lost
   if (disj == NULL) return;
   if (disj->terms.size() == 0) return;
 
+  // Initialize timer
+  TimeStats rcvmip_timer; ///< holds time statistics for all timers enumerated in #RCVMIPTimeStats
+  rcvmip_timer.register_name(getRCVMIPTotalTimeStatsName());
+  rcvmip_timer.start_timer(getRCVMIPTotalTimeStatsName());
+
   // Prepare vector sizes
-  certificate_submx_rank.clear();
-  certificate_submx_rank.resize(cuts.sizeCuts());
-
-  num_nonzero_multipliers.clear();
-  num_nonzero_multipliers.resize(cuts.sizeCuts());
-
-  regularity_status.clear();
-  regularity_status.resize(cuts.sizeCuts(), RegularityStatus::UNKNOWN);
-
+  if (USE_INPUT_CERTIFICATE) {
+    assert( certificate_submx_rank.size() == cuts.sizeCuts() );
+    assert( num_nonzero_multipliers.size() == cuts.sizeCuts() );
+    assert( v.size() == cuts.sizeCuts() );
+    assert( regularity_status.size() == cuts.sizeCuts() );
+  } else {
+    certificate_submx_rank.resize(cuts.sizeCuts());
+    num_nonzero_multipliers.resize(cuts.sizeCuts());
+    v.resize(cuts.sizeCuts());
+  }
+  
   num_iters.clear();
-  num_iters.resize(cuts.sizeCuts());
+  num_iters.resize(cuts.sizeCuts(), 0);
+
+  // We may have already run out of time, so stop here in that case
+  if (reachedRCVMIPTimeLimit(rcvmip_timer,
+          params.get(StrengtheningParameters::RCVMIP_CUT_TIMELIMIT),
+          params.get(StrengtheningParameters::RCVMIP_TOTAL_TIMELIMIT))) {
+    rcvmip_timer.end_all();
+
+    regularity_status.clear();
+    regularity_status.resize(cuts.sizeCuts(), RegularityStatus::UNCONVERGED);
+    
+    return;
+  }
+
+  // Regularity status of original certificate may have been given as an input
+  if (regularity_status.size() != cuts.sizeCuts()) {
+    regularity_status.clear();
+    regularity_status.resize(cuts.sizeCuts(), RegularityStatus::UNKNOWN);
+  } else {
+    for (int cut_ind = 0; cut_ind < cuts.sizeCuts(); cut_ind++) {
+       if (regularity_status[cut_ind] != RegularityStatus::REG) {
+         regularity_status[cut_ind] = RegularityStatus::UNKNOWN;
+       }
+    }
+  }
 
   // Prepare Atilde and btilde, which are common to all terms
   // This encompasses the original constraints
@@ -1833,8 +1943,25 @@ void analyzeCutRegularity(
     throw std::logic_error(errorstring);
   }
 
-  v.resize(cuts.sizeCuts());
-  for (int cut_ind = 0; cut_ind < cuts.sizeCuts(); cut_ind++) {
+  // Loop over cuts
+  int cut_ind = 0;
+  for (; cut_ind < cuts.sizeCuts(); cut_ind++) {
+    if (reachedRCVMIPTimeLimit(rcvmip_timer,
+            params.get(StrengtheningParameters::RCVMIP_CUT_TIMELIMIT),
+            params.get(StrengtheningParameters::RCVMIP_TOTAL_TIMELIMIT))) {
+      rcvmip_timer.end_all();
+      break;
+    }
+
+    rcvmip_timer.register_name(getRCVMIPTimeStatsName(cut_ind));
+    rcvmip_timer.start_timer(getRCVMIPTimeStatsName(cut_ind));
+
+    // Skip if cut is already regular
+    if (regularity_status[cut_ind] == RegularityStatus::REG) {
+      rcvmip_timer.end_timer(getRCVMIPTimeStatsName(cut_ind));
+      continue;
+    }
+
     std::vector<double> solution; // RCVMIP solution
     bool reached_feasibility = false;
 
@@ -1851,14 +1978,17 @@ void analyzeCutRegularity(
 
     // Set MIP start for current cut
 #ifdef USE_GUROBI
-    if (use_gurobi) {
-      setRCVMIPStart(grbSolver, solution, v[cut_ind], disj, solver);
-
-      std::vector<int> delta_var_inds;
-      const int certificate_rank = computeRankOfRCVMIPSolution(delta_var_inds, solution.data(), disj, solver, Atilde, params, cut_ind);
-
-      if (certificate_rank < (int) delta_var_inds.size()) {
-        addRankConstraint(grbSolver, delta_var_inds, certificate_rank, 0);
+    if (use_gurobi && USE_INPUT_CERTIFICATE) {
+      setRCVMIPHintOrStart(grbSolver, solution, v[cut_ind], disj, solver, true); // useless as MIP start since this solution will be cut away...
+      
+      // Check rank of solution vs number of nonzero multipliers
+      if (certificate_submx_rank[cut_ind] < num_nonzero_multipliers[cut_ind]) {
+        // This should always be the case at this point, since we have already checked the original certificate for regularity
+        // We do not need to recompute the rank, since we already have it
+        // Only need the delta_var_inds
+        std::vector<int> delta_var_inds;
+        computeNonzeroIndicesAndRankOfRCVMIPSolution(delta_var_inds, solution.data(), disj, solver, Atilde, params, cut_ind, false);
+        addRankConstraint(grbSolver, delta_var_inds, certificate_submx_rank[cut_ind], 0);
       } else {
         reached_feasibility = true;
       }
@@ -1875,10 +2005,18 @@ void analyzeCutRegularity(
       RCVMIPStatus return_code;
       if (use_gurobi) {
   #ifdef USE_GUROBI
-        return_code = solveRCVMIP(grbSolver, solution, disj, solver, Atilde, params, cut_ind, num_iters[cut_ind]);
+        // Set time limit for this iteration of grbSolver
+        const double remaining_time = getRCVMIPRemainingTimeLimit(rcvmip_timer, params.get(StrengtheningParameters::RCVMIP_CUT_TIMELIMIT), params.get(StrengtheningParameters::RCVMIP_TOTAL_TIMELIMIT));
+        if (!isInfinity(remaining_time)) {
+          grbSolver->set(GRB_DoubleParam_TimeLimit, remaining_time);
+        } else {
+          grbSolver->set(GRB_DoubleParam_TimeLimit, GRB_INFINITY);
+        }
+
+        return_code = solveRCVMIP(grbSolver, solution, num_iters[cut_ind], disj, solver, Atilde, params, cut_ind, rcvmip_timer);
   #endif
       } else {
-        return_code = solveRCVMIP(cbcSolver, solution, disj, solver, Atilde, params, cut_ind, num_iters[cut_ind]);
+        return_code = solveRCVMIP(cbcSolver, solution, num_iters[cut_ind], disj, solver, Atilde, params, cut_ind, rcvmip_timer);
       }
       
       if (return_code == RCVMIPStatus::INFEASIBLE
@@ -1895,6 +2033,8 @@ void analyzeCutRegularity(
             cut_ind);
         writeErrorToLog(errorstring, params.logfile);
         
+        rcvmip_timer.end_all();
+
         if (liftingSolver) { if (!use_cbc || !cbcSolver || !cbcSolver->modelOwnsSolver()) { delete liftingSolver; } }
   #ifdef USE_GUROBI
         if (use_gurobi && grbSolver) { delete grbSolver; }
@@ -1912,7 +2052,7 @@ void analyzeCutRegularity(
 
       // Retrieve certificate from solution
       getCertificateFromRCVMIPSolution(v[cut_ind], solution, disj, solver, cut_ind, params.logfile);
-    } // make sure initial solution is not already feasible
+    } // if (!reached_feasibility) (solve RCVMIP if original certificate is infeasible)
 
     // Verify the certificate using dense cut coefficient vector
     const OsiRowCut* cut = cuts.rowCutPtr(cut_ind);
@@ -1928,14 +2068,22 @@ void analyzeCutRegularity(
     }
 
     // Compute rank of submatrix associated to the certificate
-    const RegularityStatus curr_status = analyzeCertificateRegularity(certificate_submx_rank[cut_ind],
-            num_nonzero_multipliers[cut_ind], v[cut_ind],
-            disj, solver, Atilde, params);
+    const RegularityStatus curr_status = analyzeCertificateRegularity(
+            certificate_submx_rank[cut_ind], num_nonzero_multipliers[cut_ind],
+            v[cut_ind], disj, solver, Atilde, params);
     
     if (regularity_status[cut_ind] != RegularityStatus::UNCONVERGED) {
       regularity_status[cut_ind] = curr_status;
     }
+    
+    rcvmip_timer.end_timer(getRCVMIPTimeStatsName(cut_ind));
   } // loop over cuts
+  // Handle cuts that were not analyzed
+  for (; cut_ind < cuts.sizeCuts(); cut_ind++) {
+    regularity_status[cut_ind] = RegularityStatus::UNCONVERGED;
+    num_iters[cut_ind] = 0;
+  }
+  rcvmip_timer.end_timer(getRCVMIPTotalTimeStatsName());
 
   if (liftingSolver) { if (!use_cbc || !cbcSolver || !cbcSolver->modelOwnsSolver()) { delete liftingSolver; } }
 #ifdef USE_GUROBI
