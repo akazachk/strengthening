@@ -547,7 +547,7 @@ int main(int argc, char** argv) {
     // Analyze regularity and irregularity
     timer.start_timer(OverallTimeStats::REG_TOTAL_TIME);
 
-    // To start, obtain rank of coefficient matrix (after adding globally-valid inequalities)
+    // To start, obtain coefficient matrix (after adding globally-valid inequalities)
     CoinPackedMatrix Atilde;
     std::vector<double> btilde;
     if (SHOULD_ANALYZE_REGULARITY != 0 && disj != NULL) {
@@ -562,14 +562,26 @@ int main(int argc, char** argv) {
       prepareAtilde(Atilde, btilde, disj, solver, params.logfile);
       timer.end_timer(OverallTimeStats::REG_GEN_ATILDE_TIME);
 
-      printf("Finished preparing Atilde matrix. Next will compute rank.\n");
+      printf("Finished preparing Atilde matrix.\n");
     }
 
-#ifdef TRACE
+    // Compute rank of Atilde
+    const bool SHOULD_COMPUTE_RANK = (params.get(StrengtheningParameters::intParam::ATILDE_COMPUTE_RANK) >= 1)
+      && (Atilde.getNumRows() > 0);
+    if (SHOULD_COMPUTE_RANK) {
+      printf("\n## Computing rank of Atilde matrix (%d rows, %d columns, %1.4f sparsity). ##\n",
+          Atilde.getNumRows(), Atilde.getNumCols(),
+          Atilde.getNumElements() / (double) (Atilde.getNumRows() * Atilde.getNumCols()));
+    }
     timer.start_timer(OverallTimeStats::REG_RANK_ATILDE_TIME);
-    const int Atilderank = (Atilde.getNumRows() > 0) ? computeRank(&Atilde, std::vector<int>(), std::vector<int>()) : solver->getNumCols();
+    const int Atilderank = SHOULD_COMPUTE_RANK ?
+        computeRank(&Atilde, std::vector<int>(), std::vector<int>()) :
+        solver->getNumCols();
     timer.end_timer(OverallTimeStats::REG_RANK_ATILDE_TIME);
-#endif
+    if (SHOULD_COMPUTE_RANK) {
+      printf("Finished computing rank of Atilde matrix in %s seconds.\n",
+          stringValue(timer.get_value(OverallTimeStats::REG_RANK_ATILDE_TIME), "%1.2f").c_str());
+    }
 
     // Analyze regularity of the existing certificate for each cut
     std::vector<RegularityStatus> orig_regularity_status;
@@ -596,8 +608,8 @@ int main(int argc, char** argv) {
         int curr_submx_rank = -1;
         int curr_num_nnz_mult = -1;
         const RegularityStatus status = analyzeCertificateRegularity(
-            curr_submx_rank, curr_num_nnz_mult,
-            v[cut_ind], disj, solver, Atilde, params);
+            curr_submx_rank, curr_num_nnz_mult, v[cut_ind],
+            disj, solver, Atilde, Atilderank, params);
         origCertInfoVec[round_ind].submx_rank[cut_ind] = curr_submx_rank;
         origCertInfoVec[round_ind].num_nnz_mult[cut_ind] = curr_num_nnz_mult;
 
@@ -655,7 +667,8 @@ int main(int argc, char** argv) {
           rcvmip_regularity_status,
           rcvmipCertInfoVec[round_ind].num_iterations,
           rcvmipCertInfoVec[round_ind].rcvmip_time,
-          unstrCurrCuts, disj, solver, params);
+          unstrCurrCuts, disj, solver,
+          Atilde, Atilderank, params);
       timer.end_timer(OverallTimeStats::REG_CALC_CERT_TIME);
     
       for (int cut_ind = 0; cut_ind < currCuts.sizeCuts(); cut_ind++) {
@@ -1250,6 +1263,7 @@ int processArgs(int argc, char** argv) {
   const struct option long_opts[] =
   {
       {"analyze_regularity",    required_argument, 0, 'a'},
+      {"atilde_compute_rank",   required_argument, 0, 'a'*'1'},
       {"bb_runs",               required_argument, 0, 'b'},
       {"bb_mode",               required_argument, 0, 'b'*'2'},
       {"bb_strategy",           required_argument, 0, 'B'},
@@ -1281,6 +1295,16 @@ int processArgs(int argc, char** argv) {
       case 'a': {
                   int val;
                   intParam param = intParam::ANALYZE_REGULARITY;
+                  if (!parseInt(optarg, val)) {
+                    error_msg(errorstring, "Error reading %s. Given value: %s.\n", params.name(param).c_str(), optarg);
+                    exit(1);
+                  }
+                  params.set(param, val);
+                  break;
+                }
+      case 'a'*'1': {
+                  int val;
+                  intParam param = intParam::ATILDE_COMPUTE_RANK;
                   if (!parseInt(optarg, val)) {
                     error_msg(errorstring, "Error reading %s. Given value: %s.\n", params.name(param).c_str(), optarg);
                     exit(1);

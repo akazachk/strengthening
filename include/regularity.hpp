@@ -98,6 +98,7 @@ RegularityStatus analyzeCertificateRegularity(
     const Disjunction* const disj,
     const OsiSolverInterface* const solver,
     const CoinPackedMatrix& Atilde,
+    const int Atilderank,
     const StrengtheningParameters::Parameters& params);
 
 /// @brief Given a set of \p cuts, identify regular ones and find their certificates to store in \p v
@@ -111,5 +112,7 @@ void analyzeCutRegularity(
     const OsiCuts& cuts,
     const Disjunction* const disj,
     const OsiSolverInterface* const solver,
+    const CoinPackedMatrix& Atilde,
+    const int Atilderank,
     const StrengtheningParameters::Parameters& params,
-  const bool USE_INPUT_CERTIFICATE = true);
+    const bool USE_INPUT_CERTIFICATE = true);

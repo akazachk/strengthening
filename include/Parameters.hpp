@@ -90,6 +90,7 @@ enum intParam {
   BB_MODE, ///< 111: each bit represents whether to branch with gmics, vpcs, and no cuts (from largest to smallest bit)
   // Regularity options
   ANALYZE_REGULARITY, ///< 0: no, 1: yes, only first certificate 2: yes, use MIP to check for alternate certificates
+  ATILDE_COMPUTE_RANK, ///< 0: no (use n), 1: yes
   RCVMIP_MAX_ITERS, ///< maximum number of iterations to try to get RCVMIP to feasibility (iteration = row generation)
   NUM_INT_PARAMS ///< number of integer params
 }; /* intParam */
@@ -438,6 +439,15 @@ struct Parameters {
     {intParam::RCVMIP_MAX_ITERS,
         IntParameter(intParam::RCVMIP_MAX_ITERS, "RCVMIP_MAX_ITERS",
             100, 0, std::numeric_limits<int>::max())},
+#ifdef TRACE
+    {intParam::ATILDE_COMPUTE_RANK,
+        IntParameter(intParam::ATILDE_COMPUTE_RANK, "ATILDE_COMPUTE_RANK",
+            1, 0, 1)},
+#else
+    {intParam::ATILDE_COMPUTE_RANK,
+        IntParameter(intParam::ATILDE_COMPUTE_RANK, "ATILDE_COMPUTE_RANK",
+            0, 0, 1)},
+#endif
     {intParam::ANALYZE_REGULARITY,
         IntParameter(intParam::ANALYZE_REGULARITY, "ANALYZE_REGULARITY",
             0, 0, 2)},
