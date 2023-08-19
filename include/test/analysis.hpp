@@ -31,6 +31,10 @@ struct SummaryCertificateInfo; // analysis.hpp
 /// @brief Container for types of statistics we want to keep
 enum class Stat { total = 0, avg, stddev, min, max, num_stats };
 
+/// @brief Compute statistics in #Stat about given templated vector
+template <typename T>
+std::vector<double> computeStats(const std::vector<T>& v);
+
 /// @brief Information about objective value at various points in the solution process
 /// @details Gives objective for the LP and IP, and after adding GMICs, L&PCs, VPCs, and combinations of these cuts
 /// and also keeps number of GMICs, L&PCs, and VPCs applied, and number of VPCs strengthened
@@ -121,6 +125,8 @@ struct SummaryCertificateInfo {
   int num_unconverged = 0;
   /// number of iterations needed to compute certificate
   std::vector<int> num_iterations;
+  /// time spent per cut on RCVMIP
+  std::vector<double> rcvmip_time;
 }; /* SummaryCertificateInfo */
 
 void printHeader(const StrengtheningParameters::Parameters& params,
@@ -144,8 +150,8 @@ void printDisjInfo(const SummaryDisjunctionInfo& disjInfo, FILE* logfile,
 void printStrInfo(const SummaryStrengtheningInfo& orig_info, const SummaryStrengtheningInfo& rcvmip_info, FILE* const logfile,
     const char SEP = ',');
 /// @brief Write to log statistics about the certificate investigation summarized in #SummaryRegularityInfo
-void printCertificateInfo(const SummaryCertificateInfo& orig_info, const SummaryCertificateInfo& rcvmip_info, FILE* const logfile,
-    const char SEP = ',');
+void printCertificateInfo(const SummaryCertificateInfo& orig_info, const SummaryCertificateInfo& rcvmip_info, const int RCVMIP_ITER_LIMIT,
+    FILE* const logfile, const char SEP = ',');
 void printCutInfo(const SummaryCutInfo& cutInfoGMICs,
     const SummaryCutInfo& cutInfo, const SummaryCutInfo& cutInfoUnstr,
     FILE* logfile, const char SEP = ',');

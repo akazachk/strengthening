@@ -1050,7 +1050,7 @@ int wrapUp(int retCode, int argc, char** argv) {
       // Str info
       printStrInfo(strInfo, rcvmipStrInfo, params.logfile);
       // Regularity info
-      printCertificateInfo(origCertInfoVec[0], rcvmipCertInfoVec[0], params.logfile);
+      printCertificateInfo(origCertInfoVec[0], rcvmipCertInfoVec[0], params.get(StrengtheningParameters::intParam::RCVMIP_MAX_ITERS), params.logfile);
       // Cut, obj, fail info
       printCutInfo(cutInfoGMICs, cutInfo, cutInfoUnstr, params.logfile);
       // Full B&B info

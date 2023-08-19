@@ -20,6 +20,28 @@
 using namespace StrengtheningParameters;
 #include "utility.hpp" // isInfinity, stringValue
 
+template <typename T>
+std::vector<double> computeStats(const std::vector<T>& vec) {
+  std::vector<double> stats(static_cast<int>(Stat::num_stats), 0.);
+  if (vec.empty()) {
+    return stats;
+  }
+  stats[static_cast<int>(Stat::total)] = 0.;
+  stats[static_cast<int>(Stat::min)] = std::numeric_limits<double>::max();
+  stats[static_cast<int>(Stat::max)] = std::numeric_limits<double>::lowest();
+  for (const auto& val : vec) {
+    stats[static_cast<int>(Stat::total)] += val;
+    stats[static_cast<int>(Stat::min)] = std::min(stats[static_cast<int>(Stat::min)], static_cast<double>(val));
+    stats[static_cast<int>(Stat::max)] = std::max(stats[static_cast<int>(Stat::max)], static_cast<double>(val));
+  }
+  stats[static_cast<int>(Stat::avg)] = stats[static_cast<int>(Stat::total)] / static_cast<double>(vec.size());
+  for (const auto& val : vec) {
+    stats[static_cast<int>(Stat::stddev)] += (val - stats[static_cast<int>(Stat::avg)]) * (val - stats[static_cast<int>(Stat::avg)]);
+  }
+  stats[static_cast<int>(Stat::stddev)] = sqrt(stats[static_cast<int>(Stat::stddev)] / static_cast<double>(vec.size()));
+  return stats;
+} /* computeStats */
+
 // Below values are used to doublecheck that the columns in the header are correctly counted
 const int countBoundInfoEntries = 20;
 const int countGapInfoEntries = 9;
@@ -33,7 +55,23 @@ const int countObjInfoEntries = 1;
 const int countFailInfoEntries = 1 + static_cast<int>(CglAdvCut::FailureType::NUM_FAILURE_TYPES);
 const std::vector<std::string> STR_INFO_CONTENTS = { "NUM STR AFFECTED CUTS", "NUM COEFFS STR AVG", "NUM COEFFS STR STDDEV", "NUM COEFFS STR MIN", "NUM COEFFS STR MAX" };
 const int countStrInfoEntries = STR_INFO_CONTENTS.size() * 2;
-const std::vector<std::string> CERT_INFO_CONTENTS = { "NUM UNMATCHED BOUNDS", "AVG NUM CGS FACETS", "NUM IRREG LESS", "NUM REGULAR", "NUM IRREG MORE", "NUM UNCONVERGED" };
+const std::vector<std::string> CERT_INFO_CONTENTS = {
+  "NUM UNMATCHED BOUNDS",
+  "AVG NUM CGS FACETS",
+  "NUM IRREG LESS",
+  "NUM REGULAR",
+  "NUM IRREG MORE",
+  "NUM UNCONVERGED",
+  "RCVMIP ITER AVG",
+  "RCVMIP ITER STDDEV",
+  "RCVMIP ITER MIN",
+  "RCVMIP ITER MAX",
+  "RCVMIP ITER NUM LIMIT",
+  "RCVMIP TIME AVG",
+  "RCVMIP TIME STDDEV",
+  "RCVMIP TIME MIN",
+  "RCVMIP TIME MAX",
+}; /* CERT_INFO_CONTENTS */
 const int countCertInfoEntries = CERT_INFO_CONTENTS.size() * 2;
 const int countParamInfoEntries = intParam::NUM_INT_PARAMS + doubleParam::NUM_DOUBLE_PARAMS;
 int countTimeInfoEntries = 0; // set in printHeader
@@ -798,7 +836,12 @@ void printStrInfo(const SummaryStrengtheningInfo& orig_info, const SummaryStreng
   assert(count == countStrInfoEntries);
 } /* printStrInfo */
 
-void printCertificateInfo(const SummaryCertificateInfo& orig_info, const SummaryCertificateInfo& rcvmip_info, FILE* const logfile, const char SEP) {
+void printCertificateInfo(
+    const SummaryCertificateInfo& orig_info,
+    const SummaryCertificateInfo& rcvmip_info,
+    const int RCVMIP_ITER_LIMIT,
+    FILE* const logfile,
+    const char SEP) {
   if (!logfile)
     return;
   
@@ -812,6 +855,25 @@ void printCertificateInfo(const SummaryCertificateInfo& orig_info, const Summary
     fprintf(logfile, "%s%c", stringValue(info.num_reg, "%d").c_str(), SEP); count++;
     fprintf(logfile, "%s%c", stringValue(info.num_irreg_more, "%d").c_str(), SEP); count++;
     fprintf(logfile, "%s%c", stringValue(info.num_unconverged, "%d").c_str(), SEP); count++;
+    
+    std::vector<double> iter_stats = computeStats(info.num_iterations);
+    fprintf(logfile, "%s%c", stringValue(iter_stats[(int) Stat::avg], "%g").c_str(), SEP); count++;
+    fprintf(logfile, "%s%c", stringValue(iter_stats[(int) Stat::stddev], "%g").c_str(), SEP); count++;
+    fprintf(logfile, "%s%c", stringValue(iter_stats[(int) Stat::min], "%g").c_str(), SEP); count++;
+    fprintf(logfile, "%s%c", stringValue(iter_stats[(int) Stat::max], "%g").c_str(), SEP); count++;
+
+    int num_limit = 0;
+    for (int i = 0; i < info.num_iterations.size(); i++) {
+      if (info.num_iterations[i] >= RCVMIP_ITER_LIMIT)
+        num_limit++;
+    }
+    fprintf(logfile, "%s%c", stringValue(num_limit, "%d").c_str(), SEP); count++;
+
+    std::vector<double> time_stats = computeStats(info.rcvmip_time);
+    fprintf(logfile, "%s%c", stringValue(time_stats[(int) Stat::avg], "%g").c_str(), SEP); count++;
+    fprintf(logfile, "%s%c", stringValue(time_stats[(int) Stat::stddev], "%g").c_str(), SEP); count++;
+    fprintf(logfile, "%s%c", stringValue(time_stats[(int) Stat::min], "%g").c_str(), SEP); count++;
+    fprintf(logfile, "%s%c", stringValue(time_stats[(int) Stat::max], "%g").c_str(), SEP); count++;
   }
   fflush(logfile);
   assert(count == countCertInfoEntries);
