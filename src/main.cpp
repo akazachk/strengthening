@@ -580,7 +580,7 @@ int main(int argc, char** argv) {
     timer.end_timer(OverallTimeStats::REG_RANK_ATILDE_TIME);
     if (SHOULD_COMPUTE_RANK) {
       printf("Finished computing rank of Atilde matrix in %s seconds.\n",
-          stringValue(timer.get_value(OverallTimeStats::REG_RANK_ATILDE_TIME), "%1.2f").c_str());
+          stringValue(timer.get_total_time(OverallTimeStats::REG_RANK_ATILDE_TIME), "%1.2f").c_str());
     }
 
     // Analyze regularity of the existing certificate for each cut
