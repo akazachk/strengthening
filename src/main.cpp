@@ -654,6 +654,7 @@ int main(int argc, char** argv) {
           rcvmipCertInfoVec[round_ind].num_nnz_mult,
           rcvmip_regularity_status,
           rcvmipCertInfoVec[round_ind].num_iterations,
+          rcvmipCertInfoVec[round_ind].rcvmip_time,
           unstrCurrCuts, disj, solver, params);
       timer.end_timer(OverallTimeStats::REG_CALC_CERT_TIME);
     

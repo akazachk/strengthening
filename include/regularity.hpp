@@ -107,6 +107,7 @@ void analyzeCutRegularity(
     std::vector<int>& num_nonzero_multipliers,
     std::vector<RegularityStatus>& regularity_status,
     std::vector<int>& num_iters,
+    std::vector<double>& rcvmip_time,
     const OsiCuts& cuts,
     const Disjunction* const disj,
     const OsiSolverInterface* const solver,

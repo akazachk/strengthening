@@ -1827,6 +1827,8 @@ void analyzeCutRegularity(
     std::vector<RegularityStatus>& regularity_status,
     /// [out] Number of iterations to converge to certificate
     std::vector<int>& num_iters,
+    /// [out] Total RCVMIP time per cut
+    std::vector<double>& rcvmip_time,
     /// [in] Set of cuts that are to be analyzed for regularity
     const OsiCuts& cuts,
     /// [in] Disjunction from which cuts were generated
@@ -1862,6 +1864,9 @@ void analyzeCutRegularity(
   
   num_iters.clear();
   num_iters.resize(cuts.sizeCuts(), 0);
+
+  rcvmip_time.clear();
+  rcvmip_time.resize(cuts.sizeCuts(), 0.);
 
   // We may have already run out of time, so stop here in that case
   if (reachedRCVMIPTimeLimit(rcvmip_timer,
@@ -2002,6 +2007,7 @@ void analyzeCutRegularity(
       }
 
       // Solve the RCVMIP
+      const double rcvmip_start_time = rcvmip_timer.get_total_time(getRCVMIPTimeStatsName(cut_ind));
       RCVMIPStatus return_code;
       if (use_gurobi) {
   #ifdef USE_GUROBI
@@ -2018,6 +2024,8 @@ void analyzeCutRegularity(
       } else {
         return_code = solveRCVMIP(cbcSolver, solution, num_iters[cut_ind], disj, solver, Atilde, params, cut_ind, rcvmip_timer);
       }
+      const double rcvmip_end_time = rcvmip_timer.get_total_time(getRCVMIPTimeStatsName(cut_ind));
+      rcvmip_time[cut_ind] = rcvmip_end_time - rcvmip_start_time;
       
       if (return_code == RCVMIPStatus::INFEASIBLE
           || return_code == RCVMIPStatus::UNBOUNDED
