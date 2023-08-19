@@ -105,6 +105,7 @@ enum class RCVMIPStatus {
   INF_OR_UNBD,          ///< Infeasible or unbounded
   SOLVER_LIMIT,         ///< Cutoff, iteration, node, time, solution, user_obj limit
   RCVMIP_ITER_LIMIT,    ///< RCVMIP iteration limit
+  RCVMIP_TIME_LIMIT,    ///< RCVMIP time limit
   ERROR                 ///< Error
 };
 
@@ -1289,6 +1290,7 @@ RCVMIPStatus solveRCVMIP(
             params.get(StrengtheningParameters::RCVMIP_CUT_TIMELIMIT),
             params.get(StrengtheningParameters::RCVMIP_TOTAL_TIMELIMIT),
             getRCVMIPTimeStatsName(cut_ind))) {
+      return_code = RCVMIPStatus::RCVMIP_TIME_LIMIT;
       break;
     }
 
@@ -2054,7 +2056,9 @@ void analyzeCutRegularity(
         throw std::logic_error(errorstring);
       } // exit out if infeasible or unbounded
 
-      if (return_code == RCVMIPStatus::OPTIMAL_UNCONVERGED || return_code == RCVMIPStatus::RCVMIP_ITER_LIMIT) {
+      if (return_code == RCVMIPStatus::OPTIMAL_UNCONVERGED
+          || return_code == RCVMIPStatus::RCVMIP_ITER_LIMIT
+          || return_code == RCVMIPStatus::RCVMIP_TIME_LIMIT) {
         regularity_status[cut_ind] = RegularityStatus::UNCONVERGED;
       }
 
