@@ -1276,8 +1276,6 @@ RCVMIPStatus solveRCVMIP(
     /// [in] Timer
     const TimeStats& rcvmip_timer) {
   RCVMIPStatus return_code = RCVMIPStatus::ERROR;
-  solution.clear();
-  solution.resize(0);
 
 #ifdef TRACE
   const bool write_lp = true && !params.get(StrengtheningParameters::LOGFILE).empty();
@@ -1296,6 +1294,8 @@ RCVMIPStatus solveRCVMIP(
 
   bool reached_feasibility = false;
   num_iters = 0;
+  double theta_val = 0.;
+  int grb_return_code = 0; 
   const int MAX_ITERS = params.get(StrengtheningParameters::intParam::RCVMIP_MAX_ITERS);
   printf("\n## solveRCVMIP (Gurobi): Solving CGLP from cut %d. ##\n", cut_ind);
   while (!reached_feasibility && num_iters < MAX_ITERS) {
@@ -1309,13 +1309,59 @@ RCVMIPStatus solveRCVMIP(
       break;
     }
 
-    const int grb_return_code = solveGRBModel(*model, params.logfile);
+    grb_return_code = solveGRBModel(*model, params.logfile);
     num_iters++;
 
+    solution.clear();
+    solution.resize(0);
+
     // Break if optimal solution not found (because, e.g., solution = all zeroes might be taken)
-    if (grb_return_code == GRB_OPTIMAL) {
-      return_code = RCVMIPStatus::OPTIMAL_UNCONVERGED;
-    }
+    theta_val = std::abs(model->get(GRB_DoubleAttr::GRB_DoubleAttr_ObjVal)); // abs val because obj is min -theta
+    if (grb_return_code == GRB_OPTIMAL) { // either proven irregular, proven regular, or need to continue
+      // At this point a solution should be available; if not, exit with an error
+      if (model->get(GRB_IntAttr::GRB_IntAttr_SolCount) == 0) {
+        error_msg(errorstring,
+            "solveRCVMIP (Gurobi): No solution available for cut %d after %d iterations. Status = %d.\n",
+            cut_ind, num_iters, grb_return_code);
+        writeErrorToLog(errorstring, params.logfile);
+        throw std::logic_error(errorstring);
+      }
+
+      // Retrieve solution from model
+      saveSolution(solution, *model);
+      assert( static_cast<int>(solution.size()) > 0 );
+      assert( isVal(solution[0], theta_val) );
+
+      // If optimal objective value = 0, then we have reached feasibility
+      if (isZero(theta_val)) {
+        if (num_iters == 1) {
+          return_code = RCVMIPStatus::OPTIMAL_IRREG_MORE; // Need to make sure rank_0 constraint is not causing this
+        } else {
+          return_code = RCVMIPStatus::OPTIMAL_IRREG_LESS;
+        }
+        reached_feasibility = true; // proven irregular
+      } // check if theta = 0
+      else {
+        return_code = RCVMIPStatus::OPTIMAL_UNCONVERGED;
+
+        // Check rank of solution vs number of nonzero multipliers
+        std::vector<int> delta_var_inds;
+        const int certificate_rank = computeNonzeroIndicesAndRankOfRCVMIPSolution(delta_var_inds, solution.data(), disj, solver, Atilde, params, cut_ind);
+        if (certificate_rank < (int) delta_var_inds.size()) {
+          if (num_iters < MAX_ITERS) addRankConstraint(model, delta_var_inds, certificate_rank, num_iters);
+        } else {
+          return_code = RCVMIPStatus::OPTIMAL_REG; // May not be feasible, due to missing rank constraints
+          reached_feasibility = true; // proven regular
+        }
+        #ifdef TRACE
+            {
+              // Print value of theta variable (should this decrease across rounds?)
+              printf("Iter %d/%d: theta = %f\tcert_rank = %d\tcert_size = %d\n",
+                  num_iters, MAX_ITERS, theta_val, certificate_rank, (int) delta_var_inds.size());
+            }
+        #endif
+      } // check rank if theta > 0
+    } // case GRB_OPTIMAL
     else if (grb_return_code == GRB_CUTOFF) {
       // No solution information is available
       return_code = RCVMIPStatus::SOLVER_LIMIT;
@@ -1330,12 +1376,13 @@ RCVMIPStatus solveRCVMIP(
 
       // Save solution if one exists and has nonzero theta value
       if (model->get(GRB_IntAttr::GRB_IntAttr_SolCount) > 0) {
-        const double theta_val = model->get(GRB_DoubleAttr::GRB_DoubleAttr_ObjVal);
-        if (!isZero(theta_val)) saveSolution(solution, *model);
+        if (!isZero(theta_val)) {
+          saveSolution(solution, *model);
+        }
       }
 
       break;
-    }
+    } // case solver limit is reached
     else if (grb_return_code == GRB_INFEASIBLE) {
       return_code = RCVMIPStatus::INFEASIBLE;
       break;
@@ -1353,52 +1400,13 @@ RCVMIPStatus solveRCVMIP(
       return_code = RCVMIPStatus::ERROR;
       break;
     }
-
-    // At this point a solution should be available; if not, exit with an error
-    if (model->get(GRB_IntAttr::GRB_IntAttr_SolCount) == 0) {
-      error_msg(errorstring,
-          "solveRCVMIP (Gurobi): No solution available for cut %d after %d iterations. Status = %d.\n",
-          cut_ind, num_iters, grb_return_code);
-      writeErrorToLog(errorstring, params.logfile);
-      throw std::logic_error(errorstring);
-    }
-
-    // Retrieve solution from model
-    saveSolution(solution, *model);
-
-    // If optimal objective value = 0, then we have reached feasibility
-    const double theta_val = solution.size() > 0 ? solution[0] : -1.;
-    if (isZero(theta_val)) {
-      if (num_iters == 1) {
-        return_code = RCVMIPStatus::OPTIMAL_IRREG_MORE; // Need to make sure rank_0 constraint is not causing this
-      } else {
-        return_code = RCVMIPStatus::OPTIMAL_IRREG_LESS;
-      }
-      reached_feasibility = true; // proven irregular
-    } // check if theta = 0
-    else {
-      // Check rank of solution vs number of nonzero multipliers
-      std::vector<int> delta_var_inds;
-      const int certificate_rank = computeNonzeroIndicesAndRankOfRCVMIPSolution(delta_var_inds, solution.data(), disj, solver, Atilde, params, cut_ind);
-      if (certificate_rank < (int) delta_var_inds.size()) {
-        addRankConstraint(model, delta_var_inds, certificate_rank, num_iters);
-      } else {
-        return_code = RCVMIPStatus::OPTIMAL_REG; // May not be feasible, due to missing rank constraints
-        reached_feasibility = true; // proven regular
-      }
-      #ifdef TRACE
-          {
-            // Print value of theta variable (should this decrease across rounds?)
-            printf("Iter %d/%d: theta = %f\tcert_rank = %d\tcert_size = %d\n",
-                num_iters, MAX_ITERS, theta_val, certificate_rank, (int) delta_var_inds.size());
-          }
-      #endif
-    } // check rank if theta > 0
   } // iterate while !reached_feasibility
-  printf("solveRCVMIP (Gurobi): Terminated in %d / %d iterations after %1.2f s. Reached feasibility: %d. Status: %s.\n",
-      num_iters, MAX_ITERS,
+  printf("solveRCVMIP (Gurobi): Cut %d: Terminated in %d / %d iterations after %1.2f s. Reached feasibility: %d. RCVMIPtatus: %s. Gurobi status: %d %s. Gurobi obj val: %1.6f.\n",
+      cut_ind, num_iters, MAX_ITERS,
       rcvmip_timer.get_total_time(getRCVMIPTimeStatsName(cut_ind)),
-      reached_feasibility, getRCVMIPStatusName(return_code).c_str());
+      reached_feasibility, getRCVMIPStatusName(return_code).c_str(),
+      grb_return_code, getGurobiStatusName(grb_return_code).c_str(),
+      theta_val);
 
   if (!reached_feasibility && num_iters >= MAX_ITERS) {
     return_code = RCVMIPStatus::RCVMIP_ITER_LIMIT;
@@ -2035,7 +2043,6 @@ void analyzeCutRegularity(
     if (reachedRCVMIPTimeLimit(rcvmip_timer,
             params.get(StrengtheningParameters::RCVMIP_CUT_TIMELIMIT),
             params.get(StrengtheningParameters::RCVMIP_TOTAL_TIMELIMIT))) {
-      rcvmip_timer.end_all();
       break;
     }
 
@@ -2062,7 +2069,7 @@ void analyzeCutRegularity(
       }
     }
 
-    // Set MIP start for current cut
+    // Potentially add initial rank constraint and MIP hint/start for current cut
 #ifdef USE_GUROBI
     if (use_gurobi && USE_INPUT_CERTIFICATE) {
       setRCVMIPHintOrStart(grbSolver, solution, v[cut_ind], disj, solver, true); // useless as MIP start since this solution will be cut away...
