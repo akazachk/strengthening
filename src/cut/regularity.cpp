@@ -2072,10 +2072,20 @@ void analyzeCutRegularity(
     // Potentially add initial rank constraint and MIP hint/start for current cut
 #ifdef USE_GUROBI
     if (use_gurobi && USE_INPUT_CERTIFICATE) {
-      setRCVMIPHintOrStart(grbSolver, solution, v[cut_ind], disj, solver, true); // useless as MIP start since this solution will be cut away...
-      
       // Check rank of solution vs number of nonzero multipliers
       if (certificate_submx_rank[cut_ind] < num_nonzero_multipliers[cut_ind]) {
+        setRCVMIPHintOrStart(grbSolver, solution, v[cut_ind], disj, solver, true); // useless as MIP start since this solution will be cut away...
+
+        // {
+        //   // Reset the hints to GRB_UNDEFINED
+        //   GRBVar* vars = grbSolver->getVars();
+        //   const int num_vars = grbSolver->get(GRB_IntAttr_NumVars);
+        //   for (int var_ind = 0; var_ind < num_vars; var_ind++) {
+        //     vars[var_ind].set(GRB_DoubleAttr::GRB_DoubleAttr_VarHintVal, GRB_UNDEFINED);
+        //   }
+        //   if (vars) { delete[] vars; }
+        // }
+
         // This should always be the case at this point, since we have already checked the original certificate for regularity
         // We do not need to recompute the rank, since we already have it
         // Only need the delta_var_inds
