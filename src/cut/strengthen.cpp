@@ -456,6 +456,11 @@ int strengthenCut(
   std::vector<double> lb_term(disj->num_terms, 0.0); // u^t_0 (D^t_0 - ell^t)
   for (int term_ind = 0; term_ind < disj->num_terms; term_ind++) {
     const DisjunctiveTerm& term = disj->terms[term_ind];
+
+    if (!term.is_feasible) {
+      continue;
+    }
+
     const int num_common = (int) disj->common_changed_var.size();
     const int num_disj_ineqs = num_common + term.changed_var.size();
     // Resize current term vector

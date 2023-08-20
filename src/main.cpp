@@ -41,14 +41,17 @@ using namespace StrengtheningParameters;
 #include "strengthen.hpp"
 #include "utility.hpp"
 
-#ifdef USE_EIGEN
-#include "eigen.hpp" // computeRank
-#endif
+// VPC includes
+// #include "SplitDisjunction.hpp"
 
 // For disjInfo
 #include "CglVPC.hpp"
 #include "PartialBBDisjunction.hpp"
 #include "PRLP.hpp"
+
+#ifdef USE_EIGEN
+#include "eigen.hpp" // computeRank
+#endif
 
 #ifdef USE_GUROBI
 #include "GurobiHelper.hpp" // for obtaining ip opt
@@ -219,6 +222,12 @@ void applyStrengtheningCertificateHelper(
     const std::vector<double>& ip_solution,
     const bool is_rcvmip = false
 );
+
+/// @brief For debugging purposes, this will create a custom disjunction and potentially add a cut to currCuts
+void testDisjunctionAndCut(
+    Disjunction* disj,
+    CglAdvCut& gen,
+    OsiCuts& currCuts);
 
 /****************** MAIN FUNCTION **********************/
 int main(int argc, char** argv) {
@@ -411,6 +420,7 @@ int main(int argc, char** argv) {
     OsiCuts& currCuts = mycuts_by_round[round_ind];
 
     const bool SHOULD_GENERATE_CUTS = (params.get(intParam::DISJ_TERMS) != 0);
+    const bool USE_CUSTOM = false;
     double CURR_EPS = params.get(StrengtheningParameters::doubleParam::EPS);
     Disjunction* disj = NULL;
     if (SHOULD_GENERATE_CUTS) {
@@ -423,6 +433,11 @@ int main(int argc, char** argv) {
       gen.timer.add_value(
           CglAdvCut::CutTimeStatsName[static_cast<int>(CglAdvCut::CutTimeStats::INIT_SOLVE_TIME)],
           timer.get_value(OverallTimeStats::INIT_SOLVE_TIME));
+
+      // Set up custom disjunction
+      if (USE_CUSTOM) {
+        testDisjunctionAndCut(disj, gen, currCuts);
+      }
 
       // Generate disjunctive cuts
       gen.generateCuts(*solver, currCuts);
@@ -483,10 +498,30 @@ int main(int argc, char** argv) {
         }
         boundInfoVec[round_ind].num_root_bounds_changed = disj->common_changed_var.size();
         boundInfoVec[round_ind].root_obj = disj->root_obj;
+
+        // Delete any infeasible terms
+        std::vector<int> terms_to_erase;
+        for (int term_ind = 0; term_ind < disj->num_terms; term_ind++) {
+          if (!disj->terms[term_ind].is_feasible) {
+            terms_to_erase.push_back(term_ind);
+          }
+        }
+        for (int i = (int) terms_to_erase.size() - 1; i >= 0; i--) {
+          const int term_ind = terms_to_erase[i];
+          disj->terms.erase(disj->terms.begin() + term_ind);
+          disj->num_terms--;
+        }
       }
       updateDisjInfo(disjInfo, disjInfo.num_disj, gen.gen);
       updateCutInfo(cutInfoVec[round_ind], &gen);
+      
+      timer.end_timer(OverallTimeStats::CUT_GEN_TIME);
+    } // SHOULD_GENERATE_CUTS
+    else { // else update cutInfo with blanks
+      setCutInfo(cutInfoVec[round_ind], 0, NULL);
+    }
 
+    if (currCuts.sizeCuts() > 0) {
       // Get density of unstr cuts
       int total_support = 0;
       for (int cut_ind = 0; cut_ind < currCuts.sizeCuts(); cut_ind++) {
@@ -504,11 +539,6 @@ int main(int argc, char** argv) {
       }
       cutInfoUnstr.avg_support = (double) total_support / currCuts.sizeCuts();
       cutInfoUnstr.num_cuts += currCuts.sizeCuts();
-      
-      timer.end_timer(OverallTimeStats::CUT_GEN_TIME);
-    } // SHOULD_GENERATE_CUTS
-    else { // else update cutInfo with blanks
-      setCutInfo(cutInfoVec[round_ind], 0, NULL);
     }
 
 #if 0
@@ -1633,7 +1663,7 @@ void calcStrengtheningCertificateHelper(
     v[cut_ind].resize(disj->num_terms);
   }
   for (int term_ind = 0; term_ind < disj->num_terms; term_ind++) {
-    OsiSolverInterface* termSolver;
+    OsiSolverInterface* termSolver = nullptr;
     disj->getSolverForTerm(termSolver, term_ind, solver, false, params.get(StrengtheningParameters::doubleConst::DIFFEPS), params.logfile);
     if (!termSolver) {
       printf("Disjunctive term %d/%d not created successfully.\n", term_ind+1, disj->num_terms);
@@ -1717,3 +1747,92 @@ void applyStrengtheningCertificateHelper(
   
   timer.end_timer(which_time);
 } /* applyStrengtheningCertificateHelper */
+
+void testDisjunctionAndCutSerraBalas2020(
+  Disjunction* disj,
+  CglAdvCut& gen,
+  OsiCuts& currCuts) {
+// Set up custom disjunction
+  disj = new PartialBBDisjunction();
+  disj->setupAsNew();
+
+  // Create disjunction (X0 <= 0; X1 <= 0) V (X0 <= 0; X1 >= 1) V (X0 >= 1; X1 <= 0) V (X0 >= 1; X1 >= 1)
+  const int num_vars = solver->getNumCols();
+  assert( num_vars == 2 );
+
+  DisjunctiveTerm term1, term2, term3, term4;
+
+  // term1: (X0 <= 0; X1 <= 0)
+  term1.initialize(NULL);
+  term1.is_feasible = true;
+  // X0 <= 0 === -X0 >= 0
+  term1.changed_var.push_back(0);
+  term1.changed_bound.push_back(1);
+  term1.changed_value.push_back(0.0);
+  // X1 <= 0 === -X1 >= 0
+  term1.changed_var.push_back(1);
+  term1.changed_bound.push_back(1);
+  term1.changed_value.push_back(0.0);
+
+  // term2: (X0 <= 0; X1 >= 1)
+  term2.initialize(NULL);
+  term2.is_feasible = true;
+  // X0 <= 0 === -X0 >= 0
+  term2.changed_var.push_back(0);
+  term2.changed_bound.push_back(1);
+  term2.changed_value.push_back(0.0);
+  // X1 >= 1
+  term2.changed_var.push_back(1);
+  term2.changed_bound.push_back(0);
+  term2.changed_value.push_back(1.0);
+
+  // term3: (X0 >= 1; X1 <= 0)
+  term3.initialize(NULL);
+  term3.is_feasible = true;
+  // X0 >= 1
+  term3.changed_var.push_back(0);
+  term3.changed_bound.push_back(0);
+  term3.changed_value.push_back(1.0);
+  // X1 <= 0 === -X1 >= 0
+  term3.changed_var.push_back(1);
+  term3.changed_bound.push_back(1);
+  term3.changed_value.push_back(0.0);
+
+  // term4: (X0 >= 1; X1 >= 1)
+  term4.initialize(NULL);
+  term4.is_feasible = true;
+  // X0 >= 1
+  term4.changed_var.push_back(0);
+  term4.changed_bound.push_back(0);
+  term4.changed_value.push_back(1.0);
+  // X1 >= 1
+  term4.changed_var.push_back(1);
+  term4.changed_bound.push_back(0);
+  term4.changed_value.push_back(1.0);
+
+  // Add terms to disjunction
+  std::vector<DisjunctiveTerm> terms = {term1, term2, term3, term4};
+  for (int i = 0; i < (int) terms.size(); i++) {
+    disj->terms.push_back(terms[i]);
+    disj->num_terms++;
+  }
+
+  // Set disjunction for CglVPC inside of gen
+  gen.gen.setDisjunction(disj);
+
+  // Add cut X0 - 2 X1 >= 1
+  CoinPackedVector newCutRow;
+  newCutRow.insert(0, 1.0);
+  newCutRow.insert(1, -2.0);
+  OsiRowCut newCut;
+  newCut.setRow(newCutRow);
+  newCut.setLb(1.);
+  currCuts.insertIfNotDuplicate(newCut);
+} /* testDisjunctionAndCutSerraBalas2020 */
+
+void testDisjunctionAndCut(
+    Disjunction* disj,
+    CglAdvCut& gen,
+    OsiCuts& currCuts) {
+  testDisjunctionAndCutSerraBalas2020(disj, gen, currCuts);
+} /* testDisjunctionAndCut */

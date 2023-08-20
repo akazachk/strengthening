@@ -168,6 +168,8 @@ void checkCut(
 /// @details Run #checkCut and print num errors
 ///
 /// This is a wrapper for #checkCut that creates num_errors and total_diff variables and prints the number of errors.
+///
+/// @return Number of errors
 int checkCutHelper(
     /// [in] cut coefficients
     const std::vector<double>& cut_coeff,
@@ -181,6 +183,13 @@ int checkCutHelper(
     const OsiSolverInterface* const solver,
     /// [in] Log file
     FILE* const logfile) {
+  if (disj && !disj->terms[term_ind].is_feasible) {
+    warning_msg(warnstring,
+        "checkCutHelper: Term %d is infeasible, so we will not check the cut.\n",
+        term_ind);
+    return 0;
+  }
+
   int num_errors = 0;
   double total_diff = 0;
   checkCut(num_errors, total_diff, cut_coeff, v, term_ind, disj, solver);
