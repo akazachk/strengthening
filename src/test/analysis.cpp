@@ -1022,7 +1022,9 @@ void analyzeStrength(
       }
       if (checkCutActivity(solver_mycut, cut)) {
         cutInfo.num_active_mycut++;
-        cutInfo.numActiveFromHeur[static_cast<int>(cutInfo.objType[cut_ind])]++;
+        if (cut_ind < static_cast<int>(cutInfo.objType.size())) {
+          cutInfo.numActiveFromHeur[static_cast<int>(cutInfo.objType[cut_ind])]++;
+        }
       }
       if (checkCutActivity(solver_all, cut)) {
         cutInfo.num_active_all++;
@@ -1450,8 +1452,16 @@ void setCutInfo(SummaryCutInfo& cutInfo, const int num_rounds,
   int cut_ind = 0;
   for (int round = 0; round < num_rounds; round++) {
     for (int i = 0; i < oldCutInfos[round].num_cuts; i++) {
-      cutInfo.cutType[cut_ind] = oldCutInfos[round].cutType[i];
-      cutInfo.objType[cut_ind] = oldCutInfos[round].objType[i];
+      if (cut_ind < static_cast<int>(oldCutInfos[round].cutType.size())) {
+        cutInfo.cutType[cut_ind] = oldCutInfos[round].cutType[i];
+      } else {
+        cutInfo.cutType[cut_ind] = CglAdvCut::CutType::OTHER_CUT;
+      }
+      if (cut_ind < static_cast<int>(oldCutInfos[round].objType.size())) {
+        cutInfo.objType[cut_ind] = oldCutInfos[round].objType[i];
+      } else {
+        cutInfo.objType[cut_ind] = CglAdvCut::ObjectiveType::OTHER;
+      }
       cut_ind++;
     }
   }

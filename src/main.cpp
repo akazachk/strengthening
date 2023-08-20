@@ -418,9 +418,12 @@ int main(int argc, char** argv) {
     //====================================================================================================//
     // Now for more general cuts
     OsiCuts& currCuts = mycuts_by_round[round_ind];
+    OsiCuts extraCuts;
 
     const bool SHOULD_GENERATE_CUTS = (params.get(intParam::DISJ_TERMS) != 0);
-    const bool USE_CUSTOM = false;
+    const bool USE_CUSTOM = 
+        use_temp_option(params.get(StrengtheningParameters::intParam::TEMP), TempOptions::PYRAMID_EXAMPLE)
+        || use_temp_option(params.get(StrengtheningParameters::intParam::TEMP), TempOptions::SERRA_BALAS_2020_EXAMPLE);
     double CURR_EPS = params.get(StrengtheningParameters::doubleParam::EPS);
     Disjunction* disj = NULL;
     if (SHOULD_GENERATE_CUTS) {
@@ -435,7 +438,6 @@ int main(int argc, char** argv) {
           timer.get_value(OverallTimeStats::INIT_SOLVE_TIME));
 
       // Set up custom disjunction
-      OsiCuts extraCuts;
       if (USE_CUSTOM) {
         testDisjunctionAndCut(disj, gen, extraCuts);
       }
@@ -443,11 +445,6 @@ int main(int argc, char** argv) {
       // Generate disjunctive cuts
       gen.generateCuts(*solver, currCuts);
       CURR_EPS = gen.probData.EPS;
-
-      // Insert extra cuts
-      if (extraCuts.sizeCuts() > 0) {
-        currCuts.insert(extraCuts);
-      }
 
       // Update timing from underlying generator
       CglVPC* vpc = &(gen.gen);
@@ -525,6 +522,12 @@ int main(int argc, char** argv) {
     } // SHOULD_GENERATE_CUTS
     else { // else update cutInfo with blanks
       setCutInfo(cutInfoVec[round_ind], 0, NULL);
+    }
+
+    // Insert extra cuts
+    if (extraCuts.sizeCuts() > 0) {
+      currCuts.insert(extraCuts);
+      cutInfoVec[round_ind].num_cuts += extraCuts.sizeCuts();
     }
 
     if (currCuts.sizeCuts() > 0) {

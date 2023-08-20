@@ -54,6 +54,13 @@ namespace StrengtheningParameters {
 #define ENUM_OPTION_13 8192
 #define ENUM_OPTION_14 16384
 #define ENUM_OPTION_15 32768
+#define ENUM_OPTION_16 65536
+#define ENUM_OPTION_17 131072
+#define ENUM_OPTION_18 262144
+#define ENUM_OPTION_19 524288
+#define ENUM_OPTION_20 1048576
+#define ENUM_OPTION_21 2097152
+#define ENUM_OPTION_22 4194304
 
 /********** PARAMETERS **********/
 /// Integer-valued parameters
@@ -146,6 +153,8 @@ enum class TempOptions {
   NONE = 0, ///< default
   CHECK_CUTS_AGAINST_BB_OPT = ENUM_OPTION_3, ///< if integer optimal solution is available, check if it violates any cuts
   SAVE_IP_OPT = ENUM_OPTION_5, ///< save IP optimum solution
+  PYRAMID_EXAMPLE = ENUM_OPTION_20, ///< test 3d pyramid example leading to irregular cut of type ">"
+  SERRA_BALAS_2020_EXAMPLE = ENUM_OPTION_21, ///< test Serra, Balas (2020) Figure 1 example leading to irregular cut of type "<"
 };
 
 /// @brief Shortcut for checking if a bit is enabled
