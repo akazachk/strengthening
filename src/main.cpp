@@ -435,13 +435,19 @@ int main(int argc, char** argv) {
           timer.get_value(OverallTimeStats::INIT_SOLVE_TIME));
 
       // Set up custom disjunction
+      OsiCuts extraCuts;
       if (USE_CUSTOM) {
-        testDisjunctionAndCut(disj, gen, currCuts);
+        testDisjunctionAndCut(disj, gen, extraCuts);
       }
 
       // Generate disjunctive cuts
       gen.generateCuts(*solver, currCuts);
       CURR_EPS = gen.probData.EPS;
+
+      // Insert extra cuts
+      if (extraCuts.sizeCuts() > 0) {
+        currCuts.insert(extraCuts);
+      }
 
       // Update timing from underlying generator
       CglVPC* vpc = &(gen.gen);
@@ -1830,9 +1836,82 @@ void testDisjunctionAndCutSerraBalas2020(
   currCuts.insertIfNotDuplicate(newCut);
 } /* testDisjunctionAndCutSerraBalas2020 */
 
+void testDisjunctionAndCutPyramid(
+  Disjunction* disj,
+  CglAdvCut& gen,
+  OsiCuts& currCuts) {
+// Set up custom disjunction
+  disj = new PartialBBDisjunction();
+  disj->setupAsNew();
+
+  // Create disjunction (x0 <= 0) V (x1 <= 0) V (x0 + x1 >= 2)
+  const int num_vars = solver->getNumCols();
+  assert( num_vars == 3 );
+
+  DisjunctiveTerm term1, term2, term3;
+
+  // term1: (x0 <= 0)
+  term1.initialize(NULL);
+  term1.is_feasible = true;
+  // x0 <= 0 === -x0 >= 0
+  // term1.changed_var.push_back(0);
+  // term1.changed_bound.push_back(1);
+  // term1.changed_value.push_back(0.0);
+  CoinPackedVector term1cutrow;
+  term1cutrow.insert(0, -1.);
+  OsiRowCut term1cut;
+  term1cut.setRow(term1cutrow);
+  term1cut.setLb(0.0);
+  term1.ineqs.push_back(term1cut);
+
+  // term2: (x1 <= 0)
+  term2.initialize(NULL);
+  term2.is_feasible = true;
+  // // x1 <= 0 === -x1 >= 0
+  // term2.changed_var.push_back(1);
+  // term2.changed_bound.push_back(1);
+  // term2.changed_value.push_back(0.0);
+  CoinPackedVector term2cutrow;
+  term2cutrow.insert(1, -1.);
+  OsiRowCut term2cut;
+  term2cut.setRow(term2cutrow);
+  term2cut.setLb(0.0);
+  term2.ineqs.push_back(term2cut);
+
+  // term3: (x0 + x1 >= 2)
+  term3.initialize(NULL);
+  term3.is_feasible = true;
+  CoinPackedVector term3cutrow;
+  term3cutrow.insert(0, 1.);
+  term3cutrow.insert(1, 1.);
+  OsiRowCut term3cut;
+  term3cut.setRow(term3cutrow);
+  term3cut.setLb(2.0);
+  term3.ineqs.push_back(term3cut);
+
+  // Add terms to disjunction
+  std::vector<DisjunctiveTerm> terms = {term1, term2, term3};
+  for (int i = 0; i < (int) terms.size(); i++) {
+    disj->terms.push_back(terms[i]);
+    disj->num_terms++;
+  }
+
+  // Set disjunction for CglVPC inside of gen
+  gen.gen.setDisjunction(disj);
+
+  // Add cut -x2 >= -1/2
+  CoinPackedVector newCutRow;
+  newCutRow.insert(2, -1.0);
+  OsiRowCut newCut;
+  newCut.setRow(newCutRow);
+  newCut.setLb(-0.5);
+  currCuts.insertIfNotDuplicate(newCut);
+} /* testDisjunctionAndCutPyramid */
+
 void testDisjunctionAndCut(
     Disjunction* disj,
     CglAdvCut& gen,
     OsiCuts& currCuts) {
-  testDisjunctionAndCutSerraBalas2020(disj, gen, currCuts);
+  // testDisjunctionAndCutSerraBalas2020(disj, gen, currCuts);
+  testDisjunctionAndCutPyramid(disj, gen, currCuts);
 } /* testDisjunctionAndCut */
