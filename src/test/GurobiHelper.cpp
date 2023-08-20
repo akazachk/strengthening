@@ -47,6 +47,35 @@ void createTmpFileCopy(FILE* const logfile, GRBModel& model, std::string& f_name
   model.write(f_name.c_str());
 } /* createTmpFileCopy (Gurobi) */
 
+const std::string getGurobiStatusName(const int status) {
+  const std::vector<std::string> status_names = {
+    "STATUS_UNDEFINED",
+    "GRB_LOADED",
+    "GRB_OPTIMAL",
+    "GRB_INFEASIBLE",
+    "GRB_INF_OR_UNBD",
+    "GRB_UNBOUNDED",
+    "GRB_CUTOFF",
+    "GRB_ITERATION_LIMIT",
+    "GRB_NODE_LIMIT",
+    "GRB_TIME_LIMIT",
+    "GRB_SOLUTION_LIMIT",
+    "GRB_INTERRUPTED",
+    "GRB_NUMERIC",
+    "GRB_SUBOPTIMAL",
+    "GRB_INPROGRESS",
+    "GRB_USER_OBJ_LIMIT",
+    "GRB_WORK_LIMIT",
+    "GRB_MEM_LIMIT"
+  };
+
+  if (status < 0 || status >= static_cast<int>(status_names.size())) {
+    return "Unknown status";
+  } else {
+    return status_names[status];
+  }
+} /* getGurobiStatusName */
+
 GRBModel* buildGRBModelFromOsi(const OsiSolverInterface* const solver, FILE* const logfile) {
   // Below DOES NOT WORK because when you make a copy of the file,
   // order of the variables may not be preserved

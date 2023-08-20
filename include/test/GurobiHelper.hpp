@@ -20,6 +20,9 @@ namespace StrengtheningParameters {
 #ifdef USE_GUROBI
 class GRBModel;
 
+/// @brief Return Gurobi status as a string
+const std::string getGurobiStatusName(const int status);
+
 /// @brief Use OsiSolverInterface to build GRBModel instance
 GRBModel* buildGRBModelFromOsi(const OsiSolverInterface* const solver, FILE* const logfile);
 
