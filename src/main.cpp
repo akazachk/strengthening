@@ -547,6 +547,10 @@ int main(int argc, char** argv) {
     // Analyze regularity and irregularity
     timer.start_timer(OverallTimeStats::REG_TOTAL_TIME);
 
+    const bool ANALYSIS_CONDITIONS_MET = disj &&
+        (currCuts.sizeCuts() > 0) &&
+        (static_cast<int>(v.size()) == currCuts.sizeCuts());
+
     // To start, obtain coefficient matrix (after adding globally-valid inequalities)
     CoinPackedMatrix Atilde;
     std::vector<double> btilde;
@@ -585,7 +589,7 @@ int main(int argc, char** argv) {
 
     // Analyze regularity of the existing certificate for each cut
     std::vector<RegularityStatus> orig_regularity_status;
-    if (SHOULD_ANALYZE_REGULARITY >= 1 && currCuts.sizeCuts() > 0 && disj) {
+    if (SHOULD_ANALYZE_REGULARITY >= 1 && ANALYSIS_CONDITIONS_MET) {
       timer.start_timer(OverallTimeStats::REG_ANALYZE_ORIG_CERT_TIME);
 
       // Calculate the rank of the existing certificate for each cut
@@ -651,7 +655,7 @@ int main(int argc, char** argv) {
     std::vector<int> rcvmip_str_cut_ind; // indices of cuts that were strengthened
     std::vector<RegularityStatus> rcvmip_regularity_status;
 
-    if (SHOULD_ANALYZE_REGULARITY >= 2 && currCuts.sizeCuts() > 0 && disj) {
+    if (SHOULD_ANALYZE_REGULARITY >= 2 && ANALYSIS_CONDITIONS_MET) {
       printf("\n## Analyzing regularity of cuts via RCVMIP of Serra and Balas (2020). ##\n");
 
       // Copy to rcvmip_v the contents of v
