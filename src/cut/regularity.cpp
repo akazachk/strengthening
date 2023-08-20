@@ -1571,6 +1571,11 @@ RCVMIPStatus solveRCVMIP(
     /// [in] Timer
     const TimeStats& rcvmip_timer) {
   RCVMIPStatus return_code = RCVMIPStatus::ERROR;
+  throw(
+    std::logic_error(
+      "solveRCVMIP (Cbc): Not yet implemented. Compare with Gurobi version (e.g., zero out solution, check return values).\n"
+    )
+  );
   return return_code; // not yet implemented
 
 #ifdef TRACE
