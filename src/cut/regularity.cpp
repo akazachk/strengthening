@@ -791,8 +791,13 @@ void genRCVMIPFromCut(
   }
   // u^t_0
   for (int t = 0; t < num_terms; t++) {
-    for (int i = 0; i < (int) disj->terms[t].changed_var.size(); i++) {
+    const int num_term_changed_vars = disj->terms[t].changed_var.size();
+    const int num_term_changed_ineqs = disj->terms[t].ineqs.size();
+    for (int i = 0; i < num_term_changed_vars; i++) {
       var_names.push_back("u0_" + std::to_string(t) + "_" + std::to_string(i));
+    }
+    for (int i = 0; i < num_term_changed_ineqs; i++) {
+      var_names.push_back("u0_" + std::to_string(t) + "_" + std::to_string(num_term_changed_vars + i));
     }
   }
   assert(liftingSolver->getNumCols() == (int) var_names.size());
@@ -976,7 +981,7 @@ void setRCVMIPHintOrStart(
   // Recall that the certificate v is a vector of length m + m_t + n
   // The delta variable for constraint row_ind will be set to one if v[t][row_ind] > 0 for some t \in num_terms
   const int num_nonbound_constrs = solver->getNumRows() + disj->common_changed_var.size() + disj->common_ineqs.size();
-  assert( v[0].size() == num_nonbound_constrs + disj->terms[0].changed_var.size() + solver->getNumCols() );
+  assert( v[0].size() == num_nonbound_constrs + disj->terms[0].changed_var.size() + disj->terms[0].ineqs.size() + solver->getNumCols() );
   const int mtilde = calculateNumRowsAtilde(disj, solver);
   // assert( Atilde.getNumRows() == mtilde );
 
@@ -1863,7 +1868,7 @@ RegularityStatus analyzeCertificateRegularity(
   std::vector<int> cols;
   for (int row = 0; row < solver->getNumRows() + (int) disj->common_changed_var.size(); row++) {
     for (int term = 0; term < disj->num_terms; term++) {
-      if (!isZero(v[term][row])) {
+      if (!isZero(v[term][row]) && disj->terms[term].is_feasible) {
         rows.push_back(row);
         break;
       }
@@ -1873,7 +1878,7 @@ RegularityStatus analyzeCertificateRegularity(
   for (int col = 0; col < solver->getNumCols(); col++) {
     for (int term = 0; term < disj->num_terms; term++) {
       const int first_col_ind = solver->getNumRows() + disj->common_changed_var.size() + disj->terms[term].changed_var.size();
-      if (!isZero(v[term][first_col_ind + col])) {
+      if (!isZero(v[term][first_col_ind + col]) && disj->terms[term].is_feasible) {
         cols.push_back(col);
         break;
       }
