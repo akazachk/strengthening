@@ -42,7 +42,32 @@ const std::string getRegularityStatusName(const RegularityStatus& status) {
   const std::vector<std::string> RegularityStatusName = { "IRREG_LESS", "REG", "IRREG_MORE", "UNCONVERGED", "UNKNOWN" };
   const int FIRST_INDEX_VALUE = static_cast<int>(RegularityStatus::IRREG_LESS);
   return RegularityStatusName[static_cast<int>(status) - FIRST_INDEX_VALUE];
-}
+} /* getRegularityStatusName */
+
+/// @brief Status of RCVMIP after termination of #solveRCVMIP
+enum class RCVMIPStatus {
+  OPTIMAL_REG = 0,      ///< Optimal regular solution found
+  OPTIMAL_IRREG_LESS,   ///< Optimal irregular< solution found
+  OPTIMAL_IRREG_MORE,   ///< Optimal irregular> solution found (initial RCVMIP has optimal value = 0)
+  OPTIMAL_UNCONVERGED,  ///< Optimal solution found, but not converged
+  INFEASIBLE,           ///< Infeasible
+  UNBOUNDED,            ///< Unbounded
+  INF_OR_UNBD,          ///< Infeasible or unbounded
+  SOLVER_LIMIT,         ///< Cutoff, iteration, node, time, solution, user_obj limit
+  RCVMIP_ITER_LIMIT,    ///< RCVMIP iteration limit
+  RCVMIP_TIME_LIMIT,    ///< RCVMIP time limit
+  ERROR                 ///< Error
+};
+
+const std::string getRCVMIPStatusName(const RCVMIPStatus& status) {
+  const std::vector<std::string> RCVMIPStatusName = {
+    "OPTIMAL_REG", "OPTIMAL_IRREG_LESS", "OPTIMAL_IRREG_MORE", "OPTIMAL_UNCONVERGED",
+    "INFEASIBLE", "UNBOUNDED", "INF_OR_UNBD", "SOLVER_LIMIT",
+    "RCVMIP_ITER_LIMIT", "RCVMIP_TIME_LIMIT", "ERROR",
+  };
+  const int FIRST_INDEX_VALUE = static_cast<int>(RCVMIPStatus::OPTIMAL_REG);
+  return RCVMIPStatusName[static_cast<int>(status) - FIRST_INDEX_VALUE];
+} /* getRCVMIPStatusName */
 
 /// @brief Return name in RCVMIP timer for cut \p cut_ind (if negative, return total time name)
 inline const std::string getRCVMIPTimeStatsName(const int cut_ind) {
@@ -94,21 +119,6 @@ inline double getRCVMIPRemainingTimeLimit(
     }
   }
 } /* getRCVMIPRemainingTimeLimit */
-
-/// @brief Status of RCVMIP after termination of #solveRCVMIP
-enum class RCVMIPStatus {
-  OPTIMAL_REG = 0,      ///< Optimal regular solution found
-  OPTIMAL_IRREG_LESS,   ///< Optimal irregular< solution found
-  OPTIMAL_IRREG_MORE,   ///< Optimal irregular> solution found (initial RCVMIP has optimal value = 0)
-  OPTIMAL_UNCONVERGED,  ///< Optimal solution found, but not converged
-  INFEASIBLE,           ///< Infeasible
-  UNBOUNDED,            ///< Unbounded
-  INF_OR_UNBD,          ///< Infeasible or unbounded
-  SOLVER_LIMIT,         ///< Cutoff, iteration, node, time, solution, user_obj limit
-  RCVMIP_ITER_LIMIT,    ///< RCVMIP iteration limit
-  RCVMIP_TIME_LIMIT,    ///< RCVMIP time limit
-  ERROR                 ///< Error
-};
 
 int calculateNumFiniteBounds(
   const OsiSolverInterface* const solver,
@@ -1267,6 +1277,7 @@ RCVMIPStatus solveRCVMIP(
     const TimeStats& rcvmip_timer) {
   RCVMIPStatus return_code = RCVMIPStatus::ERROR;
   solution.clear();
+  solution.resize(0);
 
 #ifdef TRACE
   const bool write_lp = true && !params.get(StrengtheningParameters::LOGFILE).empty();
@@ -1292,6 +1303,8 @@ RCVMIPStatus solveRCVMIP(
             params.get(StrengtheningParameters::RCVMIP_CUT_TIMELIMIT),
             params.get(StrengtheningParameters::RCVMIP_TOTAL_TIMELIMIT),
             getRCVMIPTimeStatsName(cut_ind))) {
+      fprintf(stdout, "Reached time limit after %1.2f seconds and %d iterations.\n",
+          rcvmip_timer.get_total_time(getRCVMIPTimeStatsName(cut_ind)), num_iters);
       return_code = RCVMIPStatus::RCVMIP_TIME_LIMIT;
       break;
     }
@@ -1299,6 +1312,7 @@ RCVMIPStatus solveRCVMIP(
     const int grb_return_code = solveGRBModel(*model, params.logfile);
     num_iters++;
 
+    // Break if optimal solution not found (because, e.g., solution = all zeroes might be taken)
     if (grb_return_code == GRB_OPTIMAL) {
       return_code = RCVMIPStatus::OPTIMAL_UNCONVERGED;
     }
@@ -1314,9 +1328,10 @@ RCVMIPStatus solveRCVMIP(
         || grb_return_code == GRB_USER_OBJ_LIMIT) {
       return_code = RCVMIPStatus::SOLVER_LIMIT;
 
-      // Save solution if one exists
+      // Save solution if one exists and has nonzero theta value
       if (model->get(GRB_IntAttr::GRB_IntAttr_SolCount) > 0) {
-        saveSolution(solution, *model);
+        const double theta_val = model->get(GRB_DoubleAttr::GRB_DoubleAttr_ObjVal);
+        if (!isZero(theta_val)) saveSolution(solution, *model);
       }
 
       break;
@@ -1341,7 +1356,9 @@ RCVMIPStatus solveRCVMIP(
 
     // At this point a solution should be available; if not, exit with an error
     if (model->get(GRB_IntAttr::GRB_IntAttr_SolCount) == 0) {
-      error_msg(errorstring, "solveRCVMIP (Gurobi): No solution available for cut %d after %d iterations. Status = %d.\n", cut_ind, num_iters, grb_return_code);
+      error_msg(errorstring,
+          "solveRCVMIP (Gurobi): No solution available for cut %d after %d iterations. Status = %d.\n",
+          cut_ind, num_iters, grb_return_code);
       writeErrorToLog(errorstring, params.logfile);
       throw std::logic_error(errorstring);
     }
@@ -1352,46 +1369,38 @@ RCVMIPStatus solveRCVMIP(
     // If optimal objective value = 0, then we have reached feasibility
     const double theta_val = solution.size() > 0 ? solution[0] : -1.;
     if (isZero(theta_val)) {
-      reached_feasibility = true;
-      break;
-    }
-
-    // Check rank of solution vs number of nonzero multipliers
-    std::vector<int> delta_var_inds;
-    const int certificate_rank = computeNonzeroIndicesAndRankOfRCVMIPSolution(delta_var_inds, solution.data(), disj, solver, Atilde, params, cut_ind);
-    if (certificate_rank < (int) delta_var_inds.size()) {
-      addRankConstraint(model, delta_var_inds, certificate_rank, num_iters);
-    } else {
-      reached_feasibility = true;
-    }
-
-#ifdef TRACE
-    {
-      // Print value of theta variable (should this decrease across rounds?)
-      printf("Iter %d/%d: theta = %f\tcert_rank = %d\tcert_size = %d\n", num_iters, MAX_ITERS, theta_val, certificate_rank, (int) delta_var_inds.size());
-    }
-#endif
-  } // iterate while !reached_feasibility
-  printf("solveRCVMIP (Gurobi): Terminated in %d / %d iterations. Reached feasibility: %d.\n", num_iters, MAX_ITERS, reached_feasibility);
-
-  if (reached_feasibility) {
-    const double theta_val = solution.size() > 0 ? solution[0] : -1.;
-    if (greaterThanVal(theta_val, 0.)) {
-      return_code = RCVMIPStatus::OPTIMAL_REG; // May not be feasible, due to missing rank constraints
-    }
-    else if (isVal(theta_val, 0.)) {
       if (num_iters == 1) {
         return_code = RCVMIPStatus::OPTIMAL_IRREG_MORE; // Need to make sure rank_0 constraint is not causing this
       } else {
         return_code = RCVMIPStatus::OPTIMAL_IRREG_LESS;
       }
-    } else {
-      error_msg(errorstring, "*** ERROR: Theta value is negative: %f.\n", theta_val);
-      writeErrorToLog(errorstring, params.logfile);
-      throw std::logic_error(errorstring);
-    }
-  }
-  else if (num_iters >= MAX_ITERS) {
+      reached_feasibility = true; // proven irregular
+    } // check if theta = 0
+    else {
+      // Check rank of solution vs number of nonzero multipliers
+      std::vector<int> delta_var_inds;
+      const int certificate_rank = computeNonzeroIndicesAndRankOfRCVMIPSolution(delta_var_inds, solution.data(), disj, solver, Atilde, params, cut_ind);
+      if (certificate_rank < (int) delta_var_inds.size()) {
+        addRankConstraint(model, delta_var_inds, certificate_rank, num_iters);
+      } else {
+        return_code = RCVMIPStatus::OPTIMAL_REG; // May not be feasible, due to missing rank constraints
+        reached_feasibility = true; // proven regular
+      }
+      #ifdef TRACE
+          {
+            // Print value of theta variable (should this decrease across rounds?)
+            printf("Iter %d/%d: theta = %f\tcert_rank = %d\tcert_size = %d\n",
+                num_iters, MAX_ITERS, theta_val, certificate_rank, (int) delta_var_inds.size());
+          }
+      #endif
+    } // check rank if theta > 0
+  } // iterate while !reached_feasibility
+  printf("solveRCVMIP (Gurobi): Terminated in %d / %d iterations after %1.2f s. Reached feasibility: %d. Status: %s.\n",
+      num_iters, MAX_ITERS,
+      rcvmip_timer.get_total_time(getRCVMIPTimeStatsName(cut_ind)),
+      reached_feasibility, getRCVMIPStatusName(return_code).c_str());
+
+  if (!reached_feasibility && num_iters >= MAX_ITERS) {
     return_code = RCVMIPStatus::RCVMIP_ITER_LIMIT;
   }
   
@@ -2096,12 +2105,9 @@ void analyzeCutRegularity(
           || return_code == RCVMIPStatus::INF_OR_UNBD
           || return_code == RCVMIPStatus::ERROR) {
         error_msg(errorstring,
-            "Solver terminates after %d iterations with status %d (%d: infeasible; %d: unbounded; %d: error) cut %d.\n",
+            "Solver terminates after %d iterations with status %s for cut %d.\n",
             num_iters[cut_ind],
-            static_cast<int>(return_code),
-            static_cast<int>(RCVMIPStatus::INFEASIBLE),
-            static_cast<int>(RCVMIPStatus::UNBOUNDED),
-            static_cast<int>(RCVMIPStatus::ERROR),
+            getRCVMIPStatusName(return_code).c_str(),
             cut_ind);
         writeErrorToLog(errorstring, params.logfile);
         
@@ -2123,7 +2129,7 @@ void analyzeCutRegularity(
           || return_code == RCVMIPStatus::RCVMIP_ITER_LIMIT
           || return_code == RCVMIPStatus::RCVMIP_TIME_LIMIT) {
         regularity_status[cut_ind] = RegularityStatus::UNCONVERGED;
-        should_compute_certificate[cut_ind] = COMPUTE_UNCONVERGED_CERTIFICATE && solution.size() > 0;
+        should_compute_certificate[cut_ind] = COMPUTE_UNCONVERGED_CERTIFICATE && solution.size() > 0 && !isZero(solution[0]);
       }
       else if (return_code == RCVMIPStatus::OPTIMAL_IRREG_LESS) {
         regularity_status[cut_ind] = RegularityStatus::IRREG_LESS;
@@ -2145,6 +2151,11 @@ void analyzeCutRegularity(
             static_cast<int>(return_code));
         writeErrorToLog(errorstring, params.logfile);
         throw std::logic_error(errorstring);
+      }
+
+      // Check that we have a sensible certificate
+      if (isZero(solution[0])) {
+        should_compute_certificate[cut_ind] = 0;  
       }
 
       // Retrieve certificate from solution (if requested)
