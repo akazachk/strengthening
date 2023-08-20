@@ -371,12 +371,18 @@ void createTmpFileCopy(
   // Generate temporary file name
   char template_name[] = "/tmp/tmpmpsXXXXXX";
 
-  mkstemp(template_name);
+  int fd;
+  if ((fd = mkstemp(template_name)) == -1) {
+    error_msg(errorstring, "Could not generate temp file with error %s.\n", strerror(errno));
+    writeErrorToLog(errorstring, logfile);
+    throw std::logic_error(errorstring);
+  }
+
   f_name = template_name;
   if (f_name.empty()) {
     error_msg(errorstring, "Could not generate temp file.\n");
     writeErrorToLog(errorstring, logfile);
-    exit(1);
+    throw std::logic_error(errorstring);
   }
   solver->writeMps(template_name, "mps", solver->getObjSense());
   f_name += ".mps.gz"; // writeMps calls writeMpsNative, which invokes the CoinMpsIO writer with gzip option = 1

@@ -863,8 +863,8 @@ void printCertificateInfo(
     fprintf(logfile, "%s%c", stringValue(iter_stats[(int) Stat::max], "%g").c_str(), SEP); count++;
 
     int num_limit = 0;
-    for (int i = 0; i < info.num_iterations.size(); i++) {
-      if (info.num_iterations[i] >= RCVMIP_ITER_LIMIT)
+    for (const int curr_iter : info.num_iterations) {
+      if (curr_iter >= RCVMIP_ITER_LIMIT)
         num_limit++;
     }
     fprintf(logfile, "%s%c", stringValue(num_limit, "%d").c_str(), SEP); count++;

@@ -1929,10 +1929,10 @@ void analyzeCutRegularity(
 
   // Prepare vector sizes
   if (USE_INPUT_CERTIFICATE) {
-    assert( certificate_submx_rank.size() == cuts.sizeCuts() );
-    assert( num_nonzero_multipliers.size() == cuts.sizeCuts() );
-    assert( v.size() == cuts.sizeCuts() );
-    assert( regularity_status.size() == cuts.sizeCuts() );
+    assert( static_cast<int>(certificate_submx_rank.size()) == cuts.sizeCuts() );
+    assert( static_cast<int>(num_nonzero_multipliers.size()) == cuts.sizeCuts() );
+    assert( static_cast<int>(v.size()) == cuts.sizeCuts() );
+    assert( static_cast<int>(regularity_status.size()) == cuts.sizeCuts() );
   } else {
     certificate_submx_rank.resize(cuts.sizeCuts());
     num_nonzero_multipliers.resize(cuts.sizeCuts());
@@ -1958,7 +1958,7 @@ void analyzeCutRegularity(
   }
 
   // Regularity status of original certificate may have been given as an input
-  if (regularity_status.size() != cuts.sizeCuts()) {
+  if (static_cast<int>(regularity_status.size()) != cuts.sizeCuts()) {
     regularity_status.clear();
     regularity_status.resize(cuts.sizeCuts(), RegularityStatus::UNKNOWN);
   } else {

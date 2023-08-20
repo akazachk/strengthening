@@ -7,6 +7,7 @@
 
 #include <cstdio> // FILE
 #include <vector>
+#include <string>
 
 // Project files
 #include "CutCertificate.hpp"
