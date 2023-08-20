@@ -386,7 +386,7 @@ void prepareAtilde(
  * 
  * The cut \alpha^T x \ge \beta is given in \p cut.
  * 
- * The CGLP has nonnegative variables (u^t,u_0^t) for the certificate for each term t of the disjunction.
+ * The CGLP/RCVMIP has nonnegative variables (u^t,u_0^t) for the certificate for each term t of the disjunction.
  * In addition, we add binary variables \delta_j, j \in [n], to determine which columns of Atilde are used to certify the cut.
  * Finally, we need a nonnegative variable theta to determine if the cut needs to be scaled.
  * 
@@ -511,7 +511,7 @@ void genRCVMIPFromCut(
       exit(1);
   }
 
-  // Create the CGLP constraint matrix
+  // Create the RCVMIP (we call it sometimes CGLP below) constraint matrix
   // Constraints: |T| * ( (1) + (2) + (3) ) + 1
   //  = |T| * ( num_cols + 1 + mprime ) + 1
   // Num variables:
@@ -712,6 +712,7 @@ void genRCVMIPFromCut(
   
   // Set constant sides for the rows
   // First num_cols rows for each term are = 0 constraints
+
   for (int term_ind = 0; term_ind < disj->num_terms; term_ind++) {
     const int term_rows_start = term_ind * (num_cols + 1 + mprime);
     for (int col = 0; col < num_cols; col++) {
@@ -1289,7 +1290,7 @@ RCVMIPStatus solveRCVMIP(
     parseFilename(logdir, logname, in_file_ext, params.get(StrengtheningParameters::stringParam::LOGFILE), params.logfile);
     std::string instdir, instname;
     parseFilename(instdir, instname, in_file_ext, params.get(StrengtheningParameters::stringParam::FILENAME), params.logfile);
-    lp_filename_stub = logdir + "/" + instname + "_cglp_" + stringValue(cut_ind, "%d") + "_GUROBI";
+    lp_filename_stub = logdir + "/" + instname + "_rcvmip_" + stringValue(cut_ind, "%d") + "_GUROBI";
   }
 
   bool reached_feasibility = false;
@@ -1297,7 +1298,7 @@ RCVMIPStatus solveRCVMIP(
   double theta_val = 0.;
   int grb_return_code = 0; 
   const int MAX_ITERS = params.get(StrengtheningParameters::intParam::RCVMIP_MAX_ITERS);
-  printf("\n## solveRCVMIP (Gurobi): Solving CGLP from cut %d. ##\n", cut_ind);
+  printf("\n## solveRCVMIP (Gurobi): Solving RCVMIP from cut %d. ##\n", cut_ind);
   while (!reached_feasibility && num_iters < MAX_ITERS) {
     if (reachedRCVMIPTimeLimit(rcvmip_timer,
             params.get(StrengtheningParameters::RCVMIP_CUT_TIMELIMIT),
@@ -1598,13 +1599,13 @@ RCVMIPStatus solveRCVMIP(
     parseFilename(logdir, logname, in_file_ext, params.get(StrengtheningParameters::stringParam::LOGFILE), params.logfile);
     std::string instdir, instname;
     parseFilename(instdir, instname, in_file_ext, params.get(StrengtheningParameters::stringParam::FILENAME), params.logfile);
-    lp_filename_stub = logdir + "/" + instname + "_cglp_" + stringValue(cut_ind, "%d") + "_COIN";
+    lp_filename_stub = logdir + "/" + instname + "_rcvmip_" + stringValue(cut_ind, "%d") + "_COIN";
   }
 
   bool reached_feasibility = false;
   num_iters = 0;
   const int MAX_ITERS = params.get(StrengtheningParameters::intParam::RCVMIP_MAX_ITERS);
-  printf("\n## solveRCVMIP (Cbc): Solving CGLP from cut %d. ##\n", cut_ind);
+  printf("\n## solveRCVMIP (Cbc): Solving RCVMIP from cut %d. ##\n", cut_ind);
   while (!reached_feasibility && num_iters < MAX_ITERS) {
     if (reachedRCVMIPTimeLimit(rcvmip_timer,
             params.get(StrengtheningParameters::RCVMIP_CUT_TIMELIMIT),
