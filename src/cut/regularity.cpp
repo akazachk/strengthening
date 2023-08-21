@@ -39,7 +39,14 @@
 #include "TimeStats.hpp"
 
 const std::string getRegularityStatusName(const RegularityStatus& status) {
-  const std::vector<std::string> RegularityStatusName = { "IRREG_LESS", "REG", "IRREG_MORE", "UNCONVERGED", "UNKNOWN" };
+  const std::vector<std::string> RegularityStatusName = {
+    "IRREG_LESS",
+    "REG",
+    "IRREG_MORE",
+    "TENTATIVE_IRREG_LESS",
+    "UNCONVERGED",
+    "UNKNOWN"
+  };
   const int FIRST_INDEX_VALUE = static_cast<int>(RegularityStatus::IRREG_LESS);
   return RegularityStatusName[static_cast<int>(status) - FIRST_INDEX_VALUE];
 } /* getRegularityStatusName */
@@ -47,6 +54,7 @@ const std::string getRegularityStatusName(const RegularityStatus& status) {
 /// @brief Status of RCVMIP after termination of #solveRCVMIP
 enum class RCVMIPStatus {
   OPTIMAL_REG = 0,      ///< Optimal regular solution found
+  TENTATIVE_IRREG_LESS, ///< Found solution with n > cert size, with cert size = rank; did not yet prove no other solution exists
   OPTIMAL_IRREG_LESS,   ///< Optimal irregular< solution found
   OPTIMAL_IRREG_MORE,   ///< Optimal irregular> solution found (initial RCVMIP has optimal value = 0)
   OPTIMAL_UNCONVERGED,  ///< Optimal solution found, but not converged
@@ -61,9 +69,18 @@ enum class RCVMIPStatus {
 
 const std::string getRCVMIPStatusName(const RCVMIPStatus& status) {
   const std::vector<std::string> RCVMIPStatusName = {
-    "OPTIMAL_REG", "OPTIMAL_IRREG_LESS", "OPTIMAL_IRREG_MORE", "OPTIMAL_UNCONVERGED",
-    "INFEASIBLE", "UNBOUNDED", "INF_OR_UNBD", "SOLVER_LIMIT",
-    "RCVMIP_ITER_LIMIT", "RCVMIP_TIME_LIMIT", "ERROR",
+    "OPTIMAL_REG",
+    "TENTATIVE_IRREG_LESS",
+    "OPTIMAL_IRREG_LESS",
+    "OPTIMAL_IRREG_MORE",
+    "OPTIMAL_UNCONVERGED",
+    "INFEASIBLE",
+    "UNBOUNDED",
+    "INF_OR_UNBD",
+    "SOLVER_LIMIT",
+    "RCVMIP_ITER_LIMIT",
+    "RCVMIP_TIME_LIMIT",
+    "ERROR",
   };
   const int FIRST_INDEX_VALUE = static_cast<int>(RCVMIPStatus::OPTIMAL_REG);
   return RCVMIPStatusName[static_cast<int>(status) - FIRST_INDEX_VALUE];
@@ -119,6 +136,23 @@ inline double getRCVMIPRemainingTimeLimit(
     }
   }
 } /* getRCVMIPRemainingTimeLimit */
+
+std::string getRCVMIPTermAlphaRowName(
+    const int term_ind,
+    const int col_ind) {
+  return "term_" + std::to_string(term_ind) + "_alpha_" + std::to_string(col_ind);
+} /* getRCVMIPTermAlphaRowName */
+
+std::string getRCVMIPTermBetaRowName(
+    const int term_ind) {
+  return "term_" + std::to_string(term_ind) + "_beta";
+} /* getRCVMIPTermBetaRowName */
+
+std::string getRCVMIPTermDeltaRowName(
+    const int term_ind,
+    const int row_ind) {
+  return "term_" + std::to_string(term_ind) + "_delta_" + std::to_string(row_ind);
+} /* getRCVMIPTermDeltaRowName */
 
 int calculateNumFiniteBounds(
   const OsiSolverInterface* const solver,
@@ -476,7 +510,7 @@ void genRCVMIPFromCut(
   // We want Atilde.getVector(i) to return column i of Atilde, which is multiplied by -1. and inputted as row i of common_mx
   Atilde.reverseOrdering(); // make it col-ordered
   if (!Atilde.isColOrdered()) {
-      throw std::logic_error("genRCVMIPFromCut:: Atilde is not col-ordered!");
+      throw std::logic_error("genRCVMIPFromCut: Atilde is not col-ordered!");
   }
   for (int col = 0; col < Atilde.getNumCols(); col++) {
       common_mx.appendRow(-1. * Atilde.getVector(col));
@@ -506,7 +540,7 @@ void genRCVMIPFromCut(
   // Verify size of common_mx, and if incorrect, throw an error giving the sizes
   if (common_mx.getNumRows() != num_cols + 1 + mprime) {
       error_msg(errorstring,
-          "genRCVMIPFromCut:: Num rows (mx, actual, predicted) = (Atilde, %d, %d); (common_mx, %d, %d).\n",
+          "genRCVMIPFromCut: Num rows (mx, actual, predicted) = (Atilde, %d, %d); (common_mx, %d, %d).\n",
           Atilde.getNumRows(), mprime, common_mx.getNumRows(), num_cols + 1 + mprime);
       writeErrorToLog(errorstring, params.logfile);
       exit(1);
@@ -807,11 +841,14 @@ void genRCVMIPFromCut(
   std::vector<std::string> row_names;
   for (int t = 0; t < num_terms; t++) {
     for (int i = 0; i < num_cols; i++) {
-      row_names.push_back("term_" + std::to_string(t) + "_alpha_" + std::to_string(i));
+      // const std::string curr_row_name = "term_" + std::to_string(t) + "_alpha_" + std::to_string(i);
+      const std::string curr_row_name = getRCVMIPTermAlphaRowName(t, i);
+      row_names.push_back(curr_row_name);
     }
-    row_names.push_back("term_" + std::to_string(t) + "_beta");
+    row_names.push_back(getRCVMIPTermBetaRowName(t));
     for (int i = 0; i < mprime; i++) {
-      row_names.push_back("term_" + std::to_string(t) + "_delta_" + std::to_string(i));
+      const std::string curr_row_name = getRCVMIPTermDeltaRowName(t, i);
+      row_names.push_back(curr_row_name);
     }
   }
   row_names.push_back("sum_delta");
@@ -1260,6 +1297,171 @@ void updateRCVMIPFromCut(
   if (vars) { delete[] vars; }
 } /* updateRCVMIPFromCut (Gurobi) */
 
+/// @brief Add constraints that force delta variables to be 0 if u^t_i is 0 for all t
+void forceRCVMIPUnusedDeltaZero(
+    /// [in/out] RCVMIP instance
+    GRBModel* const model,
+    /// [in] Disjunction from which cuts were generated
+    const Disjunction* const disj,
+    /// [in] Solver corresponding to instance for which cuts are valid
+    const OsiSolverInterface* const solver) {
+  // * add constraint \delta_j \le M u^t_j (or negative, as appropriate)
+  //   this ensures that u^t_j > 0 when \delta_j = 1
+  GRBVar* vars = model->getVars();
+  const int num_terms = disj->terms.size();
+  const int mtilde = calculateNumRowsAtilde(disj, solver); // should be same as number of delta rows
+  const double BIG_M = 1e7;
+  for (int row_ind = 0; row_ind < mtilde; row_ind++) {
+    const int rcvmip_delta_ind = 1 + getRowAtildeIndex(solver, disj, row_ind);
+    GRBVar delta_var = vars[rcvmip_delta_ind];
+    for (int term_ind = 0; term_ind < num_terms; term_ind++) {
+      const int rcvmip_ut_var_ind = getUtStartIndex(solver, disj, term_ind, mtilde) + row_ind;
+      GRBVar ut_var = vars[rcvmip_ut_var_ind];
+
+      // Check bounds on u^t_i
+      const double lb = ut_var.get(GRB_DoubleAttr::GRB_DoubleAttr_LB);
+      const double ub = ut_var.get(GRB_DoubleAttr::GRB_DoubleAttr_UB);
+
+      const std::string constr_name = getRCVMIPTermDeltaRowName(term_ind, row_ind) + "_force";
+      if (isZero(lb)) {
+        model->addConstr(delta_var - BIG_M * ut_var, GRB_LESS_EQUAL, 0., constr_name);
+      } else if (isZero(ub)) {
+        model->addConstr(delta_var + BIG_M * ut_var, GRB_LESS_EQUAL, 0., constr_name);
+      } else {
+        error_msg(errorstring, "Encountered unexpected bounds on u^t_%d_%d: %f <= u^t_%d_%d <= %f.\n",
+            term_ind, row_ind, lb, term_ind, row_ind, ub);
+        throw std::logic_error(errorstring);
+      }
+    } // loop over terms
+  } // loop over row indices of Atilde
+  
+  model->update();
+
+  if (vars) { delete[] vars; }
+} /* forceRCVMIPUnusedDeltaZero */
+
+/// @brief Delete constraints that force delta variables to be 0 if u^t_i is 0 for all t
+void unforceRCVMIPUnusedDeltaZero(
+    /// [in/out] RCVMIP instance
+    GRBModel* const model,
+    /// [in] Disjunction from which cuts were generated
+    const Disjunction* const disj,
+    /// [in] Solver corresponding to instance for which cuts are valid
+    const OsiSolverInterface* const solver) {
+  const int mtilde = calculateNumRowsAtilde(disj, solver); // should be same as number of delta rows
+  const int num_terms = disj->terms.size();
+  for (int row_ind = 0; row_ind < mtilde; row_ind++) {
+    for (int term_ind = 0; term_ind < num_terms; term_ind++) {
+      // Get constraint
+      const std::string constr_name = getRCVMIPTermDeltaRowName(term_ind, row_ind) + "_force";
+      GRBConstr constr = model->getConstrByName(constr_name);
+
+      // Delete constraint
+      model->remove(constr);
+    } // loop over terms
+  }
+  model->update();
+} /* unforceRCVMIPUnusedDeltaZero */
+
+/// @brief Modify RCVMIP instance to solve for a certificate of full rank n
+void modifyRCVMIPForStrictRegularity(
+    /// [in/out] RCVMIP instance
+    GRBModel* const model,
+    /// [in] Disjunction from which cuts were generated
+    const Disjunction* const disj,
+    /// [in] Solver corresponding to instance for which cuts are valid
+    const OsiSolverInterface* const solver) {
+  // We modify the problem:
+  // * set constraint sum_delta to be equality with constant-side n
+  GRBConstr sum_delta_constr = model->getConstrByName("sum_delta");
+  sum_delta_constr.set(GRB_DoubleAttr::GRB_DoubleAttr_RHS, solver->getNumCols());
+  sum_delta_constr.set(GRB_CharAttr::GRB_CharAttr_Sense, GRB_EQUAL);
+
+  forceRCVMIPUnusedDeltaZero(model, disj, solver);
+
+  model->update();
+} /* modifyRCVMIPForStrictRegularity */
+
+/// @brief Unmodify RCVMIP instance to solve for a certificate of full rank n
+void unmodifyRCVMIPForStrictRegularity(
+    /// [in/out] RCVMIP instance
+    GRBModel* const model,
+    /// [in] Disjunction from which cuts were generated
+    const Disjunction* const disj,
+    /// [in] Solver corresponding to instance for which cuts are valid
+    const OsiSolverInterface* const solver) {
+  // We modify the problem to set constraint sum_delta to be <= with constant-side n
+  GRBConstr sum_delta_constr = model->getConstrByName("sum_delta");
+  sum_delta_constr.set(GRB_DoubleAttr::GRB_DoubleAttr_RHS, solver->getNumCols());
+  sum_delta_constr.set(GRB_CharAttr::GRB_CharAttr_Sense, GRB_LESS_EQUAL);
+  unforceRCVMIPUnusedDeltaZero(model, disj, solver);
+  model->update();
+} /* unmodifyRCVMIPForStrictRegularity */
+
+/// @brief Relax \alpha, \beta rows
+/// @details
+/// *  (1)  \alpha \theta - Atilde^T u^t     - (D^t)^T   u^t_0     = 0, \forall t \in T,
+///     -->
+///      -\epsilon \theta \le \theta \alpha - u^t Atilde - u_0^t D^t \le \epsilon \theta
+///  *  (2) -\beta  \theta + btilde^T u^t     + (D^t_0)^T u^t_0   \ge 0, \forall t \in T,
+///     -->
+///      -\epsilon \theta \le -\beta \theta + u^t btilde + u_0^t D^t_0 \le \epsilon \theta
+void relaxRCVMIPAlphaBetaConstraints(
+    /// [in/out] RCVMIP instance
+    GRBModel* const model,
+    /// [in] Disjunction from which cuts were generated
+    const Disjunction* const disj,
+    /// [in] Solver corresponding to instance for which cuts are valid
+    const OsiSolverInterface* const solver) {
+  const double THETA_EPSILON = 1e-4;
+  
+  // Get theta variable
+  GRBVar theta_var = model->getVarByName("theta");
+
+  const int num_terms = disj->terms.size();
+  for (int term_ind = 0; term_ind < num_terms; term_ind++) {
+    for (int col_ind = 0; col_ind < solver->getNumCols(); col_ind++) {
+      const std::string alpha_row_name = getRCVMIPTermAlphaRowName(term_ind, col_ind);
+      GRBConstr alpha_constr = model->getConstrByName(alpha_row_name);
+      GRBLinExpr alpha_expr = model->getRow(alpha_constr);
+
+      // Modify coefficient on theta in alpha_constr
+      const double alpha_coeff = alpha_expr.getCoeff(getThetaIndex());
+      model->chgCoeff(alpha_constr, theta_var, alpha_coeff - THETA_EPSILON);
+
+      // Change constraint to be <= 0
+      alpha_constr.set(GRB_CharAttr::GRB_CharAttr_Sense, GRB_LESS_EQUAL);
+
+      // Change name to append _le
+      alpha_constr.set(GRB_StringAttr::GRB_StringAttr_ConstrName, alpha_row_name + "_le");
+
+      // Add copy of this constraint
+      GRBLinExpr alpha_expr_copy = alpha_expr + 2 * THETA_EPSILON * theta_var;
+      model->addConstr(alpha_expr_copy, GRB_GREATER_EQUAL, 0., alpha_row_name + "_ge");
+    } // loop over columns
+
+    // Repeat for beta
+    const std::string beta_row_name = getRCVMIPTermBetaRowName(term_ind);
+    GRBConstr beta_constr = model->getConstrByName(beta_row_name);
+    GRBLinExpr beta_expr = model->getRow(beta_constr);
+
+    // Modify coefficient on theta in beta_constr
+    const double beta_coeff = beta_expr.getCoeff(getThetaIndex());
+    model->chgCoeff(beta_constr, theta_var, beta_coeff - THETA_EPSILON);
+
+    // Change constraint to be <= 0
+    beta_constr.set(GRB_CharAttr::GRB_CharAttr_Sense, GRB_GREATER_EQUAL);
+
+    // Change name to append _le
+    beta_constr.set(GRB_StringAttr::GRB_StringAttr_ConstrName, beta_row_name + "_le");
+
+    // Add copy of this constraint
+    GRBLinExpr beta_expr_copy = beta_expr + 2 * THETA_EPSILON * theta_var;
+    model->addConstr(beta_expr_copy, GRB_GREATER_EQUAL, 0., beta_row_name + "_ge");
+  } // loop over terms
+  model->update();
+} /* relaxRCVMIPAlphaBetaConstraints */
+
 /// @details Solves the RCVMIP and populates the certificate
 /// @return 0 if problem solved to optimality, 1 if problem proved infeasible, 2 if terminated by limit
 RCVMIPStatus solveRCVMIP(
@@ -1301,7 +1503,8 @@ RCVMIPStatus solveRCVMIP(
   bool reached_feasibility = false;
   num_iters = 0;
   double theta_val = 0.;
-  int grb_return_code = 0; 
+  int grb_return_code = 0;
+  bool model_in_strict_regularity_mode = false;
   const int MAX_ITERS = params.get(StrengtheningParameters::intParam::RCVMIP_MAX_ITERS);
   printf("\n## solveRCVMIP (Gurobi): Solving RCVMIP from cut %d. ##\n", cut_ind);
   while (!reached_feasibility && num_iters < MAX_ITERS) {
@@ -1311,7 +1514,9 @@ RCVMIPStatus solveRCVMIP(
             getRCVMIPTimeStatsName(cut_ind))) {
       fprintf(stdout, "Reached time limit after %1.2f seconds and %d iterations.\n",
           rcvmip_timer.get_total_time(getRCVMIPTimeStatsName(cut_ind)), num_iters);
-      return_code = RCVMIPStatus::RCVMIP_TIME_LIMIT;
+      if (return_code != RCVMIPStatus::TENTATIVE_IRREG_LESS) {
+        return_code = RCVMIPStatus::RCVMIP_TIME_LIMIT;
+      }
       break;
     }
 
@@ -1327,7 +1532,7 @@ RCVMIPStatus solveRCVMIP(
       // At this point a solution should be available; if not, exit with an error
       if (model->get(GRB_IntAttr::GRB_IntAttr_SolCount) == 0) {
         error_msg(errorstring,
-            "solveRCVMIP (Gurobi): No solution available for cut %d after %d iterations. Status = %d.\n",
+            "Status is GRB_OPTIMAL but solution available for cut %d after %d iterations. Status = %d.\n",
             cut_ind, num_iters, grb_return_code);
         writeErrorToLog(errorstring, params.logfile);
         throw std::logic_error(errorstring);
@@ -1348,22 +1553,39 @@ RCVMIPStatus solveRCVMIP(
         reached_feasibility = true; // proven irregular
       } // check if theta = 0
       else {
-        return_code = RCVMIPStatus::OPTIMAL_UNCONVERGED;
-
         // Check rank of solution vs number of nonzero multipliers
         std::vector<int> delta_var_inds;
         const int certificate_rank = computeNonzeroIndicesAndRankOfRCVMIPSolution(delta_var_inds, solution.data(), disj, solver, Atilde, params, cut_ind);
         if (certificate_rank < (int) delta_var_inds.size()) {
           if (num_iters < MAX_ITERS) addRankConstraint(model, delta_var_inds, certificate_rank, num_iters);
+
+          if (return_code != RCVMIPStatus::TENTATIVE_IRREG_LESS) {
+            return_code = RCVMIPStatus::OPTIMAL_UNCONVERGED; 
+          }
         } else {
-          return_code = RCVMIPStatus::OPTIMAL_REG; // May not be feasible, due to missing rank constraints
-          reached_feasibility = true; // proven regular
+          // If rank is equal to number of nonzero multipliers, then we have reached feasibility
+          // But we are not sure yet the regularity status
+          // If the number of multipliers is < n, then we can say TENTATIVELY_IRREG_LESS
+          // The only way to know for sure is to exclude the possibility that there is a different solution of full rank
+          // If the optimal value is 0, or it is GRB_INFEASIBLE, then we have proven irregular<
+          // If the optimal value is nonzero, then we will have a certificate of rank n
+          if (certificate_rank == solver->getNumCols()) {
+            return_code = RCVMIPStatus::OPTIMAL_REG;
+            reached_feasibility = true; // proven regular
+          } else {
+            return_code = RCVMIPStatus::TENTATIVE_IRREG_LESS;
+            if (!model_in_strict_regularity_mode) {
+              modifyRCVMIPForStrictRegularity(model, disj, solver);
+              model_in_strict_regularity_mode = true;
+            }
+          }
         }
         #ifdef TRACE
             {
               // Print value of theta variable (should this decrease across rounds?)
-              printf("Iter %d/%d: theta = %f\tcert_rank = %d\tcert_size = %d\n",
-                  num_iters, MAX_ITERS, theta_val, certificate_rank, (int) delta_var_inds.size());
+              printf("Iter %d/%d: theta = %f\tcert_rank = %d\tcert_size = %d\trcvmip_status = %s\n",
+                  num_iters, MAX_ITERS, theta_val, certificate_rank,
+                  (int) delta_var_inds.size(), getRCVMIPStatusName(return_code).c_str());
             }
         #endif
       } // check rank if theta > 0
@@ -1390,7 +1612,11 @@ RCVMIPStatus solveRCVMIP(
       break;
     } // case solver limit is reached
     else if (grb_return_code == GRB_INFEASIBLE) {
-      return_code = RCVMIPStatus::INFEASIBLE;
+      if (model_in_strict_regularity_mode && return_code == RCVMIPStatus::TENTATIVE_IRREG_LESS) {
+        return_code = RCVMIPStatus::OPTIMAL_IRREG_LESS;
+      } else {
+        return_code = RCVMIPStatus::INFEASIBLE;
+      }
       break;
     }
     else if (grb_return_code == GRB_UNBOUNDED) {
@@ -1398,6 +1624,11 @@ RCVMIPStatus solveRCVMIP(
       break;
     }
     else if (grb_return_code == GRB_INF_OR_UNBD) {
+      if (model->get(GRB_IntParam::GRB_IntParam_DualReductions) != 0) {
+        model->set(GRB_IntParam::GRB_IntParam_DualReductions, 0);
+        printf("Turning off dual reductions in iteration %d.\n", num_iters);
+        continue;
+      }
       return_code = RCVMIPStatus::INF_OR_UNBD;
       break;
     }
@@ -1414,7 +1645,7 @@ RCVMIPStatus solveRCVMIP(
       grb_return_code, getGurobiStatusName(grb_return_code).c_str(),
       theta_val);
 
-  if (!reached_feasibility && num_iters >= MAX_ITERS) {
+  if (!reached_feasibility && num_iters >= MAX_ITERS && return_code != RCVMIPStatus::TENTATIVE_IRREG_LESS) {
     return_code = RCVMIPStatus::RCVMIP_ITER_LIMIT;
   }
   
@@ -1422,6 +1653,11 @@ RCVMIPStatus solveRCVMIP(
     const std::string lp_filename = lp_filename_stub + LP_EXT;
     printf("Saving RCVMIP (Gurobi) to file: %s\n", lp_filename.c_str());
     model->write(lp_filename);
+  }
+
+  // Return model to previous state
+  if (model_in_strict_regularity_mode) {
+    unmodifyRCVMIPForStrictRegularity(model, disj, solver);
   }
 
   return return_code;
@@ -1894,11 +2130,16 @@ RegularityStatus analyzeCertificateRegularity(
   num_nonzero_multipliers = rows.size() + cols.size();
   assert( certificate_rank <= num_nonzero_multipliers );
 
-  if (certificate_rank == num_nonzero_multipliers) {
+  if (certificate_rank == num_nonzero_multipliers && certificate_rank == Atilderank) {
     return RegularityStatus::REG;
-  } else if (num_nonzero_multipliers < Atilderank) {
+  }
+  else if (certificate_rank == num_nonzero_multipliers) {
+    return RegularityStatus::TENTATIVE_IRREG_LESS;
+  }
+  else if (num_nonzero_multipliers < Atilderank) {
     return RegularityStatus::IRREG_LESS;
-  } else {
+  }
+  else {
     return RegularityStatus::IRREG_MORE;
   }
 } /* analyzeCertificateRegularity */
@@ -2015,6 +2256,7 @@ void analyzeCutRegularity(
     throw std::logic_error(errorstring);
 #else
     grbSolver = buildGRBModelFromOsi(liftingSolver, params.logfile); 
+    // relaxRCVMIPAlphaBetaConstraints(grbSolver, disj, solver);
     setStrategyForBBTestGurobi(params, 0, *grbSolver);
 #endif
   }
@@ -2159,6 +2401,10 @@ void analyzeCutRegularity(
         regularity_status[cut_ind] = RegularityStatus::UNCONVERGED;
         should_compute_certificate[cut_ind] = COMPUTE_UNCONVERGED_CERTIFICATE && solution.size() > 0 && !isZero(solution[0]);
       }
+      else if (return_code == RCVMIPStatus::TENTATIVE_IRREG_LESS) {
+        regularity_status[cut_ind] = RegularityStatus::TENTATIVE_IRREG_LESS;
+        should_compute_certificate[cut_ind] = false;
+      }
       else if (return_code == RCVMIPStatus::OPTIMAL_IRREG_LESS) {
         regularity_status[cut_ind] = RegularityStatus::IRREG_LESS;
         should_compute_certificate[cut_ind] = false; // optimal solution has theta = 0 and may not have sensible certificate
@@ -2205,7 +2451,8 @@ void analyzeCutRegularity(
         // Retrieve certificate from solution
         getCertificateFromRCVMIPSolution(v[cut_ind], solution, disj, solver, cut_ind, params.logfile);
 
-        if (regularity_status[cut_ind] != RegularityStatus::REG) {
+        if ((regularity_status[cut_ind] != RegularityStatus::REG) 
+            && (regularity_status[cut_ind] != RegularityStatus::TENTATIVE_IRREG_LESS)) {
           // Compute rank of submatrix associated to the certificate
           const RegularityStatus curr_status = analyzeCertificateRegularity(
                   certificate_submx_rank[cut_ind], num_nonzero_multipliers[cut_ind],
@@ -2215,7 +2462,7 @@ void analyzeCutRegularity(
             regularity_status[cut_ind] = curr_status;
           }
         } else {
-          // We already know the certificate is regular, so we do not need to compute rank
+          // We already know the certificate has same rank as submx, so we do not need to compute rank
           // Get the number of nonzero multipliers
           std::vector<int> delta_var_inds;
           computeNonzeroIndicesAndRankOfRCVMIPSolution(delta_var_inds, solution.data(), disj, solver, Atilde, params, cut_ind, false);

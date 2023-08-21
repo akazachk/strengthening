@@ -656,16 +656,19 @@ int main(int argc, char** argv) {
         origCertInfoVec[round_ind].submx_rank[cut_ind] = curr_submx_rank;
         origCertInfoVec[round_ind].num_nnz_mult[cut_ind] = curr_num_nnz_mult;
 
-        switch (static_cast<int>(status)) {
-          case static_cast<int>(RegularityStatus::IRREG_LESS):
+        switch (status) {
+          case RegularityStatus::IRREG_LESS:
             origCertInfoVec[round_ind].num_irreg_less++;
             break;
-          case static_cast<int>(RegularityStatus::REG):
+          case RegularityStatus::REG:
             origCertInfoVec[round_ind].num_reg++;
             orig_regularity_status[cut_ind] = RegularityStatus::REG; // only change for regular because others may be inaccurate
             break;
-          case static_cast<int>(RegularityStatus::IRREG_MORE):
+          case RegularityStatus::IRREG_MORE:
             origCertInfoVec[round_ind].num_irreg_more++;
+            break;
+          case RegularityStatus::TENTATIVE_IRREG_LESS:
+            origCertInfoVec[round_ind].num_tentative_irreg_less++;
             break;
           default:
             error_msg(errorstring, "Invalid status %d from origCertInfoVec for round %d cut %d.\n", static_cast<int>(status), round_ind, cut_ind);
@@ -717,17 +720,20 @@ int main(int argc, char** argv) {
       for (int cut_ind = 0; cut_ind < currCuts.sizeCuts(); cut_ind++) {
         const RegularityStatus status = rcvmip_regularity_status[cut_ind];
 
-        switch (static_cast<int>(status)) {
-          case static_cast<int>(RegularityStatus::IRREG_LESS):
+        switch (status) {
+          case RegularityStatus::IRREG_LESS:
             rcvmipCertInfoVec[round_ind].num_irreg_less++;
             break;
-          case static_cast<int>(RegularityStatus::REG):
+          case RegularityStatus::REG:
             rcvmipCertInfoVec[round_ind].num_reg++;
             break;
-          case static_cast<int>(RegularityStatus::IRREG_MORE):
+          case RegularityStatus::IRREG_MORE:
             rcvmipCertInfoVec[round_ind].num_irreg_more++;
             break;
-          case static_cast<int>(RegularityStatus::UNCONVERGED):
+          case RegularityStatus::TENTATIVE_IRREG_LESS:
+            rcvmipCertInfoVec[round_ind].num_tentative_irreg_less++;
+            break;
+          case RegularityStatus::UNCONVERGED:
             rcvmipCertInfoVec[round_ind].num_unconverged++;
             break;
           default:

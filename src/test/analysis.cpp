@@ -58,6 +58,7 @@ const int countStrInfoEntries = STR_INFO_CONTENTS.size() * 2;
 const std::vector<std::string> CERT_INFO_CONTENTS = {
   "NUM UNMATCHED BOUNDS",
   "AVG NUM CGS FACETS",
+  "NUM TENTATIVE IRREG LESS",
   "NUM IRREG LESS",
   "NUM REGULAR",
   "NUM IRREG MORE",
@@ -851,6 +852,7 @@ void printCertificateInfo(
   for (const auto& info : info_vec) {
     fprintf(logfile, "%s%c", stringValue(info.num_unmatched_bounds, "%d").c_str(), SEP); count++;
     fprintf(logfile, "%s%c", stringValue(info.avg_num_cgs_facet, "%g").c_str(), SEP); count++;
+    fprintf(logfile, "%s%c", stringValue(info.num_tentative_irreg_less, "%d").c_str(), SEP); count++;
     fprintf(logfile, "%s%c", stringValue(info.num_irreg_less, "%d").c_str(), SEP); count++;
     fprintf(logfile, "%s%c", stringValue(info.num_reg, "%d").c_str(), SEP); count++;
     fprintf(logfile, "%s%c", stringValue(info.num_irreg_more, "%d").c_str(), SEP); count++;

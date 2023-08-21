@@ -23,7 +23,7 @@ class OsiRowCut;
 class OsiCuts;
 
 /// @brief Regularity status enumeration to track whether we have identified that a cut is regular or not
-enum class RegularityStatus { IRREG_LESS = -1, REG = 0, IRREG_MORE = 1, UNCONVERGED = 2, UNKNOWN = 3 };
+enum class RegularityStatus { IRREG_LESS = -1, REG = 0, IRREG_MORE = 1, TENTATIVE_IRREG_LESS = 2, UNCONVERGED = 3, UNKNOWN = 4 };
 
 /// @brief Return string with regularity status name
 const std::string getRegularityStatusName(const RegularityStatus& status);
@@ -116,4 +116,4 @@ void analyzeCutRegularity(
     const CoinPackedMatrix& Atilde,
     const int Atilderank,
     const StrengtheningParameters::Parameters& params,
-    const bool USE_INPUT_CERTIFICATE = true);
+    const bool USE_INPUT_CERTIFICATE = false);
