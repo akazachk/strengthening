@@ -103,7 +103,8 @@ void getCutFromCertificate(
   const CoinPackedMatrix* mat = solver->getMatrixByCol();
 
   const int num_extra_rows = disj->common_changed_var.size();
-  const int num_term_rows = disj->terms[term_ind].changed_var.size();
+  const int num_term_bound_rows = disj->terms[term_ind].changed_var.size();
+  const int num_term_ineq_rows = disj->terms[term_ind].ineqs.size();
   for (int col = 0; col < solver->getNumCols(); col++) {
     const int start = mat->getVectorFirst(col);
     alpha[col] += dotProduct(mat->getVectorSize(col), 
@@ -115,14 +116,25 @@ void getCutFromCertificate(
       const double coeff = disj->common_changed_bound[extra_row_ind] <= 0 ? 1. : -1.;
       alpha[col] += coeff * v[row];
     }
-    for (int term_row_ind = 0; term_row_ind < num_term_rows; term_row_ind++) {
+    for (int term_row_ind = 0; term_row_ind < num_term_bound_rows; term_row_ind++) {
       const int var = disj->terms[term_ind].changed_var[term_row_ind];
       if (var != col) continue;
       const int row = solver->getNumRows() + num_extra_rows + term_row_ind;
       const double coeff = disj->terms[term_ind].changed_bound[term_row_ind] <= 0 ? 1. : -1.;
       alpha[col] += coeff * v[row];
     }
-    alpha[col] += v[solver->getNumRows() + num_extra_rows + num_term_rows + col]; // for lb or ub multiplier
+    for (int term_row_ind = 0; term_row_ind < num_term_ineq_rows; term_row_ind++) {
+      // For every row coefficient whose index matches col, add it to alpha[col]
+      const CoinPackedVector& constr = disj->terms[term_ind].ineqs[term_row_ind].row();
+      const int row = solver->getNumRows() + num_extra_rows + num_term_bound_rows + term_row_ind;
+      for (int ind = 0; ind < constr.getNumElements(); ind++) {
+        const int var = constr.getIndices()[ind];
+        if (var != col) continue;
+        const double coeff = constr.getElements()[ind];
+        alpha[col] += coeff * v[row];
+      }
+    }
+    alpha[col] += v[solver->getNumRows() + num_extra_rows + num_term_bound_rows + num_term_ineq_rows + col]; // for lb or ub multiplier
   }
 } /* getCutFromCertificate (disj, solver) */
 

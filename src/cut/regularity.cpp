@@ -483,11 +483,12 @@ void genRCVMIPFromCut(
   }
 
   // Append btilde to common_mx
-  std::vector<int> indices(num_rows);
-  for (int i = 0; i < num_rows; i++) {
+  const int btildesize = btilde.size();
+  std::vector<int> indices(btildesize);
+  for (int i = 0; i < btildesize; i++) {
       indices[i] = i;
   }
-  common_mx.appendRow(num_rows, &indices[0], &btilde[0]);
+  common_mx.appendRow(btildesize, &indices[0], &btilde[0]);
 
   // Append -I_{m'} to common_mx, to set whether corresponding indicator variables will be used
   // for constraints \delta_i \ge u^t_i
@@ -711,11 +712,10 @@ void genRCVMIPFromCut(
   liftingSolver->loadProblem(mx, NULL, NULL, NULL, NULL, NULL, NULL);
   
   // Set constant sides for the rows
-  // First num_cols rows for each term are = 0 constraints
-
+  // First num_cols + 1 rows (alpha + beta) for each term are = 0 constraints
   for (int term_ind = 0; term_ind < disj->num_terms; term_ind++) {
     const int term_rows_start = term_ind * (num_cols + 1 + mprime);
-    for (int col = 0; col < num_cols; col++) {
+    for (int col = 0; col <= num_cols; col++) {
       liftingSolver->setRowLower(term_rows_start + col, 0);
       liftingSolver->setRowUpper(term_rows_start + col, 0);
     }
@@ -1792,7 +1792,7 @@ void getCertificateFromRCVMIPSolution(
     throw std::logic_error(errorstring);
   }
   for (int term_ind = 0; term_ind < disj->num_terms; term_ind++) {
-    const int num_term_constr = disj->terms[term_ind].changed_var.size();
+    const int num_term_constr = disj->terms[term_ind].changed_var.size() + disj->terms[term_ind].ineqs.size();
     const int RCVMIP_term_uvar_start_ind = delta_var_start + mprime + term_ind * mprime;
     const int RCVMIP_term_u0var_start_ind = delta_var_start + mprime + disj->num_terms * mprime + m_t_previous;
     m_t_previous += num_term_constr;
