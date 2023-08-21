@@ -1758,10 +1758,10 @@ void applyStrengtheningCertificateHelper(
 } /* applyStrengtheningCertificateHelper */
 
 void testDisjunctionAndCutSerraBalas2020(
-  Disjunction* disj,
-  CglAdvCut& gen,
-  OsiCuts& currCuts) {
-// Set up custom disjunction
+    Disjunction* disj,
+    CglAdvCut& gen,
+    OsiCuts& currCuts) {
+  // Set up custom disjunction
   disj = new PartialBBDisjunction();
   disj->setupAsNew();
 
@@ -1840,10 +1840,10 @@ void testDisjunctionAndCutSerraBalas2020(
 } /* testDisjunctionAndCutSerraBalas2020 */
 
 void testDisjunctionAndCutPyramid(
-  Disjunction* disj,
-  CglAdvCut& gen,
-  OsiCuts& currCuts) {
-// Set up custom disjunction
+    Disjunction* disj,
+    CglAdvCut& gen,
+    OsiCuts& currCuts) {
+  // Set up custom disjunction
   disj = new PartialBBDisjunction();
   disj->setupAsNew();
 
@@ -1915,6 +1915,10 @@ void testDisjunctionAndCut(
     Disjunction* disj,
     CglAdvCut& gen,
     OsiCuts& currCuts) {
-  // testDisjunctionAndCutSerraBalas2020(disj, gen, currCuts);
-  testDisjunctionAndCutPyramid(disj, gen, currCuts);
+  if (use_temp_option(params.get(StrengtheningParameters::intParam::TEMP), TempOptions::PYRAMID_EXAMPLE)) {
+    testDisjunctionAndCutPyramid(disj, gen, currCuts);
+  }
+  else if (use_temp_option(params.get(StrengtheningParameters::intParam::TEMP), TempOptions::SERRA_BALAS_2020_EXAMPLE)) {
+    testDisjunctionAndCutSerraBalas2020(disj, gen, currCuts);
+  }
 } /* testDisjunctionAndCut */
