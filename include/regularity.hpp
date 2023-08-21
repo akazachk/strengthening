@@ -70,16 +70,6 @@ void updateRCVMIPFromCut(
     const Disjunction* const disj, 
     const OsiSolverInterface* const solver);
 
-/// @brief  Given a solution to the RCVMIP, compute the rank of the submatrix given by the \p solution to the RCVMIP
-int computeRankOfRCVMIPSolution(
-    std::vector<int>& delta,
-    const double* const solution,
-    const Disjunction* const disj,
-    const OsiSolverInterface* const solver,
-    const CoinPackedMatrix& Atilde,
-    const StrengtheningParameters::Parameters& params,
-    const int cut_ind);
-
 /// @brief Obtain solution to RCVMIP
 int solveRCVMIP(
     OsiSolverInterface* const liftingSolver,

@@ -32,6 +32,9 @@ int solveGRBModel(GRBModel& model, FILE* const logfile);
 /// @brief Save model solution into double vector
 void saveSolution(std::vector<double>& solution, const GRBModel& model);
 
+/// @brief Write model to file
+void writeGRBModel(GRBModel& model, const char* f_name);
+
 /// @brief Set \p model parameters
 void setStrategyForBBTestGurobi(
     const StrengtheningParameters::Parameters& params,

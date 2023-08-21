@@ -617,13 +617,26 @@ int main(int argc, char** argv) {
           Atilde.getNumElements() / (double) (Atilde.getNumRows() * Atilde.getNumCols()));
     }
     timer.start_timer(OverallTimeStats::REG_RANK_ATILDE_TIME);
+    std::vector<int> nb_rows, nb_cols;
+    if (SHOULD_COMPUTE_RANK) {
+      for (int var_ind = 0; var_ind < solver->getNumCols() + solver->getNumRows(); var_ind++) {
+        if (isBasicVar(solver, var_ind)) {
+          continue;
+        }
+        if (var_ind < solver->getNumCols()) {
+          nb_cols.push_back(var_ind);
+        } else {
+          nb_rows.push_back(var_ind - solver->getNumCols());
+        }
+      }
+    }
     const int Atilderank = SHOULD_COMPUTE_RANK ?
-        computeRank(&Atilde, std::vector<int>(), std::vector<int>()) :
+        computeRank(&Atilde, nb_rows, nb_cols) :
         solver->getNumCols();
     timer.end_timer(OverallTimeStats::REG_RANK_ATILDE_TIME);
     if (SHOULD_COMPUTE_RANK) {
-      printf("Finished computing rank of Atilde matrix in %s seconds.\n",
-          stringValue(timer.get_total_time(OverallTimeStats::REG_RANK_ATILDE_TIME), "%1.2f").c_str());
+      printf("Finished computing Atilde matrix rank = %d in %s seconds.\n",
+          Atilderank, stringValue(timer.get_total_time(OverallTimeStats::REG_RANK_ATILDE_TIME), "%1.2f").c_str());
     }
 
     // Analyze regularity of the existing certificate for each cut

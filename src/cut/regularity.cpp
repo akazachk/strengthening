@@ -878,7 +878,9 @@ int computeNonzeroIndicesAndRankOfRCVMIPSolution(
     /// [in] Cut index
     const int cut_ind,
     /// [in] Whether to compute the rank of Atilde
-    const bool SHOULD_COMPUTE_RANK = true) {
+    const bool SHOULD_COMPUTE_RANK = true,
+    /// [in] Whether to skip unused delta vars
+    const bool SKIP_UNUSED_DELTA_VARS = true) {
   std::vector<int> rows, cols;
 
   delta_var_inds.clear();
@@ -915,7 +917,7 @@ int computeNonzeroIndicesAndRankOfRCVMIPSolution(
       }
     }
 
-    if (!is_used) {
+    if (!is_used && SKIP_UNUSED_DELTA_VARS) {
       continue;
     }
 
@@ -953,7 +955,7 @@ int computeNonzeroIndicesAndRankOfRCVMIPSolution(
       }
     }
 
-    if (!is_used) {
+    if (!is_used && SKIP_UNUSED_DELTA_VARS) {
       continue;
     }
 
@@ -987,7 +989,7 @@ int computeNonzeroIndicesAndRankOfRCVMIPSolution(
       }
     }
 
-    if (!is_used) {
+    if (!is_used && SKIP_UNUSED_DELTA_VARS) {
       continue;
     }
 
@@ -1331,9 +1333,7 @@ void forceRCVMIPUnusedDeltaZero(
       } else if (isZero(ub)) {
         model->addConstr(delta_var + BIG_M * ut_var, GRB_LESS_EQUAL, 0., constr_name);
       } else {
-        error_msg(errorstring, "Encountered unexpected bounds on u^t_%d_%d: %f <= u^t_%d_%d <= %f.\n",
-            term_ind, row_ind, lb, term_ind, row_ind, ub);
-        throw std::logic_error(errorstring);
+        // Skip equality constraints
       }
     } // loop over terms
   } // loop over row indices of Atilde
@@ -1354,6 +1354,10 @@ void unforceRCVMIPUnusedDeltaZero(
   const int mtilde = calculateNumRowsAtilde(disj, solver); // should be same as number of delta rows
   const int num_terms = disj->terms.size();
   for (int row_ind = 0; row_ind < mtilde; row_ind++) {
+    // Skip equality constraints
+    if (row_ind < solver->getNumRows() && solver->getRowSense()[row_ind] == 'E') {
+      continue;
+    }
     for (int term_ind = 0; term_ind < num_terms; term_ind++) {
       // Get constraint
       const std::string constr_name = getRCVMIPTermDeltaRowName(term_ind, row_ind) + "_force";
@@ -1605,7 +1609,7 @@ RCVMIPStatus solveRCVMIP(
       else {
         // Check rank of solution vs number of nonzero multipliers
         std::vector<int> delta_var_inds;
-        const int certificate_rank = computeNonzeroIndicesAndRankOfRCVMIPSolution(delta_var_inds, solution.data(), disj, solver, Atilde, params, cut_ind);
+        const int certificate_rank = computeNonzeroIndicesAndRankOfRCVMIPSolution(delta_var_inds, solution.data(), disj, solver, Atilde, params, cut_ind, true, false);
         if (certificate_rank < (int) delta_var_inds.size()) {
           if (num_iters < MAX_ITERS) addRankConstraint(model, delta_var_inds, certificate_rank, num_iters);
 

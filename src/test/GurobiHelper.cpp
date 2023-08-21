@@ -203,6 +203,10 @@ void saveSolution(
   }
 } /* saveSolution */
 
+void writeGRBModel(GRBModel& model, const char* f_name) {
+  model.write(f_name);
+} /* writeGRBModel */
+
 /// @details Sets model parameters for branch-and-bound tests
 void setStrategyForBBTestGurobi(const Parameters& params, const int strategy,
     GRBModel& model, const double best_bound, int seed) {
