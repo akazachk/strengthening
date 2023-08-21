@@ -44,6 +44,7 @@ const std::string getRegularityStatusName(const RegularityStatus& status) {
     "REG",
     "IRREG_MORE",
     "TENTATIVE_IRREG_LESS",
+    "TENTATIVE_IRREG_MORE",
     "UNCONVERGED",
     "UNKNOWN"
   };
@@ -56,6 +57,7 @@ enum class RCVMIPStatus {
   OPTIMAL_REG = 0,      ///< Optimal regular solution found
   TENTATIVE_IRREG_LESS, ///< Found solution with n > cert size, with cert size = rank; did not yet prove no other solution exists
   OPTIMAL_IRREG_LESS,   ///< Optimal irregular< solution found
+  TENTATIVE_IRREG_MORE, ///< Found optimal value = 0 in first iteration, but there are rank constraints already
   OPTIMAL_IRREG_MORE,   ///< Optimal irregular> solution found (initial RCVMIP has optimal value = 0)
   OPTIMAL_UNCONVERGED,  ///< Optimal solution found, but not converged
   INFEASIBLE,           ///< Infeasible
@@ -72,6 +74,7 @@ const std::string getRCVMIPStatusName(const RCVMIPStatus& status) {
     "OPTIMAL_REG",
     "TENTATIVE_IRREG_LESS",
     "OPTIMAL_IRREG_LESS",
+    "TENTATIVE_IRREG_MORE",
     "OPTIMAL_IRREG_MORE",
     "OPTIMAL_UNCONVERGED",
     "INFEASIBLE",
@@ -1545,12 +1548,59 @@ RCVMIPStatus solveRCVMIP(
 
       // If optimal objective value = 0, then we have reached feasibility
       if (isZero(theta_val)) {
-        if (num_iters == 1) {
-          return_code = RCVMIPStatus::OPTIMAL_IRREG_MORE; // Need to make sure rank_0 constraint is not causing this
-        } else {
-          return_code = RCVMIPStatus::OPTIMAL_IRREG_LESS;
-        }
         reached_feasibility = true; // proven irregular
+        if (num_iters == 1) {
+          // Need to make sure previous rank constraints not causing this
+          return_code = RCVMIPStatus::TENTATIVE_IRREG_MORE; 
+
+          if ((num_iters == MAX_ITERS) || reachedRCVMIPTimeLimit(rcvmip_timer,
+              params.get(StrengtheningParameters::RCVMIP_CUT_TIMELIMIT),
+              params.get(StrengtheningParameters::RCVMIP_TOTAL_TIMELIMIT),
+              getRCVMIPTimeStatsName(cut_ind))) {
+            break;
+          }
+
+          // Make a copy of the model, remove all rank constraints, resolve
+          // If still 0, then we have proven irregular>
+          // Otherwise, we have proven irregular<
+          GRBModel* model_copy = new GRBModel(*model);
+          GRBConstr* constrs = model_copy->getConstrs();
+          const int num_constrs = model_copy->get(GRB_IntAttr::GRB_IntAttr_NumConstrs);
+          for (int i = 0; i < num_constrs; i++) {
+            const std::string constr_name = constrs[i].get(GRB_StringAttr::GRB_StringAttr_ConstrName);
+            if (constr_name.find("rank_") != std::string::npos) {
+              model_copy->remove(constrs[i]);
+            }
+          }
+          if (constrs) { delete[] constrs; }
+          model_copy->update();
+
+          // Solve
+          grb_return_code = solveGRBModel(*model_copy, params.logfile);
+          num_iters++;
+
+          if (grb_return_code == GRB_OPTIMAL && model_copy->get(GRB_IntAttr::GRB_IntAttr_SolCount) > 0) {
+            const double theta_val_copy = std::abs(model_copy->get(GRB_DoubleAttr::GRB_DoubleAttr_ObjVal));
+            if (isZero(theta_val_copy)) {
+              return_code = RCVMIPStatus::OPTIMAL_IRREG_MORE;
+            } else {
+              return_code = RCVMIPStatus::OPTIMAL_IRREG_LESS;
+            }
+          }
+
+          // { // DEBUG DEBUG DEBG
+          //   if (write_lp) {
+          //     const std::string lp_filename = lp_filename_stub + "_MODEL_COPY" + LP_EXT;
+          //     printf("Saving RCVMIP (Gurobi) to file: %s\n", lp_filename.c_str());
+          //     model_copy->write(lp_filename);
+          //   }
+          // } // DEBUG DEBUG DEBG
+
+          if (model_copy) { delete model_copy; } 
+        } // check if num_iters == 1
+        else { // num_iters > 1
+          return_code = RCVMIPStatus::OPTIMAL_IRREG_LESS; // in first iteration, must have found some certificate with rank < # nnz < n
+        }
       } // check if theta = 0
       else {
         // Check rank of solution vs number of nonzero multipliers
@@ -2403,6 +2453,10 @@ void analyzeCutRegularity(
       }
       else if (return_code == RCVMIPStatus::TENTATIVE_IRREG_LESS) {
         regularity_status[cut_ind] = RegularityStatus::TENTATIVE_IRREG_LESS;
+        should_compute_certificate[cut_ind] = false;
+      }
+      else if (return_code == RCVMIPStatus::TENTATIVE_IRREG_MORE) {
+        regularity_status[cut_ind] = RegularityStatus::TENTATIVE_IRREG_MORE;
         should_compute_certificate[cut_ind] = false;
       }
       else if (return_code == RCVMIPStatus::OPTIMAL_IRREG_LESS) {

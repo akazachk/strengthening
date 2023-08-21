@@ -23,7 +23,15 @@ class OsiRowCut;
 class OsiCuts;
 
 /// @brief Regularity status enumeration to track whether we have identified that a cut is regular or not
-enum class RegularityStatus { IRREG_LESS = -1, REG = 0, IRREG_MORE = 1, TENTATIVE_IRREG_LESS = 2, UNCONVERGED = 3, UNKNOWN = 4 };
+enum class RegularityStatus {
+  IRREG_LESS = -1,
+  REG = 0,
+  IRREG_MORE = 1,
+  TENTATIVE_IRREG_LESS = 2, ///< We have not yet verified that the cut is irregular, but we have a certificate that it is irregular< (i.e., cert submatrix rank < cert num nonzero multipliers < num)
+  TENTATIVE_IRREG_MORE = 3, ///< This could be either a certificate that has more than n nnz, or RCVMIP with optimal value 0 but in the presence of prior/extra rank constraints only
+  UNCONVERGED = 4,
+  UNKNOWN = 5
+};
 
 /// @brief Return string with regularity status name
 const std::string getRegularityStatusName(const RegularityStatus& status);

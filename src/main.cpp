@@ -670,6 +670,9 @@ int main(int argc, char** argv) {
           case RegularityStatus::TENTATIVE_IRREG_LESS:
             origCertInfoVec[round_ind].num_tentative_irreg_less++;
             break;
+          case RegularityStatus::TENTATIVE_IRREG_MORE:
+            origCertInfoVec[round_ind].num_tentative_irreg_more++;
+            break;
           default:
             error_msg(errorstring, "Invalid status %d from origCertInfoVec for round %d cut %d.\n", static_cast<int>(status), round_ind, cut_ind);
             writeErrorToLog(errorstring, params.logfile);
@@ -732,6 +735,9 @@ int main(int argc, char** argv) {
             break;
           case RegularityStatus::TENTATIVE_IRREG_LESS:
             rcvmipCertInfoVec[round_ind].num_tentative_irreg_less++;
+            break;
+          case RegularityStatus::TENTATIVE_IRREG_MORE:
+            rcvmipCertInfoVec[round_ind].num_tentative_irreg_more++;
             break;
           case RegularityStatus::UNCONVERGED:
             rcvmipCertInfoVec[round_ind].num_unconverged++;

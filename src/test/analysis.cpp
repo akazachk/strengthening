@@ -61,6 +61,7 @@ const std::vector<std::string> CERT_INFO_CONTENTS = {
   "NUM TENTATIVE IRREG LESS",
   "NUM IRREG LESS",
   "NUM REGULAR",
+  "NUM TENTATIVE IRREG MORE",
   "NUM IRREG MORE",
   "NUM UNCONVERGED",
   "RCVMIP ITER AVG",
@@ -855,6 +856,7 @@ void printCertificateInfo(
     fprintf(logfile, "%s%c", stringValue(info.num_tentative_irreg_less, "%d").c_str(), SEP); count++;
     fprintf(logfile, "%s%c", stringValue(info.num_irreg_less, "%d").c_str(), SEP); count++;
     fprintf(logfile, "%s%c", stringValue(info.num_reg, "%d").c_str(), SEP); count++;
+    fprintf(logfile, "%s%c", stringValue(info.num_tentative_irreg_more, "%d").c_str(), SEP); count++;
     fprintf(logfile, "%s%c", stringValue(info.num_irreg_more, "%d").c_str(), SEP); count++;
     fprintf(logfile, "%s%c", stringValue(info.num_unconverged, "%d").c_str(), SEP); count++;
     
