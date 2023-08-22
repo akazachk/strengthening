@@ -155,6 +155,7 @@ enum class TempOptions {
   SAVE_IP_OPT = ENUM_OPTION_5, ///< save IP optimum solution
   PYRAMID_EXAMPLE = ENUM_OPTION_20, ///< test 3d pyramid example leading to irregular cut of type ">"
   SERRA_BALAS_2020_EXAMPLE = ENUM_OPTION_21, ///< test Serra, Balas (2020) Figure 1 example leading to irregular cut of type "<"
+  WEDGE_EXAMPLE = ENUM_OPTION_22, ///< test 3D wedge (with bounds) which is regular but only uses 2 rows in the proof
 };
 
 /// @brief Shortcut for checking if a bit is enabled

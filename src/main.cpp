@@ -423,7 +423,8 @@ int main(int argc, char** argv) {
     const bool SHOULD_GENERATE_CUTS = (params.get(intParam::DISJ_TERMS) != 0);
     const bool USE_CUSTOM = 
         use_temp_option(params.get(StrengtheningParameters::intParam::TEMP), TempOptions::PYRAMID_EXAMPLE)
-        || use_temp_option(params.get(StrengtheningParameters::intParam::TEMP), TempOptions::SERRA_BALAS_2020_EXAMPLE);
+        || use_temp_option(params.get(StrengtheningParameters::intParam::TEMP), TempOptions::SERRA_BALAS_2020_EXAMPLE)
+        || use_temp_option(params.get(StrengtheningParameters::intParam::TEMP), TempOptions::WEDGE_EXAMPLE);
     double CURR_EPS = params.get(StrengtheningParameters::doubleParam::EPS);
     Disjunction* disj = NULL;
     if (SHOULD_GENERATE_CUTS) {
@@ -1936,6 +1937,55 @@ void testDisjunctionAndCutPyramid(
   currCuts.insertIfNotDuplicate(newCut);
 } /* testDisjunctionAndCutPyramid */
 
+void testDisjunctionAndCutRegWedge(
+    Disjunction* disj,
+    CglAdvCut& gen,
+    OsiCuts& currCuts) {
+  // Set up custom disjunction
+  disj = new PartialBBDisjunction();
+  disj->setupAsNew();
+
+  // Create disjunction (x0 <= 0) V (x0 >= 1)
+  const int num_vars = solver->getNumCols();
+  assert( num_vars == 3 );
+
+  DisjunctiveTerm term0, term1;
+
+  // term0: (x0 <= 0)
+  term0.initialize(NULL);
+  term0.is_feasible = true;
+  // x0 <= 0 === -x0 >= 0
+  term0.changed_var.push_back(0);
+  term0.changed_bound.push_back(1);
+  term0.changed_value.push_back(0.0);
+
+  // term1: (x0 >= 1)
+  term1.initialize(NULL);
+  term1.is_feasible = true;
+  // x0 >= 1
+  term1.changed_var.push_back(0);
+  term1.changed_bound.push_back(0);
+  term1.changed_value.push_back(1.0);
+
+  // Add terms to disjunction
+  std::vector<DisjunctiveTerm> terms = {term0, term1};
+  for (int i = 0; i < (int) terms.size(); i++) {
+    disj->terms.push_back(terms[i]);
+    disj->num_terms++;
+  }
+
+  // Set disjunction for CglVPC inside of gen
+  gen.gen.setDisjunction(disj);
+
+  // Add cut -x2 >= -1/2
+  CoinPackedVector newCutRow;
+  newCutRow.insert(2, -1.0);
+  OsiRowCut newCut;
+  newCut.setRow(newCutRow);
+  newCut.setLb(-0.5);
+  currCuts.insertIfNotDuplicate(newCut);
+} /* testDisjunctionAndCutRegWedge */
+
 void testDisjunctionAndCut(
     Disjunction* disj,
     CglAdvCut& gen,
@@ -1945,5 +1995,8 @@ void testDisjunctionAndCut(
   }
   else if (use_temp_option(params.get(StrengtheningParameters::intParam::TEMP), TempOptions::SERRA_BALAS_2020_EXAMPLE)) {
     testDisjunctionAndCutSerraBalas2020(disj, gen, currCuts);
+  }
+  else if (use_temp_option(params.get(StrengtheningParameters::intParam::TEMP), TempOptions::WEDGE_EXAMPLE)) {
+    testDisjunctionAndCutRegWedge(disj, gen, currCuts);
   }
 } /* testDisjunctionAndCut */
