@@ -422,8 +422,8 @@ int main(int argc, char** argv) {
 
     const bool SHOULD_GENERATE_CUTS = (params.get(intParam::DISJ_TERMS) != 0);
     const bool USE_CUSTOM = 
-        use_temp_option(params.get(StrengtheningParameters::intParam::TEMP), TempOptions::PYRAMID_EXAMPLE)
-        || use_temp_option(params.get(StrengtheningParameters::intParam::TEMP), TempOptions::SERRA_BALAS_2020_EXAMPLE)
+        use_temp_option(params.get(StrengtheningParameters::intParam::TEMP), TempOptions::SERRA_BALAS_2020_EXAMPLE)
+        || use_temp_option(params.get(StrengtheningParameters::intParam::TEMP), TempOptions::PYRAMID_EXAMPLE)
         || use_temp_option(params.get(StrengtheningParameters::intParam::TEMP), TempOptions::WEDGE_EXAMPLE);
     double CURR_EPS = params.get(StrengtheningParameters::doubleParam::EPS);
     Disjunction* disj = NULL;
@@ -503,18 +503,18 @@ int main(int argc, char** argv) {
         boundInfoVec[round_ind].num_root_bounds_changed = disj->common_changed_var.size();
         boundInfoVec[round_ind].root_obj = disj->root_obj;
 
-        // Delete any infeasible terms
-        std::vector<int> terms_to_erase;
-        for (int term_ind = 0; term_ind < disj->num_terms; term_ind++) {
-          if (!disj->terms[term_ind].is_feasible) {
-            terms_to_erase.push_back(term_ind);
-          }
-        }
-        for (int i = (int) terms_to_erase.size() - 1; i >= 0; i--) {
-          const int term_ind = terms_to_erase[i];
-          disj->terms.erase(disj->terms.begin() + term_ind);
-          disj->num_terms--;
-        }
+      //   // Delete any infeasible terms
+      //   std::vector<int> terms_to_erase;
+      //   for (int term_ind = 0; term_ind < disj->num_terms; term_ind++) {
+      //     if (!disj->terms[term_ind].is_feasible) {
+      //       terms_to_erase.push_back(term_ind);
+      //     }
+      //   }
+      //   for (int i = (int) terms_to_erase.size() - 1; i >= 0; i--) {
+      //     const int term_ind = terms_to_erase[i];
+      //     disj->terms.erase(disj->terms.begin() + term_ind);
+      //     disj->num_terms--;
+      //   }
       }
       updateDisjInfo(disjInfo, disjInfo.num_disj, gen.gen);
       updateCutInfo(cutInfoVec[round_ind], &gen);
@@ -1795,58 +1795,60 @@ void testDisjunctionAndCutSerraBalas2020(
   const int num_vars = solver->getNumCols();
   assert( num_vars == 2 );
 
-  DisjunctiveTerm term1, term2, term3, term4;
+  // term0: (X0 <= 0; X1 <= 0)
+  DisjunctiveTerm term0;
+  term0.initialize(NULL);
+  term0.is_feasible = true;
+  // X0 <= 0 === -X0 >= 0
+  term0.changed_var.push_back(0);
+  term0.changed_bound.push_back(1);
+  term0.changed_value.push_back(0.0);
+  // X1 <= 0 === -X1 >= 0
+  term0.changed_var.push_back(1);
+  term0.changed_bound.push_back(1);
+  term0.changed_value.push_back(0.0);
 
-  // term1: (X0 <= 0; X1 <= 0)
+  // term1: (X0 <= 0; X1 >= 1)
+  DisjunctiveTerm term1;
   term1.initialize(NULL);
-  term1.is_feasible = true;
+  term1.is_feasible = false;
   // X0 <= 0 === -X0 >= 0
   term1.changed_var.push_back(0);
   term1.changed_bound.push_back(1);
   term1.changed_value.push_back(0.0);
-  // X1 <= 0 === -X1 >= 0
+  // X1 >= 1
   term1.changed_var.push_back(1);
-  term1.changed_bound.push_back(1);
-  term1.changed_value.push_back(0.0);
+  term1.changed_bound.push_back(0);
+  term1.changed_value.push_back(1.0);
 
-  // term2: (X0 <= 0; X1 >= 1)
+  // term2: (X0 >= 1; X1 <= 0)
+  DisjunctiveTerm term2;
   term2.initialize(NULL);
   term2.is_feasible = true;
-  // X0 <= 0 === -X0 >= 0
+  // X0 >= 1
   term2.changed_var.push_back(0);
-  term2.changed_bound.push_back(1);
-  term2.changed_value.push_back(0.0);
-  // X1 >= 1
-  term2.changed_var.push_back(1);
   term2.changed_bound.push_back(0);
   term2.changed_value.push_back(1.0);
+  // X1 <= 0 === -X1 >= 0
+  term2.changed_var.push_back(1);
+  term2.changed_bound.push_back(1);
+  term2.changed_value.push_back(0.0);
 
-  // term3: (X0 >= 1; X1 <= 0)
+  // term3: (X0 >= 1; X1 >= 1)
+  DisjunctiveTerm term3;
   term3.initialize(NULL);
-  term3.is_feasible = true;
+  term3.is_feasible = false;
   // X0 >= 1
   term3.changed_var.push_back(0);
   term3.changed_bound.push_back(0);
   term3.changed_value.push_back(1.0);
-  // X1 <= 0 === -X1 >= 0
-  term3.changed_var.push_back(1);
-  term3.changed_bound.push_back(1);
-  term3.changed_value.push_back(0.0);
-
-  // term4: (X0 >= 1; X1 >= 1)
-  term4.initialize(NULL);
-  term4.is_feasible = true;
-  // X0 >= 1
-  term4.changed_var.push_back(0);
-  term4.changed_bound.push_back(0);
-  term4.changed_value.push_back(1.0);
   // X1 >= 1
-  term4.changed_var.push_back(1);
-  term4.changed_bound.push_back(0);
-  term4.changed_value.push_back(1.0);
+  term3.changed_var.push_back(1);
+  term3.changed_bound.push_back(0);
+  term3.changed_value.push_back(1.0);
 
   // Add terms to disjunction
-  std::vector<DisjunctiveTerm> terms = {term1, term2, term3, term4};
+  std::vector<DisjunctiveTerm> terms = {term0, term1, term2, term3};
   for (int i = 0; i < (int) terms.size(); i++) {
     disj->terms.push_back(terms[i]);
     disj->num_terms++;
@@ -1990,11 +1992,11 @@ void testDisjunctionAndCut(
     Disjunction* disj,
     CglAdvCut& gen,
     OsiCuts& currCuts) {
-  if (use_temp_option(params.get(StrengtheningParameters::intParam::TEMP), TempOptions::PYRAMID_EXAMPLE)) {
-    testDisjunctionAndCutPyramid(disj, gen, currCuts);
-  }
-  else if (use_temp_option(params.get(StrengtheningParameters::intParam::TEMP), TempOptions::SERRA_BALAS_2020_EXAMPLE)) {
+  if (use_temp_option(params.get(StrengtheningParameters::intParam::TEMP), TempOptions::SERRA_BALAS_2020_EXAMPLE)) {
     testDisjunctionAndCutSerraBalas2020(disj, gen, currCuts);
+  }
+  else if (use_temp_option(params.get(StrengtheningParameters::intParam::TEMP), TempOptions::PYRAMID_EXAMPLE)) {
+    testDisjunctionAndCutPyramid(disj, gen, currCuts);
   }
   else if (use_temp_option(params.get(StrengtheningParameters::intParam::TEMP), TempOptions::WEDGE_EXAMPLE)) {
     testDisjunctionAndCutRegWedge(disj, gen, currCuts);

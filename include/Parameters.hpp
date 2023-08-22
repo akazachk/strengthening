@@ -153,8 +153,8 @@ enum class TempOptions {
   NONE = 0, ///< default
   CHECK_CUTS_AGAINST_BB_OPT = ENUM_OPTION_3, ///< if integer optimal solution is available, check if it violates any cuts
   SAVE_IP_OPT = ENUM_OPTION_5, ///< save IP optimum solution
-  PYRAMID_EXAMPLE = ENUM_OPTION_20, ///< test 3d pyramid example leading to irregular cut of type ">"
-  SERRA_BALAS_2020_EXAMPLE = ENUM_OPTION_21, ///< test Serra, Balas (2020) Figure 1 example leading to irregular cut of type "<"
+  SERRA_BALAS_2020_EXAMPLE = ENUM_OPTION_20, ///< test Serra, Balas (2020) Figure 1 example leading to irregular cut of type "<"
+  PYRAMID_EXAMPLE = ENUM_OPTION_21, ///< test 3d pyramid example leading to irregular cut of type ">"
   WEDGE_EXAMPLE = ENUM_OPTION_22, ///< test 3D wedge (with bounds) which is regular but only uses 2 rows in the proof
 };
 

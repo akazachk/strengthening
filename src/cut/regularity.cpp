@@ -2158,7 +2158,8 @@ RegularityStatus analyzeCertificateRegularity(
   std::vector<int> cols;
   for (int row = 0; row < solver->getNumRows() + (int) disj->common_changed_var.size(); row++) {
     for (int term = 0; term < disj->num_terms; term++) {
-      if (!isZero(v[term][row]) && disj->terms[term].is_feasible) {
+      // if (!isZero(v[term][row]) && disj->terms[term].is_feasible) {
+      if (!isZero(v[term][row])) {
         rows.push_back(row);
         break;
       }
@@ -2168,7 +2169,8 @@ RegularityStatus analyzeCertificateRegularity(
   for (int col = 0; col < solver->getNumCols(); col++) {
     for (int term = 0; term < disj->num_terms; term++) {
       const int first_col_ind = solver->getNumRows() + disj->common_changed_var.size() + disj->terms[term].changed_var.size();
-      if (!isZero(v[term][first_col_ind + col]) && disj->terms[term].is_feasible) {
+      // if (!isZero(v[term][first_col_ind + col]) && disj->terms[term].is_feasible) {
+      if (!isZero(v[term][first_col_ind + col])) {
         cols.push_back(col);
         break;
       }
