@@ -23,6 +23,7 @@ fi
 # Constants
 SILENT=1
 MODE="gmic"
+MODE="str-a2"
 MODE="str"
 
 if [ "$(uname)" == "Darwin" ]; then
@@ -63,13 +64,13 @@ if [ "$(uname)" == "Darwin" ]; then
   export INSTANCE_DIR=${REPOS_DIR}/instances
 fi
 
-if [ "$(hostname)" == "ISE-D41L3Q3"]; then
+if [ "$(hostname)" == "ISE-D41L3Q3" ]; then
   # w401
   export LOCAL_DIR=${HOME}
   export INSTANCE_DIR=${LOCAL_DIR}/instances
   export RESULTS_DIR=${LOCAL_DIR}/results
   export SOL_DIR=${INSTANCE_DIR}/solutions
-  export INSTANCE_LIST=${VPC_DIR}/presolved.instances
+  export INSTANCE_LIST=${VPC_DIR}/scripts/presolved.instances
 fi
 
 # Accept user options for instance list, results directory, and mode
@@ -103,6 +104,18 @@ elif [ $MODE = "str" ]; then
   PARAMS="$PARAMS --bb_runs=0"
   PARAMS="$PARAMS --bb_mode=10"
   PARAMS="$PARAMS --bb_strategy=536"
+  PARAMS="$PARAMS -a1"
+elif [ $MODE = "str-a2" ]; then
+  PARAMS="$PARAMS --strengthen=1"
+  PARAMS="$PARAMS --gomory=-1"
+  PARAMS="$PARAMS --bb_runs=0"
+  PARAMS="$PARAMS --bb_mode=10"
+  PARAMS="$PARAMS --bb_strategy=536"
+  PARAMS="$PARAMS -a2"
+  PARAMS="$PARAMS --rcvmip_max_iters=1000"
+  PARAMS="$PARAMS --rcvmip_total_timelimit=3600"
+  PARAMS="$PARAMS --rcvmip_cut_timelimit=600"
+  PARAMS="$PARAMS --atilde_compute_rank=0"
 else
   echo "*** ERROR: Option $MODE not recognized"
   exit
