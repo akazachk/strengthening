@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Usage example:
 #   prepare_batch.sh /path/to/instance/list.instances /path/to/results/dir [-dX (depth)] [str / gmic (mode)]
-#   prepare_batch.sh /path/to/instance/list.instances /path/to/results/dir [test / preprocess / bb / bb0]
 
+if [ ! -z "$VPC_DIR" ]; then
+  export VPC_DIR=${VPC_DIR}
+fi
 if [ -z "$PROJ_DIR" ]
 then
   if [ ! -z "${REPOS_DIR}" ]
@@ -23,21 +25,38 @@ SILENT=1
 MODE="gmic"
 MODE="str"
 
-export PROJ_DIR=`realpath -s ${PROJ_DIR}`
-export VPC_DIR=`realpath -s ${PROJ_DIR}/../vpc`
-export INSTANCE_DIR=${VPC_DIR}/data/instances
-export SOL_DIR=${VPC_DIR}/data/solutions
-export SCRIPT_DIR=${PROJ_DIR}/scripts
-export INSTANCE_LIST=${SCRIPT_DIR}/small_presolved.instances
-export RESULTS_DIR=${PROJ_DIR}/results
+if [ "$(uname)" == "Darwin" ]; then
+  export PROJ_DIR=`realpath ${PROJ_DIR}`
+  if [ -z "$VPC_DIR" ]; then
+    export VPC_DIR=`realpath ${PROJ_DIR}/../vpc`
+  fi
+else
+  export PROJ_DIR=`realpath -s ${PROJ_DIR}`
+  if [ -z "$VPC_DIR" ]; then
+    export VPC_DIR=`realpath -s ${PROJ_DIR}/../vpc`
+  fi
+else
+fi
+
 export OPTFILE="${VPC_DIR}/data/ip_obj.csv"
-JOB_LIST="job_list_strengthen.txt"
+export SCRIPT_DIR=${PROJ_DIR}/scripts
+
+export INSTANCE_DIR=${VPC_DIR}/data/instances
+export RESULTS_DIR=${PROJ_DIR}/results
+export SOL_DIR=${VPC_DIR}/data/solutions
+
 EXECUTABLE="${PROJ_DIR}/Release/main"
 
+if [ $MODE == preprocess ]; then
+  INSTANCE_LIST=${SCRIPT_DIR}/original.instances
+else
+  INSTANCE_LIST=${SCRIPT_DIR}/presolved.instances
+fi
+
 # HiPerGator
-export INSTANCE_DIR=/blue/akazachkov/${USER}/instances/vpc
-export RESULTS_DIR=/blue/akazachkov/$USER/results
-export INSTANCE_LIST=${SCRIPT_DIR}/presolved.instances
+#export INSTANCE_DIR=/blue/akazachkov/${USER}/instances/vpc
+#export RESULTS_DIR=/blue/akazachkov/$USER/results
+#export INSTANCE_LIST=${SCRIPT_DIR}/presolved.instances
 
 if [ "$(uname)" == "Darwin" ]; then
   # MBP19
@@ -69,6 +88,7 @@ fi
 if [ ! -z $4 ]; then
   MODE=$4
 fi
+JOB_LIST="job_list_${MODE}.txt"
 
 # Set parameters
 PARAMS=" --optfile=${OPTFILE}"
@@ -113,6 +133,7 @@ TASK_ID=0
 TOTAL_ERRORS=0
 #> $JOB_LIST
 for d in ${depthList[*]}; do
+  echo "Depth $d"
   while read line; do
     TASK_ID=$((TASK_ID+1))
 
@@ -124,7 +145,7 @@ for d in ${depthList[*]}; do
     # Prepare out directory, based on current date
     CASE_NUM=`printf %0${NUM_DIGITS}d $TASK_ID`
     STUB=`date +%F`
-    OUT_DIR="${RESULTS_DIR}/$STUB/str-d$d/${CASE_NUM}"
+    OUT_DIR=${RESULTS_DIR}/$STUB/${MODE}/${CASE_NUM}
 
     # Print status (in silent mode, print a ".")
     if [ $SILENT != 1 ]; then
@@ -176,5 +197,12 @@ for d in ${depthList[*]}; do
     fi
   done < ${INSTANCE_LIST}
 done # loop over depth list
+
+# Shuffle command order to not have dependency in the performance
+if [ $(uname) == "Darwin" ]; then
+  sort -R ${JOB_LIST} --output=${JOB_LIST}
+else
+  shuf -o ${JOB_LIST} < ${JOB_LIST}
+fi
 
 echo "Done preparing $JOB_LIST. Total errors: $TOTAL_ERRORS."
