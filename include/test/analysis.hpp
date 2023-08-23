@@ -115,8 +115,8 @@ struct SummaryCertificateInfo {
   /// use multipliers to find number of distinct facets of the cut-generating set S using certificates
   double avg_num_cgs_facet = 0.;
   
-  /// number of certificates seemingly (but not proved) leading to submx rank less than number of nonzero multipliers used
-  int num_tentative_irreg_less = 0;
+  // /// number of certificates seemingly (but not proved) leading to submx rank less than number of nonzero multipliers used
+  // int num_tentative_irreg_less = 0;
   /// number of certificates for which the first iteration has RCVMIP optimal value = 0, but there were rank constraints, and resolving was not possible (e.g., for limit reasons)
   int num_tentative_irreg_more = 0;
   /// number of certificates leading to submx rank less than number of nonzero multipliers used

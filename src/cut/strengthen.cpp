@@ -523,7 +523,7 @@ int strengthenCut(
     int lt_zero_ind = -1, gt_zero_ind = -1;
     for (int term_ind = 0; term_ind < disj->num_terms; term_ind++) {
       const DisjunctiveTerm& term = disj->terms[term_ind];
-      const int num_disj_ineqs = (int) disj->common_changed_var.size() + term.changed_var.size();
+      const int num_disj_ineqs = (int) disj->common_changed_var.size() + term.changed_var.size() + term.ineqs.size();
       const double ukt = v[term_ind][solver->getNumRows() + num_disj_ineqs + col];
       if (lessThanVal(ukt, 0)) {
         if (lt_zero_ind == -1) lt_zero_ind = term_ind;
@@ -771,7 +771,7 @@ void setupMonoidalIP(
     el_ind++;
 
     const DisjunctiveTerm& term = disj->terms[t];
-    const int num_disj_ineqs = (int) disj->common_changed_var.size() + term.changed_var.size();
+    const int num_disj_ineqs = (int) disj->common_changed_var.size() + term.changed_var.size() + term.ineqs.size();
     //const double utk = std::abs(v[t][solver->getNumRows() + num_disj_ineqs + var]);
     const double utk = v[t][solver->getNumRows() + num_disj_ineqs + var];
     // TODO figure out safe floating point comparison

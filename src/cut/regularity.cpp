@@ -43,7 +43,7 @@ const std::string getRegularityStatusName(const RegularityStatus& status) {
     "IRREG_LESS",
     "REG",
     "IRREG_MORE",
-    "TENTATIVE_IRREG_LESS",
+    // "TENTATIVE_IRREG_LESS",
     "TENTATIVE_IRREG_MORE",
     "UNCONVERGED",
     "UNKNOWN"
@@ -55,7 +55,7 @@ const std::string getRegularityStatusName(const RegularityStatus& status) {
 /// @brief Status of RCVMIP after termination of #solveRCVMIP
 enum class RCVMIPStatus {
   OPTIMAL_REG = 0,      ///< Optimal regular solution found
-  TENTATIVE_IRREG_LESS, ///< Found solution with n > cert size, with cert size = rank; did not yet prove no other solution exists
+  // TENTATIVE_IRREG_LESS, ///< Found solution with n > cert size, with cert size = rank; did not yet prove no other solution exists
   OPTIMAL_IRREG_LESS,   ///< Optimal irregular< solution found
   TENTATIVE_IRREG_MORE, ///< Found optimal value = 0 in first iteration, but there are rank constraints already
   OPTIMAL_IRREG_MORE,   ///< Optimal irregular> solution found (initial RCVMIP has optimal value = 0)
@@ -72,7 +72,7 @@ enum class RCVMIPStatus {
 const std::string getRCVMIPStatusName(const RCVMIPStatus& status) {
   const std::vector<std::string> RCVMIPStatusName = {
     "OPTIMAL_REG",
-    "TENTATIVE_IRREG_LESS",
+    // "TENTATIVE_IRREG_LESS",
     "OPTIMAL_IRREG_LESS",
     "TENTATIVE_IRREG_MORE",
     "OPTIMAL_IRREG_MORE",
@@ -1521,9 +1521,9 @@ RCVMIPStatus solveRCVMIP(
             getRCVMIPTimeStatsName(cut_ind))) {
       fprintf(stdout, "Reached time limit after %1.2f seconds and %d iterations.\n",
           rcvmip_timer.get_total_time(getRCVMIPTimeStatsName(cut_ind)), num_iters);
-      if (return_code != RCVMIPStatus::TENTATIVE_IRREG_LESS) {
-        return_code = RCVMIPStatus::RCVMIP_TIME_LIMIT;
-      }
+      // if (return_code != RCVMIPStatus::TENTATIVE_IRREG_LESS) {
+      return_code = RCVMIPStatus::RCVMIP_TIME_LIMIT;
+      // }
       break;
     }
 
@@ -1603,37 +1603,43 @@ RCVMIPStatus solveRCVMIP(
           if (model_copy) { delete model_copy; } 
         } // check if num_iters == 1
         else { // num_iters > 1
-          return_code = RCVMIPStatus::OPTIMAL_IRREG_LESS; // in first iteration, must have found some certificate with rank < # nnz < n
+          return_code = RCVMIPStatus::OPTIMAL_IRREG_LESS; // in first iteration, must have found some certificate with rank < nnz < n
         }
       } // check if theta = 0
-      else {
+      else { // else, theta > 0
         // Check rank of solution vs number of nonzero multipliers
         std::vector<int> delta_var_inds;
-        const int certificate_rank = computeNonzeroIndicesAndRankOfRCVMIPSolution(delta_var_inds, solution.data(), disj, solver, Atilde, params, cut_ind, true, false);
+        const int certificate_rank = computeNonzeroIndicesAndRankOfRCVMIPSolution(delta_var_inds,
+            solution.data(), disj, solver, Atilde, params, cut_ind, true, true);
         if (certificate_rank < (int) delta_var_inds.size()) {
           if (num_iters < MAX_ITERS) addRankConstraint(model, delta_var_inds, certificate_rank, num_iters);
 
-          if (return_code != RCVMIPStatus::TENTATIVE_IRREG_LESS) {
-            return_code = RCVMIPStatus::OPTIMAL_UNCONVERGED; 
-          }
+          // if (return_code != RCVMIPStatus::TENTATIVE_IRREG_LESS) {
+          return_code = RCVMIPStatus::OPTIMAL_UNCONVERGED;
+          // }
         } else {
           // If rank is equal to number of nonzero multipliers, then we have reached feasibility
-          // But we are not sure yet the regularity status
-          // If the number of multipliers is < n, then we can say TENTATIVELY_IRREG_LESS
-          // The only way to know for sure is to exclude the possibility that there is a different solution of full rank
-          // If the optimal value is 0, or it is GRB_INFEASIBLE, then we have proven irregular<
-          // If the optimal value is nonzero, then we will have a certificate of rank n
-          if (certificate_rank == solver->getNumCols()) {
-            return_code = RCVMIPStatus::OPTIMAL_REG;
-            reached_feasibility = true; // proven regular
-          } else {
-            return_code = RCVMIPStatus::TENTATIVE_IRREG_LESS;
-            if (!model_in_strict_regularity_mode) {
-              modifyRCVMIPForStrictRegularity(model, disj, solver);
-              model_in_strict_regularity_mode = true;
-            }
-          }
-        }
+          return_code = RCVMIPStatus::OPTIMAL_REG;
+          reached_feasibility = true; // proven regular
+          // { // OLD OLD OLD CODE
+          // // But we are not sure yet the regularity status
+          // // If the number of multipliers is < n, then we can say TENTATIVELY_IRREG_LESS
+          // // The only way to know for sure is to exclude the possibility that there is a different solution of full rank
+          // // If the optimal value is 0, or it is GRB_INFEASIBLE, then we have proven irregular<
+          // // If the optimal value is nonzero, then we will have a certificate of rank n
+          // if (certificate_rank == solver->getNumCols()) {
+          //   return_code = RCVMIPStatus::OPTIMAL_REG;
+          //   reached_feasibility = true; // proven regular
+          // } else {
+          //   return_code = RCVMIPStatus::OPTIMAL_IRREG_LESS;
+          //   // return_code = RCVMIPStatus::TENTATIVE_IRREG_LESS;
+          //   // if (!model_in_strict_regularity_mode) {
+          //   //   modifyRCVMIPForStrictRegularity(model, disj, solver);
+          //   //   model_in_strict_regularity_mode = true;
+          //   // }
+          // }
+          // } // OLD OLD OLD CODE
+        } // else, certificate_rank == delta_var_inds.size()
         #ifdef TRACE
             {
               // Print value of theta variable (should this decrease across rounds?)
@@ -1666,11 +1672,11 @@ RCVMIPStatus solveRCVMIP(
       break;
     } // case solver limit is reached
     else if (grb_return_code == GRB_INFEASIBLE) {
-      if (model_in_strict_regularity_mode && return_code == RCVMIPStatus::TENTATIVE_IRREG_LESS) {
-        return_code = RCVMIPStatus::OPTIMAL_IRREG_LESS;
-      } else {
+      // if (model_in_strict_regularity_mode && return_code == RCVMIPStatus::TENTATIVE_IRREG_LESS) {
+      //   return_code = RCVMIPStatus::OPTIMAL_IRREG_LESS;
+      // } else {
         return_code = RCVMIPStatus::INFEASIBLE;
-      }
+      // }
       break;
     }
     else if (grb_return_code == GRB_UNBOUNDED) {
@@ -1699,7 +1705,9 @@ RCVMIPStatus solveRCVMIP(
       grb_return_code, getGurobiStatusName(grb_return_code).c_str(),
       theta_val);
 
-  if (!reached_feasibility && num_iters >= MAX_ITERS && return_code != RCVMIPStatus::TENTATIVE_IRREG_LESS) {
+  if (!reached_feasibility 
+      // && return_code != RCVMIPStatus::TENTATIVE_IRREG_LESS
+      && num_iters >= MAX_ITERS) {
     return_code = RCVMIPStatus::RCVMIP_ITER_LIMIT;
   }
   
@@ -2186,12 +2194,12 @@ RegularityStatus analyzeCertificateRegularity(
   num_nonzero_multipliers = rows.size() + cols.size();
   assert( certificate_rank <= num_nonzero_multipliers );
 
-  if (certificate_rank == num_nonzero_multipliers && certificate_rank == Atilderank) {
+  if (certificate_rank == num_nonzero_multipliers) { //&& certificate_rank == Atilderank) {
     return RegularityStatus::REG;
   }
-  else if (certificate_rank == num_nonzero_multipliers) {
-    return RegularityStatus::TENTATIVE_IRREG_LESS;
-  }
+  // else if (certificate_rank == num_nonzero_multipliers) {
+  //   return RegularityStatus::TENTATIVE_IRREG_LESS;
+  // }
   else if (num_nonzero_multipliers < Atilderank) {
     return RegularityStatus::IRREG_LESS;
   }
@@ -2457,10 +2465,10 @@ void analyzeCutRegularity(
         regularity_status[cut_ind] = RegularityStatus::UNCONVERGED;
         should_compute_certificate[cut_ind] = COMPUTE_UNCONVERGED_CERTIFICATE && solution.size() > 0 && !isZero(solution[0]);
       }
-      else if (return_code == RCVMIPStatus::TENTATIVE_IRREG_LESS) {
-        regularity_status[cut_ind] = RegularityStatus::TENTATIVE_IRREG_LESS;
-        should_compute_certificate[cut_ind] = false;
-      }
+      // else if (return_code == RCVMIPStatus::TENTATIVE_IRREG_LESS) {
+      //   regularity_status[cut_ind] = RegularityStatus::TENTATIVE_IRREG_LESS;
+      //   should_compute_certificate[cut_ind] = false;
+      // }
       else if (return_code == RCVMIPStatus::TENTATIVE_IRREG_MORE) {
         regularity_status[cut_ind] = RegularityStatus::TENTATIVE_IRREG_MORE;
         should_compute_certificate[cut_ind] = false;
@@ -2511,8 +2519,8 @@ void analyzeCutRegularity(
         // Retrieve certificate from solution
         getCertificateFromRCVMIPSolution(v[cut_ind], solution, disj, solver, cut_ind, params.logfile);
 
-        if ((regularity_status[cut_ind] != RegularityStatus::REG) 
-            && (regularity_status[cut_ind] != RegularityStatus::TENTATIVE_IRREG_LESS)) {
+        if ((regularity_status[cut_ind] != RegularityStatus::REG)) {
+            // && (regularity_status[cut_ind] != RegularityStatus::TENTATIVE_IRREG_LESS)) {
           // Compute rank of submatrix associated to the certificate
           const RegularityStatus curr_status = analyzeCertificateRegularity(
                   certificate_submx_rank[cut_ind], num_nonzero_multipliers[cut_ind],

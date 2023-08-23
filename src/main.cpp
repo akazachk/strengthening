@@ -681,9 +681,9 @@ int main(int argc, char** argv) {
           case RegularityStatus::IRREG_MORE:
             origCertInfoVec[round_ind].num_irreg_more++;
             break;
-          case RegularityStatus::TENTATIVE_IRREG_LESS:
-            origCertInfoVec[round_ind].num_tentative_irreg_less++;
-            break;
+          // case RegularityStatus::TENTATIVE_IRREG_LESS:
+          //   origCertInfoVec[round_ind].num_tentative_irreg_less++;
+          //   break;
           case RegularityStatus::TENTATIVE_IRREG_MORE:
             origCertInfoVec[round_ind].num_tentative_irreg_more++;
             break;
@@ -747,9 +747,9 @@ int main(int argc, char** argv) {
           case RegularityStatus::IRREG_MORE:
             rcvmipCertInfoVec[round_ind].num_irreg_more++;
             break;
-          case RegularityStatus::TENTATIVE_IRREG_LESS:
-            rcvmipCertInfoVec[round_ind].num_tentative_irreg_less++;
-            break;
+          // case RegularityStatus::TENTATIVE_IRREG_LESS:
+          //   rcvmipCertInfoVec[round_ind].num_tentative_irreg_less++;
+          //   break;
           case RegularityStatus::TENTATIVE_IRREG_MORE:
             rcvmipCertInfoVec[round_ind].num_tentative_irreg_more++;
             break;
