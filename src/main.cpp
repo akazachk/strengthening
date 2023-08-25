@@ -128,7 +128,7 @@ OsiCuts gmics, mycuts, rcvmip_cuts;
 
 std::string dir = "", filename = "", instname = "", in_file_ext = "";
 
-CglAdvCut::ExitReason exitReason;
+CglVPC::ExitReason exitReason;
 TimeStats timer;
 std::time_t start_time_t, end_time_t;
 char start_time_string[25];
@@ -478,7 +478,7 @@ int main(int argc, char** argv) {
       //     vpc->timer.get_value(CglVPC::VPCTimeStats::DISJ_SETUP_TIME));
 
       // Update statistics about the disjunction objective value and cuts
-      exitReason = gen.exitReason;
+      exitReason = gen.gen.exitReason;
       if (gen.gen.disj()) {
         disj = (gen.gen.disj())->clone();
         disjInfo.num_disj++;
@@ -899,7 +899,7 @@ int main(int argc, char** argv) {
     printf(
         "Round %d/%d: Completed round of cut generation (exit reason: %s).\n", 
         round_ind + 1, params.get(ROUNDS),
-        CglAdvCut::ExitReasonName[static_cast<int>(exitReason)].c_str());
+        CglVPC::ExitReasonName[static_cast<int>(exitReason)].c_str());
     printf(
         "Cuts generated = %d (%d total). GMICs generated = %d.\n",
         boundInfoVec[round_ind].num_mycut,
@@ -1175,7 +1175,7 @@ int wrapUp(int retCode, int argc, char** argv) {
 #endif
 
     // Print exit reason and finish
-    fprintf(logfile, "%s,", CglAdvCut::ExitReasonName[exitReasonInt].c_str());
+    fprintf(logfile, "%s,", CglVPC::ExitReasonName[exitReasonInt].c_str());
     fprintf(logfile, "%s,", end_time_string);
     fprintf(logfile, "%.2f,", difftime(end_time_t, start_time_t));
     fprintf(logfile, "%s,", instname.c_str());
@@ -1209,7 +1209,7 @@ int wrapUp(int retCode, int argc, char** argv) {
   // Print branch-and-bound results
   printf("%s", bb_output.c_str());
 
-  printf("\n## Exiting cut generation with reason %s. ##\n", CglAdvCut::ExitReasonName[exitReasonInt].c_str());
+  printf("\n## Exiting cut generation with reason %s. ##\n", CglVPC::ExitReasonName[exitReasonInt].c_str());
 #ifdef CODE_VERSION
   printf("Code Version: %s\n", CODE_VERSION_STRING.substr(0,8).c_str());
 #endif
