@@ -305,10 +305,14 @@ int computeRank(
     const Eigen::MatrixXd& M,
     /// [in] Precision when taking submatrix rank
     const double MATRIX_EPS) {
-  // Eigen::FullPivLU<Eigen::MatrixXd> lu(M);
-	// lu.setThreshold(MATRIX_EPS);
-	// return (int) lu.rank();
-  return M.colPivHouseholderQr().rank();
+  const bool USE_FULLPIVLU = false;
+  if (USE_FULLPIVLU) {
+    Eigen::FullPivLU<Eigen::MatrixXd> lu(M);
+    lu.setThreshold(MATRIX_EPS);
+    return (int) lu.rank();
+  } else {
+    return M.colPivHouseholderQr().rank();
+  }
 } /* computeRank (Eigen::MatrixXd) */
 
 int computeRank(
