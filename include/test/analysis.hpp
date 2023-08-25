@@ -127,6 +127,8 @@ struct SummaryCertificateInfo {
   int num_irreg_more = 0;
   /// number of cuts for which certificate could not be ascertained
   int num_unconverged = 0;
+  /// number of cuts for which certificate could not be computed due to numerical instability
+  int num_numerically_unstable = 0;
   /// number of iterations needed to compute certificate
   std::vector<int> num_iterations;
   /// time spent per cut on RCVMIP

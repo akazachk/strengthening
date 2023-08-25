@@ -30,7 +30,8 @@ enum class RegularityStatus {
   // TENTATIVE_IRREG_LESS = 2, ///< We have not yet verified that the cut is irregular, but we have a certificate that it is irregular< (i.e., cert submatrix rank < cert num nonzero multipliers < num)
   TENTATIVE_IRREG_MORE = 3, ///< This could be either a certificate that has more than n nnz, or RCVMIP with optimal value 0 but in the presence of prior/extra rank constraints only
   UNCONVERGED = 4,          ///< RCVMIP did not converge (or we ran out of time before trying for that cut)
-  UNKNOWN = 5
+  NUMERICALLY_UNSTABLE = 5, ///< RCVMIP leads to nonzero, but very small, theta value
+  UNKNOWN = 6
 };
 
 /// @brief Return string with regularity status name

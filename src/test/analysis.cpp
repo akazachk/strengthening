@@ -64,6 +64,7 @@ const std::vector<std::string> CERT_INFO_CONTENTS = {
   "NUM TENTATIVE IRREG MORE",
   "NUM IRREG MORE",
   "NUM UNCONVERGED",
+  "NUM UNSTABLE",
   "RCVMIP ITER AVG",
   "RCVMIP ITER STDDEV",
   "RCVMIP ITER MIN",
@@ -859,6 +860,7 @@ void printCertificateInfo(
     fprintf(logfile, "%s%c", stringValue(info.num_tentative_irreg_more, "%d").c_str(), SEP); count++;
     fprintf(logfile, "%s%c", stringValue(info.num_irreg_more, "%d").c_str(), SEP); count++;
     fprintf(logfile, "%s%c", stringValue(info.num_unconverged, "%d").c_str(), SEP); count++;
+    fprintf(logfile, "%s%c", stringValue(info.num_numerically_unstable, "%d").c_str(), SEP); count++;
     
     std::vector<double> iter_stats = computeStats(info.num_iterations);
     fprintf(logfile, "%s%c", stringValue(iter_stats[(int) Stat::avg], "%g").c_str(), SEP); count++;

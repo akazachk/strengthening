@@ -38,6 +38,12 @@
 // For timing
 #include "TimeStats.hpp"
 
+/// Value at which we consider RCVMIP objective value = 0
+const double RCVMIP_ZERO_TOL = 1e-7;
+
+/// Value at which we consider RCVMIP objective value nonzero but unstable
+const double RCVMIP_UNSTABLE_TOL = 1e-3;
+
 const std::string getRegularityStatusName(const RegularityStatus& status) {
   const std::vector<std::string> RegularityStatusName = {
     "IRREG_LESS",
@@ -46,6 +52,7 @@ const std::string getRegularityStatusName(const RegularityStatus& status) {
     // "TENTATIVE_IRREG_LESS",
     "TENTATIVE_IRREG_MORE",
     "UNCONVERGED",
+    "NUMERICALLY_UNSTABLE",
     "UNKNOWN"
   };
   const int FIRST_INDEX_VALUE = static_cast<int>(RegularityStatus::IRREG_LESS);
@@ -66,9 +73,11 @@ enum class RCVMIPStatus {
   SOLVER_LIMIT,         ///< Cutoff, iteration, node, time, solution, user_obj limit
   RCVMIP_ITER_LIMIT,    ///< RCVMIP iteration limit
   RCVMIP_TIME_LIMIT,    ///< RCVMIP time limit
+  NUMERICALLY_UNSTABLE, ///< RCVMIP objective value is nonzero but very small
   ERROR                 ///< Error
 };
 
+/// @brief Return string with RCVMIP status name
 const std::string getRCVMIPStatusName(const RCVMIPStatus& status) {
   const std::vector<std::string> RCVMIPStatusName = {
     "OPTIMAL_REG",
@@ -83,6 +92,7 @@ const std::string getRCVMIPStatusName(const RCVMIPStatus& status) {
     "SOLVER_LIMIT",
     "RCVMIP_ITER_LIMIT",
     "RCVMIP_TIME_LIMIT",
+    "NUMERICALLY_UNSTABLE",
     "ERROR",
   };
   const int FIRST_INDEX_VALUE = static_cast<int>(RCVMIPStatus::OPTIMAL_REG);
@@ -104,7 +114,7 @@ inline const std::string getRCVMIPTotalTimeStatsName() {
 } /* getRCVMIPTotalTimeStatsName */
 
 /// @brief Call TimeStats::reachedTimeLimit(const std::string&,const double) const
-inline bool reachedRCVMIPTimeLimit(
+bool reachedRCVMIPTimeLimit(
     const TimeStats& rcvmip_timer,
     const double max_time_per_cut, 
     const double max_total_time,
@@ -118,7 +128,7 @@ inline bool reachedRCVMIPTimeLimit(
 } /* reachedRCVMIPTimeLimit */
 
 /// @brief Calculate remaining time limit for RCVMIP
-inline double getRCVMIPRemainingTimeLimit(
+double getRCVMIPRemainingTimeLimit(
     const TimeStats& rcvmip_timer,
     const double max_time_per_cut,
     const double max_total_time) {
@@ -1555,7 +1565,7 @@ RCVMIPStatus solveRCVMIP(
       assert( isVal(solution[0], theta_val) );
 
       // If optimal objective value = 0, then we have reached feasibility
-      if (isZero(theta_val)) {
+      if (isZero(theta_val, RCVMIP_ZERO_TOL)) {
         reached_feasibility = true; // proven irregular
         if (num_iters == 1) {
           // Need to make sure previous rank constraints not causing this
@@ -1592,7 +1602,7 @@ RCVMIPStatus solveRCVMIP(
 
           if (grb_return_code == GRB_OPTIMAL && model_copy->get(GRB_IntAttr::GRB_IntAttr_SolCount) > 0) {
             const double theta_val_copy = std::abs(model_copy->get(GRB_DoubleAttr::GRB_DoubleAttr_ObjVal));
-            if (isZero(theta_val_copy)) {
+            if (isZero(theta_val_copy, RCVMIP_ZERO_TOL)) {
               // Even without rank constraints, optimal value is zero, so this is OPTIMAL_IRREG_MORE
               return_code = RCVMIPStatus::OPTIMAL_IRREG_MORE;
             } else {
@@ -1614,6 +1624,12 @@ RCVMIPStatus solveRCVMIP(
           return_code = RCVMIPStatus::OPTIMAL_IRREG_LESS; // in first iteration, must have found some certificate with rank < nnz < n
         }
       } // check if theta = 0
+      else if (isZero(theta_val, RCVMIP_UNSTABLE_TOL)) {
+        // Objective value is small but nonzero
+        // We are not sure about the regularity status but this could lead to numerical issues
+        return_code = RCVMIPStatus::NUMERICALLY_UNSTABLE;
+        break;
+      }
       else { // else, theta > 0
         // Check rank of solution vs number of nonzero multipliers
         std::vector<int> delta_var_inds;
@@ -1677,7 +1693,7 @@ RCVMIPStatus solveRCVMIP(
 
       // Save solution if one exists and has nonzero theta value
       if (model->get(GRB_IntAttr::GRB_IntAttr_SolCount) > 0) {
-        if (!isZero(theta_val)) {
+        if (isZero(theta_val, RCVMIP_ZERO_TOL)) {
           saveSolution(solution, *model);
         }
       }
@@ -2490,6 +2506,10 @@ void analyzeCutRegularity(
         regularity_status[cut_ind] = RegularityStatus::UNCONVERGED;
         should_compute_certificate[cut_ind] = COMPUTE_UNCONVERGED_CERTIFICATE && solution.size() > 0 && !isZero(solution[0]);
       }
+      else if (return_code == RCVMIPStatus::NUMERICALLY_UNSTABLE) {
+        regularity_status[cut_ind] = RegularityStatus::NUMERICALLY_UNSTABLE;
+        should_compute_certificate[cut_ind] = false;
+      }
       // else if (return_code == RCVMIPStatus::TENTATIVE_IRREG_LESS) {
       //   regularity_status[cut_ind] = RegularityStatus::TENTATIVE_IRREG_LESS;
       //   should_compute_certificate[cut_ind] = false;
@@ -2521,7 +2541,7 @@ void analyzeCutRegularity(
       }
 
       // Check that we have a sensible certificate
-      if (isZero(solution[0])) {
+      if (solution.size() == 0 || isZero(solution[0], RCVMIP_ZERO_TOL)) {
         should_compute_certificate[cut_ind] = 0;  
       }
 
