@@ -1189,7 +1189,7 @@ void setRCVMIPHintOrStart(
 } /* setRCVMIPHintOrStart */
 
 /// @brief Append row to Gurobi \p model restricting sum of delta variables to be <= \p rank
-void addRankConstraint(
+int addRankConstraint(
     /// [in/out] Gurobi RCVMIP instance 
     GRBModel* const model,
     /// [in] Indices of delta variables
@@ -1200,7 +1200,7 @@ void addRankConstraint(
     const int iter_num = -1) {
   const int num_nonzero_multipliers = delta.size();
   if (num_nonzero_multipliers <= rank) {
-    return;
+    return -1;
   }
 
   // Create new GRBLinExpr
@@ -1228,6 +1228,8 @@ void addRankConstraint(
   if (all_vars) {
     delete[] all_vars;
   }
+
+  return model->get(GRB_IntAttr::GRB_IntAttr_NumConstrs) - 1;
 } /* addRankConstraint (Gurobi) */
 
 void updateRCVMIPFromCut(
@@ -1474,6 +1476,8 @@ void relaxRCVMIPAlphaBetaConstraints(
 RCVMIPStatus solveRCVMIP(
     /// [in/out] RCVMIP instance
     GRBModel* const model,
+    /// [in/out] Indices of rank constraints previously added to the model (or, when returned, including new rank constraints)
+    std::vector<int>& rank_constraints,
     /// [out] Solution to the RCVMIP, where order of variables is theta, delta, {v^t}_{t \in T}
     std::vector<double>& solution,
     /// [out] Number of iterations taken
@@ -1555,8 +1559,14 @@ RCVMIPStatus solveRCVMIP(
         reached_feasibility = true; // proven irregular
         if (num_iters == 1) {
           // Need to make sure previous rank constraints not causing this
+          // If there were no rank constraints in the first place, then it is indeed IRREG_MORE
+          if (rank_constraints.size() == 0) {
+            return_code = RCVMIPStatus::OPTIMAL_IRREG_MORE;
+            break;
+          }
           return_code = RCVMIPStatus::TENTATIVE_IRREG_MORE; 
 
+          // If we ran out of time, give up, keeping the tentative status
           if ((num_iters == MAX_ITERS) || reachedRCVMIPTimeLimit(rcvmip_timer,
               params.get(StrengtheningParameters::RCVMIP_CUT_TIMELIMIT),
               params.get(StrengtheningParameters::RCVMIP_TOTAL_TIMELIMIT),
@@ -1569,23 +1579,21 @@ RCVMIPStatus solveRCVMIP(
           // Otherwise, we have proven irregular<
           GRBModel* model_copy = new GRBModel(*model);
           GRBConstr* constrs = model_copy->getConstrs();
-          const int num_constrs = model_copy->get(GRB_IntAttr::GRB_IntAttr_NumConstrs);
-          for (int i = 0; i < num_constrs; i++) {
+          for (const int i : rank_constraints) {
             const std::string constr_name = constrs[i].get(GRB_StringAttr::GRB_StringAttr_ConstrName);
-            if (constr_name.find("rank_") != std::string::npos) {
-              model_copy->remove(constrs[i]);
-            }
+            assert (constr_name.find("rank_") != std::string::npos);
+            model_copy->remove(constrs[i]);
           }
           if (constrs) { delete[] constrs; }
           model_copy->update();
 
-          // Solve
           grb_return_code = solveGRBModel(*model_copy, params.logfile);
           num_iters++;
 
           if (grb_return_code == GRB_OPTIMAL && model_copy->get(GRB_IntAttr::GRB_IntAttr_SolCount) > 0) {
             const double theta_val_copy = std::abs(model_copy->get(GRB_DoubleAttr::GRB_DoubleAttr_ObjVal));
             if (isZero(theta_val_copy)) {
+              // Even without rank constraints, optimal value is zero, so this is OPTIMAL_IRREG_MORE
               return_code = RCVMIPStatus::OPTIMAL_IRREG_MORE;
             } else {
               return_code = RCVMIPStatus::OPTIMAL_IRREG_LESS;
@@ -1612,7 +1620,12 @@ RCVMIPStatus solveRCVMIP(
         const int certificate_rank = computeNonzeroIndicesAndRankOfRCVMIPSolution(delta_var_inds,
             solution.data(), disj, solver, Atilde, params, cut_ind, true, true);
         if (certificate_rank < (int) delta_var_inds.size()) {
-          if (num_iters < MAX_ITERS) addRankConstraint(model, delta_var_inds, certificate_rank, num_iters);
+          if (num_iters < MAX_ITERS) {
+            const int new_constr_ind = addRankConstraint(model, delta_var_inds, certificate_rank, rank_constraints.size());
+            if (new_constr_ind >= 0) {
+              rank_constraints.push_back(new_constr_ind);
+            }
+          }
 
           // if (return_code != RCVMIPStatus::TENTATIVE_IRREG_LESS) {
           return_code = RCVMIPStatus::OPTIMAL_UNCONVERGED;
@@ -1728,7 +1741,7 @@ RCVMIPStatus solveRCVMIP(
 
 #ifdef USE_CBC
 /// @brief Append row to \p model restricting sum of delta variables to be <= \p rank
-void addRankConstraint(
+int addRankConstraint(
     /// [in/out] CbcModel RCVMIP instance
     CbcModel* const model,
     /// [in] Indices of delta variables
@@ -1739,7 +1752,7 @@ void addRankConstraint(
     const int iter_num = -1) {
   const int num_nonzero_multipliers = delta.size();
   if (num_nonzero_multipliers <= rank) {
-    return;
+    return -1;
   }
 
   // Add new constraint to Cbc model to restrict sum of delta variables to be <= rank
@@ -1758,6 +1771,8 @@ void addRankConstraint(
   const std::string name = iter_num > 0 ? "rank_" + std::to_string(iter_num) : "";
 
   model->solver()->addRow(row, lb, ub, name);
+
+  return model->getNumRows() - 1;
 } /* addRankConstraint (Cbc) */
 
 void updateRCVMIPFromCut(
@@ -1866,6 +1881,9 @@ void updateRCVMIPFromCut(
 RCVMIPStatus solveRCVMIP(
     /// [in/out] RCVMIP instance
     CbcModel* const cbc_model,
+    /// [in/out] Indices of rank constraints previously added to the model (or, when returned, including new rank constraints)
+    std::vector<int>& rank_constraints,
+    /// [out] Solution to the RCVMIP, where order of variables is theta, delta, {v^t}_{t \in T}
     /// [out] Solution to the RCVMIP, where order of variables is theta, delta, {v^t}_{t \in T}
     std::vector<double>& solution,
     /// [out] Number of iterations taken
@@ -1955,7 +1973,10 @@ RCVMIPStatus solveRCVMIP(
     std::vector<int> delta_var_inds;
     const int certificate_rank = computeNonzeroIndicesAndRankOfRCVMIPSolution(delta_var_inds, solution.data(), disj, solver, Atilde, params, cut_ind);
     if (certificate_rank < (int) delta_var_inds.size()) {
-      addRankConstraint(cbc_model, delta_var_inds, certificate_rank, num_iters);
+      const int new_constr_ind = addRankConstraint(cbc_model, delta_var_inds, certificate_rank, rank_constraints.size());
+      if (new_constr_ind >= 0) {
+        rank_constraints.push_back(new_constr_ind);
+      }
     } else {
       reached_feasibility = true;
     }
@@ -2348,6 +2369,7 @@ void analyzeCutRegularity(
   //const bool COMPUTE_UNCONVERGED_CERTIFICATE = !USE_INPUT_CERTIFICATE; // when input certificate provided, then we may want to keep it
   const bool COMPUTE_UNCONVERGED_CERTIFICATE = true;
   std::vector<bool> should_compute_certificate(cuts.sizeCuts(), false);
+  std::vector<int> rank_constraints; // indices of new rank constraints added to the model
   
   // Loop over cuts
   int cut_ind = 0;
@@ -2403,7 +2425,10 @@ void analyzeCutRegularity(
         // Only need the delta_var_inds
         std::vector<int> delta_var_inds;
         computeNonzeroIndicesAndRankOfRCVMIPSolution(delta_var_inds, solution.data(), disj, solver, Atilde, params, cut_ind, false);
-        addRankConstraint(grbSolver, delta_var_inds, certificate_submx_rank[cut_ind], 0);
+        const int new_constr_ind = addRankConstraint(grbSolver, delta_var_inds, certificate_submx_rank[cut_ind], 0);
+        if (new_constr_ind >= 0) {
+          rank_constraints.push_back(new_constr_ind);
+        }
       } else {
         reached_feasibility = true;
         regularity_status[cut_ind] = RegularityStatus::REG;
@@ -2426,10 +2451,10 @@ void analyzeCutRegularity(
           grbSolver->set(GRB_DoubleParam_TimeLimit, GRB_INFINITY);
         }
 
-        return_code = solveRCVMIP(grbSolver, solution, num_iters[cut_ind], disj, solver, Atilde, params, cut_ind, rcvmip_timer);
+        return_code = solveRCVMIP(grbSolver, rank_constraints, solution, num_iters[cut_ind], disj, solver, Atilde, params, cut_ind, rcvmip_timer);
   #endif
       } else {
-        return_code = solveRCVMIP(cbcSolver, solution, num_iters[cut_ind], disj, solver, Atilde, params, cut_ind, rcvmip_timer);
+        return_code = solveRCVMIP(cbcSolver, rank_constraints, solution, num_iters[cut_ind], disj, solver, Atilde, params, cut_ind, rcvmip_timer);
       }
       const double rcvmip_end_time = rcvmip_timer.get_total_time(getRCVMIPTimeStatsName(cut_ind));
       rcvmip_time[cut_ind] = rcvmip_end_time - rcvmip_start_time;
