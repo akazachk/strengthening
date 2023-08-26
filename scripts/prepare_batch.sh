@@ -23,8 +23,8 @@ fi
 # Constants
 SILENT=1
 MODE="gmic"
-MODE="str-a2"
 MODE="str"
+MODE="str-a2"
 
 if [ "$(uname)" == "Darwin" ]; then
   export PROJ_DIR=`realpath ${PROJ_DIR}`
@@ -36,7 +36,6 @@ else
   if [ -z "$VPC_DIR" ]; then
     export VPC_DIR=`realpath -s ${PROJ_DIR}/../vpc`
   fi
-else
 fi
 
 export OPTFILE="${VPC_DIR}/data/ip_obj.csv"
@@ -80,16 +79,16 @@ fi
 if [ ! -z $2 ]; then
   RESULTS_DIR=$2
 fi
+if [ ! -z $4 ]; then
+  MODE=$4
+fi
+JOB_LIST="job_list_${MODE}.txt"
 if [ -z $3 ]; then
   depthList=(2 4 8 16 32 64)
   > $JOB_LIST
 else
   depthList=($3)
 fi
-if [ ! -z $4 ]; then
-  MODE=$4
-fi
-JOB_LIST="job_list_${MODE}.txt"
 
 # Set parameters
 PARAMS=" --optfile=${OPTFILE}"
