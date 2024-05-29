@@ -38,6 +38,11 @@ else
   fi
 fi
 
+if [ "$(hostname)" == "ISE-D41L3Q3" ]; then
+  # w401
+  export PROJ_DIR=${REPOS_DIR}/strengthening
+fi
+
 export OPTFILE="${VPC_DIR}/data/ip_obj.csv"
 export SCRIPT_DIR=${PROJ_DIR}/scripts
 

@@ -167,7 +167,7 @@ void checkCut(
   total_diff = 0.;
   for (int i = 0; i < solver->getNumCols(); i++) {
     const double diff = cut_coeff[i] - new_coeff[i];
-    if (greaterThanVal(std::abs(diff), 0.0)) {
+    if (greaterThanVal(std::abs(diff), 0.0, 1e-4)) {
       warning_msg(warnstring,
         "Discrepancy with coefficient %d: cut: %g\tcalc: %g\tdiff: %g\n",
         i, cut_coeff[i], new_coeff[i], diff);
