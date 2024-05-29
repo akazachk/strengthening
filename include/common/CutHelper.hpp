@@ -13,6 +13,7 @@ class OsiRowCut;
 class OsiCuts;
 class OsiSolverInterface;
 
+/// @brief 
 void setOsiRowCut(OsiRowCut* const cut, const std::vector<int>& nonZeroColIndex,
     const int num_coeff, const double* coeff, const double rhs,
     const double EPS);
@@ -22,6 +23,7 @@ int cleanCut(OsiRowCut* const cut,
     const OsiSolverInterface* const solver,
     const double EPS_COEFF,
     const double MAX_DYN,
+    const int MIN_SUP_THRESH,
     const int MAX_SUP_ABS,
     const double MAX_SUP_REL,
     const double MIN_VIOL_ABS,
@@ -40,10 +42,15 @@ int isRowDifferent(const CoinPackedVectorBase* const cut1Vec, const double cut1r
 
 /** @brief Determine parallelism; two vectors are parallel iff u.v/|u|*|v| = 1 */
 double getParallelism(const CoinPackedVectorBase& vec1, const CoinPackedVectorBase& vec2);
+/** @brief Determine parallelism; two vectors are parallel iff u.v/|u|*|v| = 1 */
 double getParallelism(const CoinPackedVectorBase& vec1, const int numElem, const double* vec2);
+/** @brief Determine parallelism; two vectors are parallel iff u.v/|u|*|v| = 1 */
 double getParallelism(const int numElem, const double* vec1, const double* vec2);
+/// @brief Determine orthogonality; 1 - #getParallelism(const CoinPackedVectorBase&, const CoinPackedVectorBase&)
 double getOrthogonality(const CoinPackedVectorBase& vec1, const CoinPackedVectorBase& vec2);
+/// @brief Determine orthogonality; 1 - #getParallelism(const CoinPackedVectorBase&, const int, const double*)
 double getOrthogonality(const CoinPackedVectorBase& vec1, const int numElem, const double* vec2);
+/// @brief Determine orthogonality; 1 - #getParallelism(const int, const double*, const double*)
 double getOrthogonality(const int numElem, const double* vec1, const double* vec2);
 
 /** @brief Check whether a cut is duplicate or too orthogonal to a previous cut in the collection */

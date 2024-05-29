@@ -7,14 +7,19 @@
 #   make --warn-undefined-variables
 ### Shell type ###
 # REMEMBER: use hard tabs only in a makefile
+HOSTNAME := $(shell hostname)
 UNAME := $(shell uname)
+ARCH := $(shell uname -m)
+ifeq ($(ARCH),x86_64)
+	ARCH=x86-64
+endif
 ifeq ($(UNAME),Linux)
   CC     = g++
-  SYSTEM = x86-64_linux
+  SYSTEM = ${ARCH}_linux
 endif
 ifeq ($(UNAME),Darwin)
   CC     = clang++
-  SYSTEM = x86-64_osx
+  SYSTEM = ${ARCH}_osx
 endif
 RM = rm -f
 
@@ -59,14 +64,47 @@ ifeq ($(USER),kazaalek)
 	EIG_LIB = ${HOME}/repos/eigen
 endif
 
-# HiPerGator
+# rupert, HiPerGator
 ifeq ($(USER),akazachkov)
-  ifeq ($(UNAME),Linux)
-	  COIN_OR = ${HOME}/repos/coin-or/Cbc-$(COIN_VERSION)
-    GUROBI_LINK = gurobi95
-    GUROBI_DIR = ${GUROBI_LOCAL}
-		CPLEX_DIR = ${CPLEX_HOME}
-		CONDA_LIB = ${HOME}/.conda/envs/vpc/lib
+	ifeq ($(UNAME),Linux)
+	  not_hpg =
+		ifeq ($(HOSTNAME),ISE-D41L3Q3)
+			not_hpg = true
+		endif
+		ifeq ($(HOSTNAME),rupert0)
+			not_hpg = true
+		endif
+		ifeq ($(HOSTNAME),rupert1)
+			not_hpg = true
+		endif
+		ifeq ($(HOSTNAME),rupert2)
+			not_hpg = true
+		endif
+		ifeq ($(HOSTNAME),rupert3)
+			not_hpg = true
+		endif
+		ifeq ($(HOSTNAME),rupert4)
+			not_hpg = true
+		endif
+		ifeq ($(HOSTNAME),rupert5)
+			not_hpg = true
+		endif
+		ifeq ($(HOSTNAME),rupert6)
+			not_hpg = true
+		endif
+
+		ifdef not_hpg
+			GUROBI_LINK = gurobi100
+			GUROBI_DIR = ${GUROBI_HOME}
+			CPLEX_DIR = ${CPLEX_HOME}
+		else
+			# HiPerGator
+			COIN_OR = ${HOME}/repos/coin-or/Cbc-$(COIN_VERSION)
+			GUROBI_LINK = gurobi95
+			GUROBI_DIR = ${GUROBI_LOCAL}
+			CPLEX_DIR = ${CPLEX_HOME}
+			CONDA_LIB = ${HOME}/.conda/envs/vpc/lib
+		endif
 	endif
 	# MacStudio
   ifeq ($(UNAME),Darwin)
@@ -103,6 +141,7 @@ USE_GUROBI = 1
 USE_CPLEX  = 0
 USE_CLP_SOLVER = 1
 USE_CPLEX_SOLVER = 0
+CALC_COND_NUM = 0
 
 # Concerning executable
 EXECUTABLE_STUB = main
@@ -144,10 +183,12 @@ VPC_SOURCES += \
     disjunction/SplitDisjunction.cpp \
     disjunction/VPCDisjunction.cpp
 
-
 # For running tests (need not include these or main if releasing code to others)
 DIR_LIST += $(SRC_DIR)/test
 SOURCES += test/analysis.cpp test/BBHelper.cpp
+ifeq ($(CALC_COND_NUM), 1)
+	VPC_SOURCES += test/condition_number.cpp
+endif
 
 ### Set build values based on user variables ###
 ifeq ($(BUILD_CONFIG),debug)
@@ -159,7 +200,10 @@ ifeq ($(BUILD_CONFIG),debug)
   OPT_FLAG = -O0
   DEFS = -DTRACE -DCODE_VERSION="\#${CODE_VERSION}" -DVPC_VERSION="\#${VPC_VERSION}"
   # message-length sets line wrapping for error messages; 0 = no line wrapping
-  EXTRA_FLAGS = -fmessage-length=0
+	# PIC stands for "position-independent code" to generate machine code that
+	# can be loaded at different memory addresses, such as by using relative rather than absolute jumps
+	# which is needed for shared libraries
+  EXTRA_FLAGS = -fmessage-length=0 -fPIC
   ifeq ($(CC),g++)
     ifneq ($(USE_CPLEX),1)
       EXTRA_FLAGS += -fkeep-inline-functions 
@@ -172,7 +216,7 @@ ifeq ($(BUILD_CONFIG),release)
   DEBUG_FLAG = 
   OPT_FLAG = -O3
   DEFS = -DCODE_VERSION="\#${CODE_VERSION}" -DVPC_VERSION="\#${VPC_VERSION}"
-  EXTRA_FLAGS = -fmessage-length=0 -ffast-math
+  EXTRA_FLAGS = -fmessage-length=0 -ffast-math -fPIC
 endif
 ifeq ($(USE_COIN),1)
   DEFS += -DUSE_COIN
@@ -211,6 +255,9 @@ ifeq ($(COIN_VERSION),2.10)
 endif
 ifeq ($(COIN_VERSION),trunk)
   DEFS += -DCBC_VERSION_210PLUS -DCBC_TRUNK -DSAVE_NODE_INFO
+endif
+ifeq ($(CALC_COND_NUM),1)
+	DEFS += -DCALC_COND_NUM
 endif
 
 EXECUTABLE = $(OUT_DIR)/$(EXECUTABLE_STUB)
