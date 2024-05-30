@@ -138,3 +138,46 @@ void testGomory(
   }
   printf("\n## DONE DEBUGGING GMICS ##\n");
 } /* testGomory */
+
+/// @brief Currently this is for debugging purposes for bm23
+void checkCoefficientForColumn(
+    /// [in] RCVMILP instance
+    const OsiSolverInterface* const liftingSolver,
+    /// [in] Solution to the RCVMILP instance
+    const double* const solution,
+    /// [in] Term to check
+    const int term_ind,
+    /// [in] Column to check
+    const int col) {
+  // Verify column col by taking dot product with solver matrix
+  const CoinPackedMatrix* mat = liftingSolver->getMatrixByRow();
+  const int num_rows = 20;
+  const int num_cols = 27;
+  const int mprime = num_rows + num_cols * 2;
+  const int num_term_rows = 1; // assuming the same for all
+  const int num_terms = 2;
+  const int term_uvar_start_ind = 1 + mprime + term_ind * mprime;
+  const int term_uvar_lb_start_ind = term_uvar_start_ind + num_rows;
+  const int term_uvar_ub_start_ind = term_uvar_lb_start_ind + num_cols;
+  const int term_u0var_start_ind = 1 + mprime + num_terms * mprime + term_ind * num_term_rows;
+  double val_rows = 0;
+  for (int row = 0; row < num_rows; row++) {
+    const int rcvmilp_row_ind_for_col = term_ind * (num_cols + 1 + mprime) + col;
+    const int rcvmilp_col_ind_for_row = term_uvar_start_ind + row;
+    const double coeff = mat->getCoefficient(rcvmilp_row_ind_for_col, rcvmilp_col_ind_for_row);
+    val_rows += coeff * solution[rcvmilp_col_ind_for_row];
+  }
+  val_rows /= -1. * solution[0]; // (recall that liftingSolver has \alpha \theta - v^t A^t = 0 as the constraint, so we negate the coefficients here to get back v^t A^t)
+  const double val_lb = solution[term_uvar_lb_start_ind + col] / solution[0];
+  const double val_ub = -1. * solution[term_uvar_ub_start_ind + col] / solution[0];
+  
+  double val_u0 = 0;
+  for (int row = 0; row < num_term_rows; row++) {
+    const int rcvmilp_row_ind_for_col = term_ind * (num_cols + 1 + mprime) + col;
+    const int rcvmilp_col_ind_for_row = term_u0var_start_ind + row;
+    const double coeff = mat->getCoefficient(rcvmilp_row_ind_for_col, rcvmilp_col_ind_for_row);
+    val_u0 += coeff * solution[rcvmilp_col_ind_for_row];
+  }
+  
+  printf("value for coefficient on cut for column %d = %f.\n", col, val_rows + val_lb + val_ub + val_u0);
+} /* checkCoefficientForColumn */

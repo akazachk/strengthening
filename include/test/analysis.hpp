@@ -13,6 +13,7 @@ class OsiSolverInterface;
 class OsiCuts;
 
 #include "CglAdvCut.hpp" // CutType, ObjectiveType
+#include "CutCertificate.hpp"
 namespace StrengtheningParameters {
   struct Parameters;
 }
@@ -25,9 +26,14 @@ struct SummaryBoundInfo; // analysis.hpp
 struct SummaryDisjunctionInfo; // analysis.hpp
 struct SummaryCutInfo; // analysis.hpp
 struct SummaryStrengtheningInfo; // analysis.hpp
+struct SummaryCertificateInfo; // analysis.hpp
 
-/// [term][Farkas multiplier]
-using CutCertificate = std::vector<std::vector<double> >;
+/// @brief Container for types of statistics we want to keep
+enum class Stat { total = 0, avg, stddev, min, max, num_stats };
+
+/// @brief Compute statistics in #Stat about given templated vector
+template <typename T>
+std::vector<double> computeStats(const std::vector<T>& v);
 
 /// @brief Information about objective value at various points in the solution process
 /// @details Gives objective for the LP and IP, and after adding GMICs, L&PCs, VPCs, and combinations of these cuts
@@ -40,13 +46,22 @@ struct SummaryBoundInfo {
   double ip_obj = std::numeric_limits<double>::max();
   double gmic_obj = std::numeric_limits<double>::max();
   double lpc_obj = std::numeric_limits<double>::max();
+
   double unstr_mycut_obj = std::numeric_limits<double>::max();
   double unstr_gmic_mycut_obj = std::numeric_limits<double>::max();
   double unstr_all_cuts_obj = std::numeric_limits<double>::max();
+  
   double mycut_obj = std::numeric_limits<double>::max();
   double gmic_mycut_obj = std::numeric_limits<double>::max();
   double all_cuts_obj = std::numeric_limits<double>::max();
-  int num_root_bounds_changed = 0, num_gmic = 0, num_lpc = 0, num_mycut = 0, num_str_cuts = 0;
+  
+  double rcvmip_mycut_obj = std::numeric_limits<double>::max(); ///< objective after adding strengthened cuts using RCVMILP certificate
+  double rcvmip_gmic_mycut_obj = std::numeric_limits<double>::max(); ///< objective after adding GMICs and strengthened cuts using RCVMILP certificate
+  double rcvmip_all_cuts_obj = std::numeric_limits<double>::max(); ///< objective after adding all cuts, including strengthened cuts using RCVMILP certificate and strengthened with original certificate
+  
+  int num_root_bounds_changed = 0, num_gmic = 0, num_lpc = 0, num_mycut = 0;
+  int num_str_affected_cuts = 0; ///< number of cuts for which strengthening using original certificate changes at least one coefficient
+  int num_rcvmip_str_affected_cuts = 0; ///< number of cuts for which strengthening using RCVMIP certificate changes at least one coefficient
 }; /* SummaryBoundInfo */
 
 /// @brief Summary statistics for the disjunction generated
@@ -65,6 +80,7 @@ struct SummaryDisjunctionInfo {
   double avg_max_depth = 0.;
 }; /* SummaryDisjunctionInfo */
 
+ /// @brief Track statistics for a particular family of cuts
 struct SummaryCutInfo {
   int num_cuts = 0;
   int num_active_gmic = 0, num_active_lpc = 0, num_active_mycut, num_active_all = 0;
@@ -73,32 +89,51 @@ struct SummaryCutInfo {
   int min_support = std::numeric_limits<int>::max();
   int max_support = 0;
   double avg_support = 0.;
-  std::vector<CglAdvCut::CutType> cutType; // one entry per cut
-  std::vector<CglAdvCut::ObjectiveType> objType; // one entry per cut
+  std::vector<CglAdvCut::CutType> cutType; ///< one entry per cut
+  std::vector<CglAdvCut::ObjectiveType> objType; ///< one entry per cut
 
   std::vector<int> numCutsOfType;
   std::vector<int> numCutsFromHeur, numObjFromHeur, numFailsFromHeur, numActiveFromHeur;
   std::vector<int> numFails;
 }; /* SummaryCutInfo */
 
-/// @brief Container for types of statistics we want to keep
-enum class Stat { total = 0, avg, stddev, min, max, num_stats };
-
-/// @brief Summary statistics for what attempts at strengthening did
+/// @brief Summary statistics for strengthening attempts
 struct SummaryStrengtheningInfo {
-  /// number of cuts affected by strengthening
-  int num_str_cuts = 0;
-  /// use multipliers to find number of distinct facets of the cut-generating set S
-  double avg_num_cgs_facets = 0.;
-  /// number of cuts with less than n nonzero mutipliers
-  int num_irreg_less = 0;
-  /// number of cuts with more than n nonzero mutipliers
-  int num_irreg_more = 0;
+  /// number of cuts for which strengthening using the corresponding certificate changes at least one coefficient
+  int num_str_affected_cuts = 0;
   /// number of coefficients changed (one entry for each index in #Stat -- total, avg, stddev, min, max)
   std::vector<double> num_coeffs_strengthened = std::vector<double>(static_cast<int>(Stat::num_stats), 0.);
-  /// number of times a certificate uses nonzero multipliers on both the upper and lower bounds on a variable
-  int num_unmatched_bounds = 0;
 }; /* SummaryStrengtheningInfo */
+
+/// @brief Summary statistics for counting regularity / irregularity of cuts and certificates
+struct SummaryCertificateInfo {
+  std::vector<int> submx_rank; ///< rank of the submatrix of the certificate
+  std::vector<int> num_nnz_mult; ///< number of original problem constraints with nonzero multipliers in certificate
+
+  /// number of times certificate uses nonzero multipliers on both the upper and lower bounds on a variable
+  int num_unmatched_bounds = 0;
+  /// use multipliers to find number of distinct facets of the cut-generating set S using certificates
+  double avg_num_cgs_facet = 0.;
+  
+  // /// number of certificates seemingly (but not proved) leading to submx rank less than number of nonzero multipliers used
+  // int num_tentative_irreg_less = 0;
+  /// number of certificates for which the first iteration has RCVMIP optimal value = 0, but there were rank constraints, and resolving was not possible (e.g., for limit reasons)
+  int num_tentative_irreg_more = 0;
+  /// number of certificates leading to submx rank less than number of nonzero multipliers used
+  int num_irreg_less = 0;
+  /// number of regular certificates (submx rank equals number of nonzero multipliers used)
+  int num_reg = 0;
+  /// number of certificates leading to submx rank more than number of nonzero multipliers used
+  int num_irreg_more = 0;
+  /// number of cuts for which certificate could not be ascertained
+  int num_unconverged = 0;
+  /// number of cuts for which certificate could not be computed due to numerical instability
+  int num_numerically_unstable = 0;
+  /// number of iterations needed to compute certificate
+  std::vector<int> num_iterations;
+  /// time spent per cut on RCVMIP
+  std::vector<double> rcvmip_time;
+}; /* SummaryCertificateInfo */
 
 void printHeader(const StrengtheningParameters::Parameters& params,
     const std::vector<std::string>& time_name,
@@ -118,8 +153,11 @@ void printPostCutProbInfo(const OsiSolverInterface* const solver,
 void printDisjInfo(const SummaryDisjunctionInfo& disjInfo, FILE* logfile,
     const char SEP = ',');
 /// @brief Write to log statistics about the strengthening that was done as stored in #SummaryStrengtheningInfo
-void printStrInfo(const SummaryStrengtheningInfo& info, FILE* myfile,
+void printStrInfo(const SummaryStrengtheningInfo& orig_info, const SummaryStrengtheningInfo& rcvmip_info, FILE* const logfile,
     const char SEP = ',');
+/// @brief Write to log statistics about the certificate investigation summarized in #SummaryRegularityInfo
+void printCertificateInfo(const SummaryCertificateInfo& orig_info, const SummaryCertificateInfo& rcvmip_info, const int RCVMIP_ITER_LIMIT,
+    FILE* const logfile, const char SEP = ',');
 void printCutInfo(const SummaryCutInfo& cutInfoGMICs,
     const SummaryCutInfo& cutInfo, const SummaryCutInfo& cutInfoUnstr,
     FILE* logfile, const char SEP = ',');
@@ -160,8 +198,10 @@ void updateCutInfo(SummaryCutInfo& cutInfo, const CglAdvCut* const gen);
 void setCutInfo(SummaryCutInfo& cutInfo, const int num_rounds, const SummaryCutInfo* const oldCutInfos);
 
 /// @brief Find |K| (number of nonzero multipliers in \p v) and info about the implied convex cgs for this cut
-void setStrInfo(SummaryStrengtheningInfo& info, const Disjunction* const disj,
-    const std::vector<CutCertificate>& v,
+void setCertificateInfo(
+    SummaryCertificateInfo& info,
+    const Disjunction* const disj,
+    const std::vector<CutCertificate>& v_vec,
     const int num_rows, const int num_cols,
     const std::vector<int>& str_cut_ind,
     const double EPS);

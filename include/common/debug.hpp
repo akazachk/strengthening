@@ -42,3 +42,10 @@ void printMatrix(const CoinPackedMatrix& mx_in);
 
 /// @brief Test to make sure Gomory methods all produce same outcome
 void testGomory(OsiSolverInterface* const solver, const StrengtheningParameters::Parameters params);
+
+/// @brief Currently this is for debugging purposes for bm23
+void checkCoefficientForColumn(
+    const OsiSolverInterface* const liftingSolver,
+    const double* const solution,
+    const int term_ind,
+    const int col);

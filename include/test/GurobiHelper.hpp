@@ -18,6 +18,31 @@ namespace StrengtheningParameters {
 }
 
 #ifdef USE_GUROBI
+class GRBModel;
+
+/// @brief Return Gurobi status as a string
+const std::string getGurobiStatusName(const int status);
+
+/// @brief Use OsiSolverInterface to build GRBModel instance
+GRBModel* buildGRBModelFromOsi(const OsiSolverInterface* const solver, FILE* const logfile);
+
+/// @brief Solve GRBModel \p model and return status
+int solveGRBModel(GRBModel& model, FILE* const logfile);
+
+/// @brief Save model solution into double vector
+void saveSolution(std::vector<double>& solution, const GRBModel& model);
+
+/// @brief Write model to file
+void writeGRBModel(GRBModel& model, const char* f_name);
+
+/// @brief Set \p model parameters
+void setStrategyForBBTestGurobi(
+    const StrengtheningParameters::Parameters& params,
+    const int strategy,
+    GRBModel& model,
+    const double best_bound = std::numeric_limits<double>::max(),
+    int seed = -1);
+
 void presolveModelWithGurobi(const StrengtheningParameters::Parameters& params, int strategy,
     const char* f_name, double& presolved_lp_opt, std::string& presolved_name,
     const double best_bound);

@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Usage example:
 #   prepare_batch.sh /path/to/instance/list.instances /path/to/results/dir [-dX (depth)] [str / gmic (mode)]
-#   prepare_batch.sh /path/to/instance/list.instances /path/to/results/dir [test / preprocess / bb / bb0]
 
+if [ ! -z "$VPC_DIR" ]; then
+  export VPC_DIR=${VPC_DIR}
+fi
 if [ -z "$PROJ_DIR" ]
 then
   if [ ! -z "${REPOS_DIR}" ]
@@ -22,35 +24,57 @@ fi
 SILENT=1
 MODE="gmic"
 MODE="str"
+MODE="str-a2"
 
-export PROJ_DIR=`realpath -s ${PROJ_DIR}`
-export VPC_DIR=`realpath -s ${PROJ_DIR}/../vpc`
-export INSTANCE_DIR=${VPC_DIR}/data/instances
-export SOL_DIR=${VPC_DIR}/data/solutions
-export SCRIPT_DIR=${PROJ_DIR}/scripts
-export INSTANCE_LIST=${SCRIPT_DIR}/small_presolved.instances
-export RESULTS_DIR=${PROJ_DIR}/results
+if [ "$(uname)" == "Darwin" ]; then
+  export PROJ_DIR=`realpath ${PROJ_DIR}`
+  if [ -z "$VPC_DIR" ]; then
+    export VPC_DIR=`realpath ${PROJ_DIR}/../vpc`
+  fi
+else
+  export PROJ_DIR=`realpath -s ${PROJ_DIR}`
+  if [ -z "$VPC_DIR" ]; then
+    export VPC_DIR=`realpath -s ${PROJ_DIR}/../vpc`
+  fi
+fi
+
+if [ "$(hostname)" == "ISE-D41L3Q3" ]; then
+  # w401
+  export PROJ_DIR=${REPOS_DIR}/strengthening
+fi
+
 export OPTFILE="${VPC_DIR}/data/ip_obj.csv"
-JOB_LIST="job_list_strengthen.txt"
+export SCRIPT_DIR=${PROJ_DIR}/scripts
+
+export INSTANCE_DIR=${VPC_DIR}/data/instances
+export RESULTS_DIR=${PROJ_DIR}/results
+export SOL_DIR=${VPC_DIR}/data/solutions
+
 EXECUTABLE="${PROJ_DIR}/Release/main"
 
+if [ $MODE == preprocess ]; then
+  INSTANCE_LIST=${SCRIPT_DIR}/original.instances
+else
+  INSTANCE_LIST=${SCRIPT_DIR}/presolved.instances
+fi
+
 # HiPerGator
-export INSTANCE_DIR=/blue/akazachkov/${USER}/instances/vpc
-export RESULTS_DIR=/blue/akazachkov/$USER/results
-export INSTANCE_LIST=${SCRIPT_DIR}/presolved.instances
+#export INSTANCE_DIR=/blue/akazachkov/${USER}/instances/vpc
+#export RESULTS_DIR=/blue/akazachkov/$USER/results
+#export INSTANCE_LIST=${SCRIPT_DIR}/presolved.instances
 
 if [ "$(uname)" == "Darwin" ]; then
   # MBP19
   export INSTANCE_DIR=${REPOS_DIR}/instances
 fi
 
-if [ "$(hostname)" == "ISE-D41L3Q3"]; then
+if [ "$(hostname)" == "ISE-D41L3Q3" ]; then
   # w401
   export LOCAL_DIR=${HOME}
   export INSTANCE_DIR=${LOCAL_DIR}/instances
   export RESULTS_DIR=${LOCAL_DIR}/results
   export SOL_DIR=${INSTANCE_DIR}/solutions
-  export INSTANCE_LIST=${VPC_DIR}/presolved.instances
+  export INSTANCE_LIST=${VPC_DIR}/scripts/presolved.instances
 fi
 
 # Accept user options for instance list, results directory, and mode
@@ -60,14 +84,15 @@ fi
 if [ ! -z $2 ]; then
   RESULTS_DIR=$2
 fi
+if [ ! -z $4 ]; then
+  MODE=$4
+fi
+JOB_LIST="job_list_${MODE}.txt"
 if [ -z $3 ]; then
   depthList=(2 4 8 16 32 64)
   > $JOB_LIST
 else
   depthList=($3)
-fi
-if [ ! -z $4 ]; then
-  MODE=$4
 fi
 
 # Set parameters
@@ -83,6 +108,18 @@ elif [ $MODE = "str" ]; then
   PARAMS="$PARAMS --bb_runs=0"
   PARAMS="$PARAMS --bb_mode=10"
   PARAMS="$PARAMS --bb_strategy=536"
+  PARAMS="$PARAMS -a1"
+elif [ $MODE = "str-a2" ]; then
+  PARAMS="$PARAMS --strengthen=1"
+  PARAMS="$PARAMS --gomory=-1"
+  PARAMS="$PARAMS --bb_runs=0"
+  PARAMS="$PARAMS --bb_mode=10"
+  PARAMS="$PARAMS --bb_strategy=536"
+  PARAMS="$PARAMS -a2"
+  PARAMS="$PARAMS --rcvmip_max_iters=1000"
+  PARAMS="$PARAMS --rcvmip_total_timelimit=3600"
+  PARAMS="$PARAMS --rcvmip_cut_timelimit=600"
+  PARAMS="$PARAMS --atilde_compute_rank=0"
 else
   echo "*** ERROR: Option $MODE not recognized"
   exit
@@ -113,6 +150,7 @@ TASK_ID=0
 TOTAL_ERRORS=0
 #> $JOB_LIST
 for d in ${depthList[*]}; do
+  echo "Depth $d"
   while read line; do
     TASK_ID=$((TASK_ID+1))
 
@@ -124,7 +162,7 @@ for d in ${depthList[*]}; do
     # Prepare out directory, based on current date
     CASE_NUM=`printf %0${NUM_DIGITS}d $TASK_ID`
     STUB=`date +%F`
-    OUT_DIR="${RESULTS_DIR}/$STUB/str-d$d/${CASE_NUM}"
+    OUT_DIR=${RESULTS_DIR}/$STUB/${MODE}/${CASE_NUM}
 
     # Print status (in silent mode, print a ".")
     if [ $SILENT != 1 ]; then
@@ -176,5 +214,12 @@ for d in ${depthList[*]}; do
     fi
   done < ${INSTANCE_LIST}
 done # loop over depth list
+
+# Shuffle command order to not have dependency in the performance
+if [ $(uname) == "Darwin" ]; then
+  sort -R ${JOB_LIST} --output=${JOB_LIST}
+else
+  shuf -o ${JOB_LIST} < ${JOB_LIST}
+fi
 
 echo "Done preparing $JOB_LIST. Total errors: $TOTAL_ERRORS."

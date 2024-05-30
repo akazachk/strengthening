@@ -139,6 +139,10 @@ void CglAdvCut::setParams(const Parameters& param) {
  */
 void CglAdvCut::generateCuts(const OsiSolverInterface& si, OsiCuts& cuts, const CglTreeInfo info) {
   CglAdvCut::ExitReason status = CglAdvCut::ExitReason::UNKNOWN;
+
+  // Time starts here, and will end when finish is called
+  timer.start_timer(CutTimeStatsName[static_cast<int>(CutTimeStats::TOTAL_TIME)]);
+
   if (reachedTimeLimit(CutTimeStats::TOTAL_TIME, params.get(TIMELIMIT))) {
     status = CglAdvCut::ExitReason::TIME_LIMIT_EXIT;
     finish(status);
@@ -196,9 +200,6 @@ void CglAdvCut::generateCuts(const OsiSolverInterface& si, OsiCuts& cuts, const 
     writeErrorToLog(errorstring, params.logfile);
     exit(1);
   }
-
-  // Time starts here, and will end when finish is called
-  timer.start_timer(CutTimeStatsName[static_cast<int>(CutTimeStats::TOTAL_TIME)]);
 
   // Make a copy of the solver to allow for fixing variables and changed bounds at root
   SolverInterface* mysolver = dynamic_cast<SolverInterface*>(si.clone());
