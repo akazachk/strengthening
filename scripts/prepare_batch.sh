@@ -1,10 +1,7 @@
 #!/usr/bin/env bash
 # Usage example:
-#   prepare_batch.sh /path/to/instance/list.instances /path/to/results/dir [-dX (depth)] [str / gmic (mode)]
+#   prepare_batch.sh /path/to/instance/list.instances /path/to/results/dir [-dX (depth)] [str / gmic (mode) / test / gmic / disjset ]
 
-if [ ! -z "$VPC_DIR" ]; then
-  export VPC_DIR=${VPC_DIR}
-fi
 if [ -z "$PROJ_DIR" ]
 then
   if [ ! -z "${REPOS_DIR}" ]
@@ -21,61 +18,95 @@ then
 fi
 
 # Constants
-SILENT=1
-MODE="gmic"
+SILENT=1 # set to 0 to print more as the file is being created
 MODE="str"
 MODE="str-a2"
 
+# Directory options
+DEFAULT_DIRS=1     # Set to 0 for custom directories (which you will need to input below)
+SAVE_TO_HOME_DIR=1 # SAVE_TO_HOME_DIR = 0: results and instances are relative to ${PROJ_DIR}; = 1: relative to ${HOME}
+
+# Change PROJ_DIR, VPC_DIR to be full path
+if [ ! -z "$VPC_DIR" ]; then
+  export VPC_DIR=${VPC_DIR}
+else
+  export VPC_DIR=${PROJ_DIR}/../vpc # For portability to other projects, in which PROJ_DIR and VPC_DIR might be different
+fi
 if [ "$(uname)" == "Darwin" ]; then
   export PROJ_DIR=`realpath ${PROJ_DIR}`
-  if [ -z "$VPC_DIR" ]; then
-    export VPC_DIR=`realpath ${PROJ_DIR}/../vpc`
-  fi
+  export VPC_DIR=`realpath ${VPC_DIR}`
 else
   export PROJ_DIR=`realpath -s ${PROJ_DIR}`
-  if [ -z "$VPC_DIR" ]; then
-    export VPC_DIR=`realpath -s ${PROJ_DIR}/../vpc`
+  export VPC_DIR=`realpath -s ${VPC_DIR}`
+fi
+
+# Set relative path for results/instances
+if [ ${DEFAULT_DIRS} == 1 ]; then
+  if [ ${SAVE_TO_HOME_DIR} == 1 ]; then
+    export LOCAL_DIR=${HOME}
+  else
+    export LOCAL_DIR=${PROJ_DIR}
   fi
-fi
-
-if [ "$(hostname)" == "ISE-D41L3Q3" ]; then
-  # w401
-  export PROJ_DIR=${REPOS_DIR}/strengthening
-fi
-
-export OPTFILE="${VPC_DIR}/data/ip_obj.csv"
-export SCRIPT_DIR=${PROJ_DIR}/scripts
-
-export INSTANCE_DIR=${VPC_DIR}/data/instances
-export RESULTS_DIR=${PROJ_DIR}/results
-export SOL_DIR=${VPC_DIR}/data/solutions
-
-EXECUTABLE="${PROJ_DIR}/Release/main"
-
-if [ $MODE == preprocess ]; then
-  INSTANCE_LIST=${SCRIPT_DIR}/original.instances
 else
-  INSTANCE_LIST=${SCRIPT_DIR}/presolved.instances
+  # *** Replace with custom dir below
+  export LOCAL_DIR=${HOME}
+fi
+
+# Results will be sent to ${RESULTS_DIR}/[date]/[mode]/[instance #]
+# Overwritten with second command line argument
+if [ ${DEFAULT_DIRS} == 1 ]; then
+  export RESULTS_DIR=${LOCAL_DIR}/results
+else
+  # *** Replace with custom dir below
+  export RESULTS_DIR=${PROJ_DIR}/results
+fi
+
+# File with IP objective values 
+if [ ${DEFAULT_DIRS} == 1 ]; then
+  export OPTFILE="${VPC_DIR}/data/ip_obj.csv"
+else
+  # *** Replace with custom dir below
+  export OPTFILE="${VPC_DIR}/data/ip_obj.csv"
+fi
+
+# Directory with instances (instance list will provide relative paths from this directory)
+if [ ${DEFAULT_DIRS} == 1 ]; then
+  export INSTANCE_DIR=${LOCAL_DIR}/instances
+else
+  # *** Replace with custom dir below
+  export INSTANCE_DIR=${LOCAL_DIR}/instances
+fi
+
+# Where to find (or save) IP solutions
+if [ ${DEFAULT_DIRS} == 1 ]; then
+  export SOL_DIR=${LOCAL_DIR}/solutions
+else
+  # *** Replace with custom dir below
+  export SOL_DIR=${LOCAL_DIR}/solutions
+fi
+
+# Directory with instance lists for default instances
+# Overwritten by first command line argument
+if [ ${DEFAULT_DIRS} == 1 ]; then
+  export INSTANCE_LIST_DIR=${PROJ_DIR}/data/experiments
+else
+  # *** Replace with custom dir below
+  export INSTANCE_LIST_DIR=${PROJ_DIR}/data/experiments
+fi
+
+# Set default instance lists
+if [ $MODE == preprocess ]; then
+  INSTANCE_LIST="${INSTANCE_LIST_DIR}/original.test"
+elif [ $MODE == gmic ]; then
+  INSTANCE_LIST="${INSTANCE_LIST_DIR}/gmic.test"
+else
+  INSTANCE_LIST="${INSTANCE_LIST_DIR}/presolved.test"
 fi
 
 # HiPerGator
 #export INSTANCE_DIR=/blue/akazachkov/${USER}/instances/vpc
 #export RESULTS_DIR=/blue/akazachkov/$USER/results
 #export INSTANCE_LIST=${SCRIPT_DIR}/presolved.instances
-
-if [ "$(uname)" == "Darwin" ]; then
-  # MBP19
-  export INSTANCE_DIR=${REPOS_DIR}/instances
-fi
-
-if [ "$(hostname)" == "ISE-D41L3Q3" ]; then
-  # w401
-  export LOCAL_DIR=${HOME}
-  export INSTANCE_DIR=${LOCAL_DIR}/instances
-  export RESULTS_DIR=${LOCAL_DIR}/results
-  export SOL_DIR=${INSTANCE_DIR}/solutions
-  export INSTANCE_LIST=${VPC_DIR}/scripts/presolved.instances
-fi
 
 # Accept user options for instance list, results directory, and mode
 if [ ! -z $1 ]; then
@@ -87,13 +118,18 @@ fi
 if [ ! -z $4 ]; then
   MODE=$4
 fi
-JOB_LIST="job_list_${MODE}.txt"
 if [ -z $3 ]; then
   depthList=(2 4 8 16 32 64)
-  > $JOB_LIST
+  #> $JOB_LIST
 else
   depthList=($3)
 fi
+
+# JOB_LIST is where commands to be run will be saved (in current directory)
+JOB_LIST="job_list_${MODE}.txt"
+
+# EXECUTABLE is what file we ultimately run
+EXECUTABLE="${PROJ_DIR}/Release/main"
 
 # Set parameters
 PARAMS=" --optfile=${OPTFILE}"
@@ -120,6 +156,8 @@ elif [ $MODE = "str-a2" ]; then
   PARAMS="$PARAMS --rcvmip_total_timelimit=3600"
   PARAMS="$PARAMS --rcvmip_cut_timelimit=600"
   PARAMS="$PARAMS --atilde_compute_rank=0"
+elif [ $MODE == "test" ]; then
+  depthList=(2)
 else
   echo "*** ERROR: Option $MODE not recognized"
   exit
