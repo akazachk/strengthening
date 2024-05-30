@@ -14,7 +14,7 @@
 #include "SolverHelper.hpp"
 
 /**
- * The cut is stored as alpha x >= beta.
+ * @details The cut is stored as alpha x >= beta.
  */
 void setOsiRowCut(OsiRowCut* const cut, const std::vector<int>& nonZeroColIndex,
     const int num_coeff, const double* coeff, const double rhs,
@@ -36,7 +36,16 @@ void setOsiRowCut(OsiRowCut* const cut, const std::vector<int>& nonZeroColIndex,
 } /* setOsiRowCut */
 
 /**
- * Taken from CglGMI with some minor modifications, including switching to >= cut as we use
+ * @brief Remove small coefficients if we are fairly sure they do not matter
+ * @details Taken from CglGMI with some modifications, including switching to >= cut as we use.
+ *
+ * More recently (2021-05-21), function does not remove some small coefficients,
+ * namely when there is no bound associated with the variable,
+ * due to issue with original/coral/neos-593853 -d2.
+ *
+ * TODO there should be a safer way of doing this method,
+ * such as making sure we do not cut any of the "verification points and rays"
+ * (i.e., the rows of the PRLP, but in structural space).
  */
 void removeSmallCoefficients(OsiRowCut* const cut, const OsiSolverInterface* const solver, const double EPS, const double EPS_COEFF) {
   CoinPackedVector vec = cut->mutableRow();
@@ -64,11 +73,24 @@ void removeSmallCoefficients(OsiRowCut* const cut, const OsiSolverInterface* con
         cutRhs -= coeff * colLower[col];
       } else if ((coeff > 0.0) && !isInfinity(colUpper[col])) {
         cutRhs -= coeff * colUpper[col];
+      } else {
+        // Added this because sometimes small coefficients are necessary,
+        // such as in the case of original/coral/neos-593853 -d2,
+        // in which there are large matrix coefficients,
+        // and setting coefficient alpha_{612} = 0 (from 6e-7)
+        // causes an invalid cut
+        // TODO however, this is probably not ideal for other instances,
+        // and we should implement a more careful check
+        if (currPos < i) {
+          cutIndex[currPos] = col;
+          cutElem[currPos] = coeff;
+        }
+        currPos++;
       }
     } else if (absval > EPS_COEFF) {
       if (currPos < i) {
-        cutElem[currPos] = cutElem[i];
-        cutIndex[currPos] = cutIndex[i];
+        cutIndex[currPos] = col;
+        cutElem[currPos] = coeff;
       }
       currPos++;
     }
@@ -81,8 +103,14 @@ void removeSmallCoefficients(OsiRowCut* const cut, const OsiSolverInterface* con
   cut->setLb(cutRhs);
 } /* removeSmallCoefficients */
 
-bool badSupport(const int cutNz, const int numCols, const double max_sup_abs, const double max_sup_rel) {
-  return (cutNz > max_sup_abs + max_sup_rel * numCols);
+/// @brief Returns whether \p cutNz > \p max_sup_abs or ( \p max_sup_rel * \p numCols ), whenever \p cutNz > \p min_sup_thresh
+/// @details In CglGMI.cpp::checkSupport, the following is done:
+///  if (cutNz > param.getMAX_SUPPORT_ABS() + param.getMAX_SUPPORT_REL()*ncol)
+/// This is indeed correct based on Section 4.2 in "Practical Strategies for Generating Rank-1 Split Cuts" by Nannicini and Cornuéjols
+/// in which max_sup_abs is set to 1000
+/// But we will use a slightly different approach (because the above is confusing to me, since MAX_SUPPPORT_ABS is not really an upper bound in this case)
+bool badSupport(const int cutNz, const int numCols, const double min_sup_thresh, const double max_sup_abs, const double max_sup_rel) {
+  return (cutNz > min_sup_thresh) && ((cutNz > max_sup_abs) || (cutNz > max_sup_rel * numCols));
 } /* badSupport */
 
 bool badViolation(const OsiRowCut* const cut, const OsiSolverInterface* const solver, const double min_viol_abs, const double min_viol_rel) {
@@ -102,6 +130,7 @@ bool badViolation(const OsiRowCut* const cut, const OsiSolverInterface* const so
   return (!cuttingSolutionFlagAbs || !cuttingSolutionFlagRel);
 } /* badViolation */
 
+/// @brief Check whether max coeff in the cut and min coeff in the cut are too different in scale
 bool badDynamism(const OsiRowCut* const cut, const double minAbsCoeff, const double maxAbsCoeff, const double SENSIBLE_MAX, const double EPS) {
   const CoinPackedVector vec = cut->row();
   const int num_el = vec.getNumElements();
@@ -133,13 +162,55 @@ bool badDynamism(const OsiRowCut* const cut, const double minAbsCoeff, const dou
               std::abs(SENSIBLE_MAX * maxAbsCoeff / minAbsCoeff), EPS));
 } /* badDynamism */
 
+/// @details Scale cut so that coefficients are neither too small nor too big
+/// similarly to how rays are scaled in nbspace.cpp #setCompNBCoorRay
+void scaleCut(OsiRowCut* const cut, const double EPS) {
+  CoinPackedVector vec = cut->mutableRow();
+  const int num_el = vec.getNumElements();
+  double* el = vec.getElements();
+
+  double minAbsElem = 0.0, maxAbsElem = 0.0;
+  for (int i = 0; i < num_el; i++) {
+    const double absCurr = std::abs(el[i]);
+    if (isZero(absCurr, EPS)) { // make sure min and max are not zero
+      continue;
+    }
+
+    if ((minAbsElem > absCurr) || isZero(minAbsElem, EPS)) {
+      minAbsElem = absCurr;
+    }
+    if (maxAbsElem < absCurr) {
+      maxAbsElem = absCurr;
+    }
+  } // loop over cut coefficients
+  const double absRHS = std::abs(cut->rhs());
+  if (absRHS > maxAbsElem) {
+    maxAbsElem = absRHS;
+  }
+
+  // TODO I am not sure where these values come from exactly...
+  int minExponent = std::log10(minAbsElem);
+  int maxExponent = std::log10(maxAbsElem);
+  const double avgExponents = 0.5 * (minExponent + maxExponent);
+  int scale_exp = 0;
+  if (avgExponents < -0.25) {
+    scale_exp = 1 - static_cast<int>(avgExponents + 0.25);
+  }
+  const double scale = std::pow(10., static_cast<double>(scale_exp));
+  vec *= scale;
+  cut->setLb(cut->lb() * scale);
+} /* scaleCut */
+
 /**
- * Based on the similar method in CglGMI, we clean the cut coefficients and check if the cut is good
+ * @details Based on the similar method in CglGMI, we clean the cut coefficients and check if the cut is good
  * Returns 0 if no error, otherwise returns -1 * (fail index + 1)
  */
-int cleanCut(OsiRowCut* const cut, const OsiSolverInterface* const solver,
+int cleanCut(OsiRowCut* const cut,
+    const OsiSolverInterface* const solver,
     const double EPS_COEFF,
     const double MAX_DYN,
+    /// minimum support at which we start checking for bad support
+    const int MIN_SUP_THRESH,
     const int MAX_SUP_ABS,
     const double MAX_SUP_REL,
     const double MIN_VIOL_ABS,
@@ -149,7 +220,7 @@ int cleanCut(OsiRowCut* const cut, const OsiSolverInterface* const solver,
     const double EPS, 
     const bool checkViolation) {
   removeSmallCoefficients(cut, solver, EPS, EPS_COEFF);
-  if (badSupport(cut->row().getNumElements(), solver->getNumCols(), MAX_SUP_ABS, MAX_SUP_REL)) {
+  if (badSupport(cut->row().getNumElements(), solver->getNumCols(), MIN_SUP_THRESH, MAX_SUP_ABS, MAX_SUP_REL)) {
     return -1 * (static_cast<int>(CglVPC::FailureType::BAD_SUPPORT) + 1);
   }
   if (checkViolation && badViolation(cut, solver, MIN_VIOL_ABS, MIN_VIOL_REL)) {
@@ -163,13 +234,7 @@ int cleanCut(OsiRowCut* const cut, const OsiSolverInterface* const solver,
 } /* cleanCut */
 
 /**
- * @brief Decide if two rows are the same.
- * @return
- *   0: seem same in coeff and rhs,
- *   +/-1: seem same in coeff, but diff in rhs (-1: cut1 better, +1: cut2 better),
- *   2: seem different in coeff and rhs.
- *
- * The value of eps will be used to determine whether a cut coefficient is zero or not.
+ * @details The value of eps will be used to determine whether a cut coefficient is zero or not.
  * We are roughly checking that whether cut1 = ratio * cut2 for some ratio.
  * Let ratio = rhs1 / rhs2. (If both are non-zero. Typically both are = 1.)
  * We say the cuts are "truly different" if |coeff^1_j - ratio * coeff^2_j| >= diffeps.
@@ -180,6 +245,11 @@ int cleanCut(OsiRowCut* const cut, const OsiSolverInterface* const solver,
  * then the return code will be -1 or 1 (essentially, one cut will dominate the other).
  *
  * By the way, this is all essentially checking orthogonality...
+ *
+ * @return
+ *   0: seem same in coeff and rhs,
+ *   +/-1: seem same in coeff, but diff in rhs (-1: cut1 better, +1: cut2 better),
+ *   2: seem different in coeff and rhs.
  */
 int isRowDifferent(const CoinPackedVectorBase* const cut1Vec, const double cut1rhs,
     const CoinPackedVectorBase* const cut2Vec, const double cut2rhs, const double EPS) {
@@ -386,7 +456,7 @@ double getOrthogonality(const int numElem, const double* vec1,
 } /* getOrthogonality (not packed) */
 
 /** 
- * Check whether a cut is duplicate or too orthogonal to a previous cut in the collection
+ * @details Check whether a cut is duplicate or too orthogonal to a previous cut in the collection
  */
 int howDuplicate(const OsiCuts& cuts, const OsiRowCut& tmpCut,
     const int startIndex, int& duplicateCutIndex, int& minOrthoIndex,
