@@ -1359,6 +1359,12 @@ int processArgs(int argc, char** argv) {
       {"strengthen",            required_argument, 0, 's'},
       {"temp",                  required_argument, 0, 't'*'1'},
       {"timelimit",             required_argument, 0, 't'},
+      {"use_all_ones",          required_argument, 0, 'u'*'1'},
+      {"use_disj_lb",           required_argument, 0, 'u'*'2'},
+      {"use_iter_bilinear",     required_argument, 0, 'u'*'3'},
+      {"use_tight_points",      required_argument, 0, 'u'*'4'},
+      {"use_tight_rays",        required_argument, 0, 'u'*'5'},
+      {"use_unit_vectors",      required_argument, 0, 'u'*'6'},
       {"verbosity",             required_argument, 0, 'v'},
       {nullptr, no_argument, nullptr, 0}
   };
@@ -1555,6 +1561,66 @@ int processArgs(int argc, char** argv) {
                   params.set(param, val);
                   break;
                 }
+      case 'u'*'1': {
+                      int val;
+                      intParam param = intParam::USE_ALL_ONES;
+                      if (!parseInt(optarg, val)) {
+                        error_msg(errorstring, "Error reading %s. Given value: %s.\n", params.name(param).c_str(), optarg);
+                        exit(1);
+                      }
+                      params.set(param, val);
+                      break;
+                    }
+      case 'u'*'2': {
+                      int val;
+                      intParam param = intParam::USE_DISJ_LB;
+                      if (!parseInt(optarg, val)) {
+                        error_msg(errorstring, "Error reading %s. Given value: %s.\n", params.name(param).c_str(), optarg);
+                        exit(1);
+                      }
+                      params.set(param, val);
+                      break;
+                    }
+      case 'u'*'3': {
+                      int val;
+                      intParam param = intParam::USE_ITER_BILINEAR;
+                      if (!parseInt(optarg, val)) {
+                        error_msg(errorstring, "Error reading %s. Given value: %s.\n", params.name(param).c_str(), optarg);
+                        exit(1);
+                      }
+                      params.set(param, val);
+                      break;
+                    }
+      case 'u'*'4': {
+                      int val;
+                      intParam param = intParam::USE_TIGHT_POINTS;
+                      if (!parseInt(optarg, val)) {
+                        error_msg(errorstring, "Error reading %s. Given value: %s.\n", params.name(param).c_str(), optarg);
+                        exit(1);
+                      }
+                      params.set(param, val);
+                      break;
+                    }
+      case 'u'*'5': {
+                      int val;
+                      intParam param = intParam::USE_TIGHT_RAYS;
+                      if (!parseInt(optarg, val)) {
+                        error_msg(errorstring, "Error reading %s. Given value: %s.\n", params.name(param).c_str(), optarg);
+                        exit(1);
+                      }
+                      params.set(param, val);
+                      break;
+                    }
+      case 'u'*'6': {
+                      int val;
+                      intParam param = intParam::USE_UNIT_VECTORS;
+                      if (!parseInt(optarg, val)) {
+                        error_msg(errorstring, "Error reading %s. Given value: %s.\n", params.name(param).c_str(), optarg);
+                        exit(1);
+                      }
+                      params.set(param, val);
+                      break;
+                    }
       case 'v': {
                    int val;
                    intParam param = intParam::VERBOSITY;

@@ -72,6 +72,13 @@ enum intParam {
   ROUNDS, ///< number of  rounds to do
   STRENGTHEN, ///< 0: no, 1: yes, when possible, 2: same as 1 plus add GMICs to strengthen each disjunctive term
   TEMP, ///< useful for various temporary parameter changes; see corresponding enum
+  // Objective options
+  USE_ALL_ONES, ///< 0: do not use, 1: use
+  USE_DISJ_LB, ///< 0: do not use, 1: use
+  USE_ITER_BILINEAR, ///< 0: do not use, 1+: number of iterations to do
+  USE_TIGHT_POINTS, ///< 0: do not use, 1+: num points to try
+  USE_TIGHT_RAYS, ///< 0: do not use, 1+: num rays to try, -1: try the first sqrt(# rays) rays
+  USE_UNIT_VECTORS, ///< 0: do not use, 1+: num to try, <0: abs(val) * sqrt(n)
   // Other options
   VERBOSITY, ///< how much to print
   // BB options
@@ -490,6 +497,24 @@ struct Parameters {
         IntParameter(intParam::VERBOSITY, "VERBOSITY",
             0, 0, 2)},
 #endif
+    {intParam::USE_UNIT_VECTORS,
+        IntParameter(intParam::USE_UNIT_VECTORS, "USE_UNIT_VECTORS",
+            0, std::numeric_limits<int>::min(), std::numeric_limits<int>::max())},
+    {intParam::USE_TIGHT_RAYS,
+        IntParameter(intParam::USE_TIGHT_RAYS, "USE_TIGHT_RAYS",
+            0, std::numeric_limits<int>::min(), std::numeric_limits<int>::max())},
+    {intParam::USE_TIGHT_POINTS,
+        IntParameter(intParam::USE_TIGHT_POINTS, "USE_TIGHT_POINTS",
+            0, std::numeric_limits<int>::min(), std::numeric_limits<int>::max())},
+    {intParam::USE_ITER_BILINEAR,
+        IntParameter(intParam::USE_ITER_BILINEAR, "USE_ITER_BILINEAR",
+            1, 0, std::numeric_limits<int>::max())},
+    {intParam::USE_DISJ_LB,
+        IntParameter(intParam::USE_DISJ_LB, "USE_DISJ_LB",
+            1, 0, 1)},
+    {intParam::USE_ALL_ONES,
+        IntParameter(intParam::USE_ALL_ONES, "USE_ALL_ONES",
+            1, 0, 1)},
     {intParam::TEMP,
         IntParameter(intParam::TEMP, "TEMP",
             0, std::numeric_limits<int>::min(), std::numeric_limits<int>::max())},

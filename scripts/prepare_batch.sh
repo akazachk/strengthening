@@ -19,8 +19,8 @@ fi
 
 # Constants
 SILENT=1 # set to 0 to print more as the file is being created
-MODE="str"
 MODE="str-a2"
+MODE="str"
 
 # Directory options
 DEFAULT_DIRS=1     # Set to 0 for custom directories (which you will need to input below)
@@ -131,31 +131,54 @@ JOB_LIST="job_list_${MODE}.txt"
 # EXECUTABLE is what file we ultimately run
 EXECUTABLE="${PROJ_DIR}/Release/main"
 
+# Constrain to P-cores on Linux
+# (I am not sure about this ... maybe can use 0-15? ... but then two processes might end up on the same core.)
+if [ $(uname) != "Darwin" ]; then
+  EXECUTABLE="taskset -c 0,2,4,6,8,10,12,14 $EXECUTABLE"
+fi
+
 # Set parameters
 PARAMS=" --optfile=${OPTFILE}"
 PARAMS="$PARAMS -t 3600"
 PARAMS="$PARAMS --rounds=1"
+PARAMS="$PARAMS --use_all_ones=1"
+PARAMS="$PARAMS --use_iter_bilinear=1"
+PARAMS="$PARAMS --use_disj_lb=1"
+PARAMS="$PARAMS --use_tight_points=0"
+PARAMS="$PARAMS --use_tight_rays=0"
+PARAMS="$PARAMS --use_unit_vectors=0"
 if [ $MODE = "gmic" ]; then
   depthList=(0)
   PARAMS="$PARAMS --gomory=2"
 elif [ $MODE = "str" ]; then
   PARAMS="$PARAMS --strengthen=1"
+  PARAMS="$PARAMS --analyze_regularity=1"
   PARAMS="$PARAMS --gomory=-1"
   PARAMS="$PARAMS --bb_runs=0"
   PARAMS="$PARAMS --bb_mode=10"
   PARAMS="$PARAMS --bb_strategy=536"
-  PARAMS="$PARAMS -a1"
 elif [ $MODE = "str-a2" ]; then
   PARAMS="$PARAMS --strengthen=1"
+  PARAMS="$PARAMS --analyze_regularity=2"
   PARAMS="$PARAMS --gomory=-1"
   PARAMS="$PARAMS --bb_runs=0"
   PARAMS="$PARAMS --bb_mode=10"
   PARAMS="$PARAMS --bb_strategy=536"
-  PARAMS="$PARAMS -a2"
   PARAMS="$PARAMS --rcvmip_max_iters=1000"
   PARAMS="$PARAMS --rcvmip_total_timelimit=3600"
   PARAMS="$PARAMS --rcvmip_cut_timelimit=600"
   PARAMS="$PARAMS --atilde_compute_rank=0"
+elif [ $MODE == "disjset" ] ; then
+  depthList=(0)
+  PARAMS="$PARAMS --strengthen=1"
+  PARAMS="$PARAMS --analyze_regularity=1"
+  PARAMS="$PARAMS --gomory=-1"
+  PARAMS="$PARAMS --bb_runs=0"
+  PARAMS="$PARAMS --bb_mode=10"
+  PARAMS="$PARAMS --bb_strategy=536"
+  PARAMS="$PARAMS --mode=4"
+  PARAMS="$PARAMS --disj_options=\"2;4;8;16;32;64\""
+  PARAMS="$PARAMS --cutlimit=-2"
 elif [ $MODE == "test" ]; then
   depthList=(2)
 else
