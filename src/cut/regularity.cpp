@@ -31,7 +31,7 @@
 #include <gurobi_c++.h>
 #endif
 
-#ifdef DEBUG
+#ifdef VPC_DEBUG
 #include "debug.hpp"
 #endif
 
