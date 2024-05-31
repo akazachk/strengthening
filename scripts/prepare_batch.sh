@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Usage example:
-#   prepare_batch.sh /path/to/instance/list.instances /path/to/results/dir [-dX (depth)] [str / gmic (mode) / test / gmic / disjset ]
+#   prepare_batch.sh /path/to/instance/list.instances /path/to/results/dir [(mode) test / str / gmic / disjset] [(depth) -dX] 
 
 if [ -z "$PROJ_DIR" ]
 then
@@ -115,14 +115,14 @@ fi
 if [ ! -z $2 ]; then
   RESULTS_DIR=$2
 fi
-if [ ! -z $4 ]; then
-  MODE=$4
+if [ ! -z $3 ]; then
+  MODE=$3
 fi
-if [ -z $3 ]; then
+if [ -z $4 ]; then
   depthList=(2 4 8 16 32 64)
   #> $JOB_LIST
 else
-  depthList=($3)
+  depthList=($4)
 fi
 
 # JOB_LIST is where commands to be run will be saved (in current directory)

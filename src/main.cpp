@@ -348,6 +348,13 @@ int main(int argc, char** argv) {
     allCutSolver = solver->clone();
   }
 
+  // Process disjunction options, if different by round
+  // Parse string DISJ_OPTIONS into vector of ints, splitting by default delimiter
+  std::vector<int> disjOptions;
+  if (parseDisjOptions(disjOptions, params)) {
+    return wrapUp(1, argc, argv);
+  }
+
   //====================================================================================================//
   // Now do rounds of cuts, until a limit is reached (e.g., time, number failures, number cuts, or all rounds are exhausted)
   boundInfo.num_mycut = 0, boundInfo.num_gmic = 0, boundInfo.num_str_affected_cuts = 0, boundInfo.num_rcvmip_str_affected_cuts = 0;
@@ -384,7 +391,7 @@ int main(int argc, char** argv) {
     OsiCuts currGMICs;
     if (GOMORY_OPTION != 0) {
       timer.start_timer(OverallTimeStats::GOMORY_GEN_TIME);
-      generateGomoryCuts(currGMICs, solver, GOMORY_OPTION, params.get(intParam::STRENGTHEN), params.get(doubleConst::AWAY), params.get(doubleConst::DIFFEPS), params.logfile);
+      generateGomoryCuts(currGMICs, solver, GOMORY_OPTION, params.get(intParam::STRENGTHEN), params.get(intConst::MIN_SUPPORT_THRESHOLD), params.get(doubleParam::MAX_SUPPORT_REL), params.get(doubleConst::AWAY), params.get(doubleConst::DIFFEPS), params.logfile);
       timer.end_timer(OverallTimeStats::GOMORY_GEN_TIME);
 
       // Apply GMICs to solvers
@@ -417,10 +424,15 @@ int main(int argc, char** argv) {
 
     //====================================================================================================//
     // Now for more general cuts
+    if ((params.get(StrengtheningParameters::intParam::MODE) != static_cast<int>(StrengtheningParameters::VPCMode::DISJ_SET_PBB))
+        && ((int) disjOptions.size() > round_ind)) {
+      params.set(intParam::DISJ_TERMS, disjOptions[round_ind]);
+    }
+    const bool SHOULD_GENERATE_CUTS = (params.get(intParam::DISJ_TERMS) != 0 || disjOptions.size() > 0);
+
     OsiCuts& currCuts = mycuts_by_round[round_ind];
     OsiCuts extraCuts;
 
-    const bool SHOULD_GENERATE_CUTS = (params.get(intParam::DISJ_TERMS) != 0);
     const bool USE_CUSTOM = 
         use_temp_option(params.get(StrengtheningParameters::intParam::TEMP), TempOptions::SERRA_BALAS_2020_EXAMPLE)
         || use_temp_option(params.get(StrengtheningParameters::intParam::TEMP), TempOptions::PYRAMID_EXAMPLE)
@@ -1344,6 +1356,7 @@ int processArgs(int argc, char** argv) {
       {"bb_strategy",           required_argument, 0, 'B'},
       {"cutlimit",              required_argument, 0, 'c'},
       {"disj_terms",            required_argument, 0, 'd'},
+      {"disj_options",          required_argument, 0, 'D'},
       {"file",                  required_argument, 0, 'f'},
       {"gomory",                required_argument, 0, 'g'},
       {"help",                  no_argument,       0, 'h'},
@@ -1441,6 +1454,10 @@ int processArgs(int argc, char** argv) {
                     exit(1);
                   }
                   params.set(param, val);
+                  break;
+                }
+      case 'D': {
+                  params.set(stringParam::DISJ_OPTIONS, optarg);
                   break;
                 }
       case 'f': {
@@ -1651,11 +1668,19 @@ int processArgs(int argc, char** argv) {
                 helpstring += "\n# General cut options #\n";
                 helpstring += "-c num cuts, --cutlimit=num cuts\n\tMaximum number of cuts to generate (0+ = as given, -k = k * # fractional variables at root).\n";
                 helpstring += "-d num terms, --disj_terms=num terms\n\tMaximum number of disjunctive terms or disjunctions to generate (depending on mode).\n";
+                helpstring += "--disj_options={num_terms1, num_terms2,...}\n\tNumber of terms to use in each round.\n";
                 helpstring += "-g +/- 0-3, --gomory=+/- 0-3\n\t0: do not use Gomory cuts, 1: generate Gomory cuts via CglGMI, 2: generate Gomory cuts via gmic.cpp, 3: try closed-form strengthening (<0: only gen, >0: also apply to LP).\n";
-                helpstring += "-m mode, --mode=mode\n\tDescription needs to be entered.\n";
+                helpstring += "-m mode, --mode=mode\n\tMode for generating disjunction(s). 0: partial b&b tree, 1: splits, 2: crosses (not implemented), 3: custom, 4: do set of disj_terms.\n";
                 helpstring += "-r num rounds, --rounds=num rounds\n\tNumber of rounds of cuts to apply.\n";
                 helpstring += "-s 0/1/2, --strengthen=0/1/2\n\tWhether to strengthen cuts.\n";
                 helpstring += "-t num seconds, --timelimit=num seconds\n\tTotal number of seconds allotted for cut generation.\n";
+                helpstring += "\n# Objective options #\n";
+                helpstring += "--use_all_ones=0/1\n\tUse all ones objective.\n";
+                helpstring += "--use_disj_lb=0/1\n\tUse disjunctive lower bound objective.\n";
+                helpstring += "--use_iter_bilinear=num iters to do\n\tNumber of iterations to do in iterative bilinear procedure (1 = cut off the optimal post-SIC point).\n";
+                helpstring += "--use_tight_points=0/1\n\tUse objectives for being tight on points in collection.\n";
+                helpstring += "--use_tight_rays=0/1\n\tUse objectives for being tight on rays in collection.\n";
+                helpstring += "--use_unit_vectors=0/1\n\tUse unit vectors in nonbasic space.\n";
                 helpstring += "\n# Branch-and-bound options #\n";
                 helpstring += "-b 0+ --bb_runs=0+\n\tNumber of branch-and-bound repeats.\n";
                 helpstring += "-B strategy --bb_strategy=strategy\n\tBranch-and-bound strategy (see BBHelper.hpp).\n";

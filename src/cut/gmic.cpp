@@ -32,6 +32,10 @@ void generateGomoryCuts(
     const int option,
     /// [in] how to strengthen the cut
     const int strengthen_option,
+    /// [in] CglGMI's sparsity parameter rejects with bad support when # cut coefficient nonzeros >= MAX_SUPPORT + MAX_SUPPORT_REL * # cols; for us MIN_SUPPORT == MIN_SUPPORT_THRESHOLD
+    const int MIN_SUPPORT_THRESHOLD,
+    /// [in] CglGMI's sparsity parameter rejects with bad support when # cut coefficient nonzeros >= MAX_SUPPORT + MAX_SUPPORT_REL * # cols
+    const double MAX_SUPPORT_REL,
     /// [in] epsilon for deciding whether a value is fractional
     const double AWAY,
     /// [in] tolerance for reconstructing disjunctive term solution
@@ -45,8 +49,12 @@ void generateGomoryCuts(
   // Use CglGMI
   if (std::abs(option) == 1) {
     CglGMI GMIGen;
-    GMIGen.getParam().setMAX_SUPPORT(solver->getNumCols());
-    GMIGen.getParam().setMAX_SUPPORT_REL(0.5);
+    // Set parameters so that many GMIs are generated
+    // CglGMI's MAX_SUPPORT parameter is equivalent to the MIN_SUPPORT_THRESHOLD value in this code
+    // CglGMI's sparsity parameter rejects with bad support when # cut coefficient nonzeros >= MAX_SUPPORT + MAX_SUPPORT_REL * # cols
+    // This means that there will be a constant offset on the max allowable support for GMICs compared to VPCs (in the favor of GMICs being denser)
+    GMIGen.getParam().setMAX_SUPPORT(MIN_SUPPORT_THRESHOLD);
+    GMIGen.getParam().setMAX_SUPPORT_REL(MAX_SUPPORT_REL);
     GMIGen.getParam().setMAXDYN(solver->getInfinity());
     GMIGen.getParam().setMINVIOL(0.0);
     GMIGen.generateCuts(*solver, currGMICs);

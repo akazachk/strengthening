@@ -68,7 +68,7 @@ enum intParam {
   CUTLIMIT, ///< max number of cuts generated; 0 = none, -k = k * # fractional variables at root
   DISJ_TERMS, ///< number of disjunctive terms or number of disjunctions, depending on ::MODE
   GOMORY, ///< Gomory cut mode, 0: none, +/-1: use CglGMI class to generate cuts (-1: do not add them to LP before generating cuts; 1: do add them)
-  MODE, ///< not used in this code?
+  MODE, ///< 0: partial b&b tree, 1: splits, 2: crosses (not implemented), 3: custom, 4: disj_set_partial_bb
   ROUNDS, ///< number of  rounds to do
   STRENGTHEN, ///< 0: no, 1: yes, when possible, 2: same as 1 plus add GMICs to strengthen each disjunctive term
   TEMP, ///< useful for various temporary parameter changes; see corresponding enum
@@ -110,7 +110,10 @@ enum intParam {
 }; /* intParam */
 /// Double-valued parameters
 enum doubleParam {
+  BB_TIMELIMIT, // time limit for doing branch-and-bound
+  MAX_SUPPORT_REL, ///< max relative (to number of variables) number of nonzero coefficients in any cut we generate
   EPS, ///< global epsilon (may be further refined based on instance-specific data)
+  INF, ///< infinity (INFINITY keyword is reserved as a macro from math header)
   IP_OBJ, ///< way to give just the objective for this instance rather than reading it from a file
   MIN_ORTHOGONALITY, ///< minimum orthogonality between cuts added to the collection
   RCVMIP_TOTAL_TIMELIMIT, ///< total seconds allotted for generating certificates with RCVMIP; when specified, supercedes RCVMIP_CUT_TIMELIMIT
@@ -120,11 +123,11 @@ enum doubleParam {
 }; /* doubleParam */
 /// String-valued parameters
 enum stringParam {
+  DISJ_OPTIONS,
   FILENAME,
   LOGFILE,
   OPTFILE,
   SOLFILE,
-//  OUTDIR,
   NUM_STRING_PARAMS
 }; /* stringParam */
 
@@ -133,26 +136,23 @@ enum stringParam {
 enum class intConst {
   CHECK_DUPLICATES, ///< do not add duplicate cuts
   LUB, ///< value for var upper bound considered "large"
+  MIN_SUPPORT_THRESHOLD, ///< min absolute number of nonzero coefficients before enabling pruning by support
   MAX_SUPPORT_ABS, ///< max absolute number of nonzero coefficients in any cut we generate
   NUM_INT_CONST ///< number of integer constants
 }; /* intConst */
 /// Double parameters that we do not let the user change
 enum class doubleConst {
-  AWAY,
-  DIFFEPS, // to check whether something is different enough to throw an error
-  INF, // infinity (INFINITY is taken as a macro from math header)
-  RAYEPS, // value for which a ray coefficient will be treated as zero
-  // Time limits
-  BB_TIMELIMIT, // time limit for doing branch-and-bound
+  AWAY, ///< min fractionality before a variable is considered not integer-valued
+  DIFFEPS, ///< to check whether something is different enough to throw an error
+  RAYEPS, ///< value for which a ray coefficient will be treated as zero
   // Safety related constants:
-  EPS_COEFF, // any cut coefficient smaller than this will be replaced by zero
-  EPS_COEFF_LUB, // for variables with large upper bound, any cut coefficient smaller than this will be replaced by zero
-  MIN_VIOL_ABS,
-  MIN_VIOL_REL,
-  MAX_DYN, // |alpha_max| / |alpha_min| upper bound; Maximum ratio between largest and smallest non zero coefficients in a cut
-  MAX_DYN_LUB, // Same as MAX_DYN but when some of the variables involved in the cut have a large upper bound; should be >= MAX_DYN logically
-  MAX_SUPPORT_REL,
-  NUM_DOUBLE_CONST
+  EPS_COEFF, ///< any cut coefficient smaller than this will be replaced by zero
+  EPS_COEFF_LUB, ///< for variables with large upper bound, any cut coefficient smaller than this will be replaced by zero
+  MIN_VIOL_ABS, ///< minimum amount a cut should remove the LP opt
+  MIN_VIOL_REL, ///< minimum amount a cut should remove the LP opt (using ratio)
+  MAX_DYN, ///< |alpha_max| / |alpha_min| upper bound; Maximum ratio between largest and smallest non zero coefficients in a cut
+  MAX_DYN_LUB, ///< Same as doubleConst::MAX_DYN but when some of the variables involved in the cut have a large upper bound; should be >= doubleConst::MAX_DYN logically
+  NUM_DOUBLE_CONST ///< number of double constants
 }; /* doubleConst */
 
 /// @brief Temporary options that might be invoked during testing or running of the code
@@ -177,6 +177,23 @@ inline int enable_temp_option(const int strategy, const TempOptions option) {
 inline int disable_temp_option(const int strategy, const TempOptions option) {
   return strategy & ~static_cast<int>(option);
 }
+
+/// @brief Mode in which VPCs will be generated (disjunction type, in fact)
+enum class VPCMode {
+  PARTIAL_BB,   ///< generate partial branch-and-bound tree #PartialBBDisjunction
+  SPLITS,       ///< set of split disjunctions
+  CROSSES,      ///< set of cross disjunctions
+  CUSTOM,       ///< user-defined disjunction
+  DISJ_SET_PBB, ///< run set of partial branch-and-bound trees
+  NUM_VPC_MODES ///< number of vpc modes
+}; /* VPCMode */
+const std::vector<std::string> VPCModeName {
+  "PARTIAL_BB",
+  "SPLITS",
+  "CROSSES",
+  "CUSTOM",
+  "DISJ_SET_PBB"
+}; /* VPCModeName */
 
 /// @brief Options for the parameter BB_STRATEGY
 enum class BB_Strategy_Options {
@@ -236,7 +253,6 @@ struct EnumClassHash {
   }
 };
 
-/// Generic parameter class, with a name and value, ability to check allowable values, and sorting rule
 /// Generic parameter class, with a name and value, ability to check allowable values, and sorting rule
 template <class T>
 class Parameter {
@@ -478,8 +494,8 @@ struct Parameters {
         IntParameter(intParam::BB_STRATEGY, "BB_STRATEGY",
             get_bb_option_value({
               BB_Strategy_Options::gurobi,
-              // BB_Strategy_Options::user_cuts,
-              BB_Strategy_Options::presolve_on
+              BB_Strategy_Options::user_cuts,
+              BB_Strategy_Options::presolve_off
             }),
             std::numeric_limits<int>::min(), std::numeric_limits<int>::max())},
     {intParam::BB_RUNS,
@@ -526,7 +542,7 @@ struct Parameters {
             1, 0, std::numeric_limits<int>::max())},
     {intParam::MODE,
         IntParameter(intParam::MODE, "MODE",
-            0, {0, 1, 3})},
+            0, {0, 1, 3, 4})},
     {intParam::GOMORY,
         IntParameter(intParam::GOMORY, "GOMORY",
             0, -3, 3)},
@@ -555,14 +571,23 @@ struct Parameters {
     {doubleParam::IP_OBJ,
         DoubleParameter(doubleParam::IP_OBJ, "IP_OBJ",
             std::numeric_limits<double>::max(), std::numeric_limits<double>::lowest(), std::numeric_limits<double>::max())},
+    {doubleParam::INF,
+        DoubleParameter(doubleParam::EPS, "INF",
+            std::numeric_limits<double>::max(), std::numeric_limits<double>::max(), std::numeric_limits<double>::max())},
     {doubleParam::EPS,
         DoubleParameter(doubleParam::EPS, "EPS",
             1e-7, 0., 1.)},
+    {doubleParam::MAX_SUPPORT_REL, 
+        DoubleParameter("MAX_SUPPORT_REL", 
+            1.0, 0., 1.0)},
+    {doubleParam::BB_TIMELIMIT,
+        DoubleParameter(doubleParam::BB_TIMELIMIT, "BB_TIMELIMIT",
+            3600., 0., std::numeric_limits<double>::max())},
   }; /* doubleParamValues */
 
   /// @brief string parameter values
   std::unordered_map<stringParam, StringParameter, EnumClassHash> stringParamValues {
-//    {stringParam::OUTDIR, StringParameter("OUTDIR", "")},
+    {stringParam::DISJ_OPTIONS, StringParameter("DISJ_OPTIONS", "")},
     {stringParam::SOLFILE,
       StringParameter(stringParam::SOLFILE, "SOLFILE", "")},
     {stringParam::OPTFILE,
@@ -576,22 +601,20 @@ struct Parameters {
   /// @brief Integer constants
   std::unordered_map<intConst, IntParameter, EnumClassHash> intConstValues {
     {intConst::MAX_SUPPORT_ABS, IntParameter("MAX_SUPPORT_ABS", std::numeric_limits<int>::max(), std::numeric_limits<int>::max(), std::numeric_limits<int>::max())},
+    {intConst::MIN_SUPPORT_THRESHOLD, IntParameter("MIN_SUPPORT_THRESHOLD", 1000, 1000, 1000)},
     {intConst::LUB, IntParameter("LUB", 1e3, 1e3, 1e3)},
     {intConst::CHECK_DUPLICATES, IntParameter("CHECK_DUPLICATES", 1, 1, 1)},
   }; /* intConstValues */
 
   /// @brief Double constants
   std::unordered_map<doubleConst, DoubleParameter, EnumClassHash> doubleConstValues {
-    {doubleConst::MAX_SUPPORT_REL, DoubleParameter("MAX_SUPPORT_REL", 0.9, 0.9, 0.9)},
     {doubleConst::MAX_DYN_LUB, DoubleParameter("MAX_DYN_LUB", 1e13, 1e13, 1e13)},
     {doubleConst::MAX_DYN, DoubleParameter("MAX_DYN", 1e8, 1e8, 1e8)},
     {doubleConst::MIN_VIOL_REL, DoubleParameter("MIN_VIOL_REL", 1e-7, 1e-7, 1e-7)},
     {doubleConst::MIN_VIOL_ABS, DoubleParameter("MIN_VIOL_ABS", 1e-7, 1e-7, 1e-7)},
     {doubleConst::EPS_COEFF_LUB, DoubleParameter("EPS_COEFF_LUB", 1e-13, 1e-13, 1e-13)},
     {doubleConst::EPS_COEFF, DoubleParameter("EPS_COEFF", 1e-5, 1e-5, 1e-5)},
-    {doubleConst::BB_TIMELIMIT, DoubleParameter("BB_TIMELIMIT", 3600., 3600., 3600.)},
     {doubleConst::RAYEPS, DoubleParameter("RAYEPS", 1e-7, 1e-7, 1e-7)},
-    {doubleConst::INF, DoubleParameter("INF", std::numeric_limits<double>::max(), std::numeric_limits<double>::max(), std::numeric_limits<double>::max())},
     {doubleConst::DIFFEPS, DoubleParameter("DIFFEPS", 1e-3, 1e-3, 1e-3)}, // to check whether something is different enough to throw an error
     {doubleConst::AWAY, DoubleParameter("AWAY", 1e-3, 1e-3, 1e-3)},
   }; /* doubleConstValues */
@@ -607,6 +630,7 @@ struct Parameters {
     this->logfile = source.logfile;
     this->intParamValues = source.intParamValues;
     this->doubleParamValues = source.doubleParamValues;
+    this->stringParamValues = source.stringParamValues;
     this->intConstValues = source.intConstValues;
     this->doubleConstValues = source.doubleConstValues;
   } /* copy constructor */
@@ -699,6 +723,40 @@ struct Parameters {
   } /* set parameters by name */
   ///@}
 }; /* struct Parameters */
+
+/// @brief Parse a string of disjunctive options separated by \p SEP (default semicolon)
+/// @return Status code (0 = ok, 1 = error)
+inline int parseDisjOptions(
+    /// [out] vector of disjunctive options
+    std::vector<int>& disjOptions,
+    /// [in] parameters (including string of disjunctive options via DISJ_OPTIONS)
+    const StrengtheningParameters::Parameters& params,
+    /// [in] delimiter for disjunctive options
+    const char SEP = ';') {
+  const int OK_STATUS = 0;
+  const int ERROR_STATUS = 0;
+
+  std::string disjStr = params.get(StrengtheningParameters::stringParam::DISJ_OPTIONS);
+  if (disjStr.empty()) {
+    return OK_STATUS;
+  }
+
+  std::istringstream iss(disjStr);
+  std::string token;
+  while (std::getline(iss, token, SEP)) {
+    disjOptions.push_back(std::stoi(token));
+  }
+
+  if ((params.get(StrengtheningParameters::intParam::MODE) != static_cast<int>(StrengtheningParameters::VPCMode::DISJ_SET_PBB))
+         && (static_cast<int>(disjOptions.size()) != params.get(StrengtheningParameters::intParam::ROUNDS))) {
+      error_msg(errorstring, "Number of disjunction options (%d) is not equal to the number of rounds (%d).\n",
+          static_cast<int>(disjOptions.size()), params.get(StrengtheningParameters::intParam::ROUNDS));
+      writeErrorToLog(errorstring, params.logfile);
+      return ERROR_STATUS;
+  }
+
+  return OK_STATUS;
+} /* parseDisjOptions */
 
 /// @brief Read parameters and constants from a given file with the format that each line has param_name,param_value (comma-separated)
 inline void readParams(Parameters& params, std::string infilename) {
@@ -801,4 +859,4 @@ inline void printParams(
   }
   fflush(logfile);
 } /* printParams */
-} /* namespace VPCParameters */
+} /* namespace StrengtheningParameters */

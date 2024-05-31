@@ -207,17 +207,33 @@ void CglAdvCut::generateCuts(const OsiSolverInterface& si, OsiCuts& cuts, const 
   //==================================================//
   // Set up VPC generation
   VPCParametersNamespace::VPCParameters vpc_params;
-  vpc_params.set(VPCParametersNamespace::DISJ_TERMS, this->params.get(StrengtheningParameters::DISJ_TERMS));
   vpc_params.set(VPCParametersNamespace::CUTLIMIT, this->params.get(StrengtheningParameters::CUTLIMIT));
+  vpc_params.set(VPCParametersNamespace::DISJ_TERMS, this->params.get(StrengtheningParameters::DISJ_TERMS));
+  vpc_params.set(VPCParametersNamespace::GOMORY, this->params.get(StrengtheningParameters::GOMORY));
+  vpc_params.set(VPCParametersNamespace::MODE, this->params.get(StrengtheningParameters::MODE));
+  vpc_params.set(VPCParametersNamespace::STRENGTHEN, this->params.get(StrengtheningParameters::STRENGTHEN));
+  vpc_params.set(VPCParametersNamespace::USE_ALL_ONES, this->params.get(StrengtheningParameters::USE_ALL_ONES));
+  vpc_params.set(VPCParametersNamespace::USE_ITER_BILINEAR, this->params.get(StrengtheningParameters::USE_ITER_BILINEAR));
+  vpc_params.set(VPCParametersNamespace::USE_DISJ_LB, this->params.get(StrengtheningParameters::USE_DISJ_LB));
+  vpc_params.set(VPCParametersNamespace::USE_TIGHT_POINTS, this->params.get(StrengtheningParameters::USE_TIGHT_POINTS));
+  vpc_params.set(VPCParametersNamespace::USE_TIGHT_RAYS, this->params.get(StrengtheningParameters::USE_TIGHT_RAYS));
+  vpc_params.set(VPCParametersNamespace::USE_UNIT_VECTORS, this->params.get(StrengtheningParameters::USE_UNIT_VECTORS));
+  vpc_params.set(VPCParametersNamespace::VERBOSITY, this->params.get(StrengtheningParameters::VERBOSITY));
+
   vpc_params.set(VPCParametersNamespace::TIMELIMIT, this->params.get(StrengtheningParameters::TIMELIMIT));
   vpc_params.set(VPCParametersNamespace::PARTIAL_BB_TIMELIMIT, this->params.get(StrengtheningParameters::TIMELIMIT));
-  vpc_params.set(VPCParametersNamespace::USE_ALL_ONES, 1);
-  vpc_params.set(VPCParametersNamespace::USE_ITER_BILINEAR, 1);
-  vpc_params.set(VPCParametersNamespace::USE_DISJ_LB, 1);
-  vpc_params.set(VPCParametersNamespace::USE_TIGHT_POINTS, 0);
-  vpc_params.set(VPCParametersNamespace::USE_TIGHT_RAYS, 0);
-  vpc_params.set(VPCParametersNamespace::USE_UNIT_VECTORS, 0);
-  vpc_params.set(VPCParametersNamespace::VERBOSITY, this->params.get(StrengtheningParameters::VERBOSITY));
+  
+  vpc_params.set(VPCParametersNamespace::IP_OBJ, this->params.get(StrengtheningParameters::IP_OBJ));
+  vpc_params.set(VPCParametersNamespace::EPS, this->params.get(StrengtheningParameters::EPS));
+  vpc_params.set(VPCParametersNamespace::INF, this->params.get(StrengtheningParameters::INF));
+  vpc_params.set(VPCParametersNamespace::MAX_SUPPORT_REL, this->params.get(StrengtheningParameters::MAX_SUPPORT_REL));
+  vpc_params.set(VPCParametersNamespace::MIN_ORTHOGONALITY, this->params.get(StrengtheningParameters::MIN_ORTHOGONALITY));
+
+  vpc_params.set(VPCParametersNamespace::DISJ_OPTIONS, this->params.get(StrengtheningParameters::DISJ_OPTIONS));
+  vpc_params.set(VPCParametersNamespace::FILENAME, this->params.get(StrengtheningParameters::FILENAME));
+  vpc_params.set(VPCParametersNamespace::LOGFILE, this->params.get(StrengtheningParameters::LOGFILE));
+  vpc_params.logfile = this->params.logfile;
+  // vpc_params.set(VPCParametersNamespace::TEMP, this->params.get(StrengtheningParameters::TEMP));
 
   this->gen.setParams(vpc_params);
 

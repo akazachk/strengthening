@@ -17,6 +17,8 @@ void generateGomoryCuts(
     OsiSolverInterface* const solver,
     const int option,
     const int strengthen_option,
+    const int MIN_SUPPORT_THRESHOLD,
+    const double MAX_SUPPORT_REL,
     const double AWAY,
     const double DIFFEPS,
     FILE* logfile);
