@@ -57,7 +57,7 @@ using namespace StrengtheningParameters;
 #include "GurobiHelper.hpp" // for obtaining ip opt
 #endif
 
-#ifdef TRACE
+#ifdef VPC_DEBUG
 #include "debug.hpp"
 #endif
 
