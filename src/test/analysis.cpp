@@ -78,8 +78,8 @@ const std::vector<std::string> CERT_INFO_CONTENTS = {
 const int countCertInfoEntries = CERT_INFO_CONTENTS.size() * 2;
 const int countParamInfoEntries = intParam::NUM_INT_PARAMS + doubleParam::NUM_DOUBLE_PARAMS;
 int countTimeInfoEntries = 0; // set in printHeader
-const int countVersionInfoEntries = 6;
-const int countExtraInfoEntries = 4;
+const int countVersionInfoEntries = 9; // strcode, vpc, cbc, clp, gurobi, cplex, hostname, cpu_model, cpu_info
+const int countExtraInfoEntries = 4; // ExitReason, end_time_string, time elapsed, instname
 
 void printHeader(const StrengtheningParameters::Parameters& params,
     const std::vector<std::string>& time_name,
@@ -339,21 +339,27 @@ void printHeader(const StrengtheningParameters::Parameters& params,
     assert(count == countTimeInfoEntries);
   } // TIME INFO
   { // VERSION INFO
-    fprintf(logfile, "%s%c", "code_version", SEP);
-    fprintf(logfile, "%s%c", "vpc_version", SEP);
-    fprintf(logfile, "%s%c", "cbc_version", SEP);
-    fprintf(logfile, "%s%c", "clp_version", SEP);
-    fprintf(logfile, "%s%c", "gurobi_version", SEP);
-    fprintf(logfile, "%s%c", "cplex_version", SEP);
+    int count = 0;
+    fprintf(logfile, "%s%c", "code_version", SEP); count++;
+    fprintf(logfile, "%s%c", "vpc_version", SEP); count++;
+    fprintf(logfile, "%s%c", "cbc_version", SEP); count++;
+    fprintf(logfile, "%s%c", "clp_version", SEP); count++;
+    fprintf(logfile, "%s%c", "gurobi_version", SEP); count++;
+    fprintf(logfile, "%s%c", "cplex_version", SEP); count++;
+    fprintf(logfile, "%s%c", "hostname", SEP); count++;
+    fprintf(logfile, "%s%c", "cpu_model", SEP); count++;
+    fprintf(logfile, "%s%c", "cpu_id", SEP); count++;
+    assert(count == countVersionInfoEntries);
   } // VERSION INFO
   { // WRAP UP INFO
-    fprintf(logfile, "%s%c", "ExitReason", SEP);
-    fprintf(logfile, "%s%c", "end_time_string", SEP);
-    fprintf(logfile, "%s%c", "time elapsed", SEP);
-    fprintf(logfile, "%s%c", "instname", SEP);
+    int count = 0;
+    fprintf(logfile, "%s%c", "ExitReason", SEP); count++;
+    fprintf(logfile, "%s%c", "end_time_string", SEP); count++;
+    fprintf(logfile, "%s%c", "time elapsed", SEP); count++;
+    fprintf(logfile, "%s%c", "instname", SEP); count++;
+    assert(count == countExtraInfoEntries);
   } // WRAP UP INFO
-
-  fprintf(logfile, "\n");
+  fprintf(logfile, "end\n");
   fflush(logfile);
 } /* printHeader */
 

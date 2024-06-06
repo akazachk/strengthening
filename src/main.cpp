@@ -120,11 +120,12 @@ Parameters params;
 
 OsiSolverInterface *solver;               ///< stores the cuts we actually want to "count" (i.e., the base LP from which we generate cuts in each round)
 OsiSolverInterface *origSolver;           ///< original solver in case we wish to come back to it later
+OsiSolverInterface* unstrGMICSolver = NULL; ///< only unstrengthened Gomory cuts
 OsiSolverInterface* GMICSolver = NULL;    ///< only GMICs
 OsiSolverInterface* strCutSolver = NULL;  ///< if GMICs count, this is only mycuts; otherwise, it is both GMICs and mycuts
 OsiSolverInterface* allCutSolver = NULL;  ///< all generated cuts (same as solver if no GMICs, in which case not generated)
 
-OsiCuts gmics, mycuts, rcvmip_cuts;
+OsiCuts unstrgmics, gmics, mycuts, rcvmip_cuts;
 
 std::string dir = "", filename = "", instname = "", in_file_ext = "";
 
@@ -133,12 +134,21 @@ TimeStats timer;
 std::time_t start_time_t, end_time_t;
 char start_time_string[25];
 
+const int HOST_NAME_MAX = 1024;
+char hostname[HOST_NAME_MAX];
+// For CPU model and number
+std::string cpu_model = "";
+int cpu_id = -1;
+#ifdef __linux__
+#include <sched.h> // for cpu_id
+#endif
+
 SummaryBoundInfo boundInfo;
 std::vector<SummaryBoundInfo> boundInfoVec;
 SummaryBBInfo info_nocuts, info_mycuts, info_allcuts;
 SummaryDisjunctionInfo disjInfo;
-std::vector<SummaryCutInfo> cutInfoVec;
-SummaryCutInfo cutInfo, cutInfoGMICs, cutInfoUnstr;
+std::vector<SummaryCutInfo> cutInfoVec, cutInfoUnstrGMICVec, cutInfoGMICVec;
+SummaryCutInfo cutInfo, cutInfoUnstrGMICs, cutInfoGMICs, cutInfoUnstr;
 SummaryStrengtheningInfo strInfo, rcvmipStrInfo;
 std::vector<SummaryCertificateInfo> origCertInfoVec;
 std::vector<SummaryCertificateInfo> rcvmipCertInfoVec;
@@ -250,7 +260,7 @@ int main(int argc, char** argv) {
 
   //====================================================================================================//
   // Set up solver and get initial solution
-  initializeSolver(solver);
+  initializeSolver(solver, params.get(stringParam::FILENAME));
   timer.start_timer(OverallTimeStats::INIT_SOLVE_TIME);
   solver->initialSolve();
   if (!checkSolverOptimality(solver, false)) {
@@ -1002,9 +1012,10 @@ int main(int argc, char** argv) {
   timer.end_timer(OverallTimeStats::TOTAL_TIME);
 
 #ifdef PRINT_LP_WITH_CUTS
-  if (boundInfo.num_mycut > 0) {
+  if (boundInfo.num_gmic + boundInfo.num_mycut > 0) {
     std::string fileWithCuts = filename + "_cuts";
-    solver->writeMps(fileWithCuts.c_str());
+    // solver->writeMps(fileWithCuts.c_str());
+    solver->writeLp(fileWithCuts.c_str());
   }
 #endif
 
@@ -1033,8 +1044,9 @@ int startUp(int argc, char** argv) {
   int status = 0;
 
   // Input handling
-  printf("## Custom Cut Generator ##\n");
+  printf("## Strengthened Cut Generator ##\n");
   printf("# Aleksandr M. Kazachkov\n");
+  printf("# Based on joint work with Egon Balas\n");
   for (int i = 0; i < argc; i++) {
     std::cout << argv[i] << " ";
   }
@@ -1044,6 +1056,54 @@ int startUp(int argc, char** argv) {
   struct tm* start_timeinfo = localtime(&start_time_t);
   snprintf(start_time_string, sizeof(start_time_string) / sizeof(char), "%s", asctime(start_timeinfo));
   printf("Start time: %s\n", start_time_string);
+
+  // Get host name
+  {
+    const int status = gethostname(hostname, HOST_NAME_MAX);
+    if (status)
+    {
+      perror("gethostname");
+      return EXIT_FAILURE;
+    }
+  }
+
+  // Get CPU model
+  {
+#ifdef __linux__
+    // File stream to read /proc/cpuinfo
+    std::ifstream cpuInfoFile("/proc/cpuinfo");
+
+    if (!cpuInfoFile.is_open()) {
+      std::cerr << "Error opening /proc/cpuinfo" << std::endl;
+    }
+
+    // Iterate through each line in /proc/cpuinfo
+    std::string line;
+    while (std::getline(cpuInfoFile, line)) {
+      // Search for the "model name" field
+      size_t pos = line.find("model name");
+      if (pos != std::string::npos) {
+        // Extract the CPU model information
+        cpu_model = line.substr(pos + 13); // 13 is the length of "model name    : "
+        break;
+      }
+    }
+
+    // Close the file
+    cpuInfoFile.close();
+#else
+    cpu_model = "";
+#endif
+  }
+
+  // Get CPU id
+  {
+#ifdef __linux__
+    cpu_id = sched_getcpu();
+#else
+    cpu_id = -1;
+#endif
+  }
 
   /*
   printf("\n## Version Information ##\n");
@@ -1191,8 +1251,11 @@ int wrapUp(int retCode, int argc, char** argv) {
 #else
     fprintf(logfile, ",");
 #endif
-
-    // Print exit reason and finish
+    // Data for the current run's host/processor
+    fprintf(logfile, "%s,", hostname);
+    fprintf(logfile, "%s,", cpu_model.c_str());
+    fprintf(logfile, "%d,", cpu_id);
+    // Print exit reason and finish (data corresponding to "countExtraInfoEntries")
     fprintf(logfile, "%s,", CglVPC::ExitReasonName[exitReasonInt].c_str());
     fprintf(logfile, "%s,", end_time_string);
     fprintf(logfile, "%.2f,", difftime(end_time_t, start_time_t));
@@ -1214,6 +1277,8 @@ int wrapUp(int retCode, int argc, char** argv) {
   printf("\n## Time information ##\n");
   for (int i = 0; i < NUM_TIME_STATS; i++) {
     std::string name = OverallTimeStatsName[i];
+    if ((params.get(intParam::DISJ_TERMS) == 0) && (params.get(stringParam::DISJ_OPTIONS).empty()) && name.compare(0, 3, "VPC") == 0)
+      continue; // skip VPC-specific timers
     if (params.get(intParam::BB_RUNS) == 0 && name.compare(0, 2, "BB") == 0)
       continue;
     printf("%-*.*s%s\n", NAME_WIDTH, NAME_WIDTH, (name).c_str(),
@@ -1246,6 +1311,9 @@ int wrapUp(int retCode, int argc, char** argv) {
 #ifdef USE_CPLEX
   printf("CPLEX Version: %s\n", CPLEX_VERSION_STRING.c_str());
 #endif
+  fprintf(stdout, "Hostname: %s\n", hostname);
+  fprintf(stdout, "CPU Model: %s\n", cpu_model.c_str());
+  fprintf(stdout, "CPU ID: %d\n", cpu_id);
   printf("Instance: %s\n", instname.c_str());
   if (!params.get(stringParam::LOGFILE).empty()) {
     printf("Log: %s\n", params.get(stringParam::LOGFILE).c_str());
@@ -1269,6 +1337,9 @@ int wrapUp(int retCode, int argc, char** argv) {
   if (origSolver) {
     delete origSolver;
   }
+  if (unstrGMICSolver) {
+    delete unstrGMICSolver;
+  }
   if (GMICSolver) {
     delete GMICSolver;
   }
@@ -1280,61 +1351,6 @@ int wrapUp(int retCode, int argc, char** argv) {
   }
   return retCode;
 } /* wrapUp */
-
-void initializeSolver(OsiSolverInterface* &solver) {
-  // Generate cuts
-  solver = new SolverInterface;
-  setLPSolverParameters(solver, params.get(VERBOSITY));
-
-  int status = 0;
-  if (in_file_ext.compare("lp") == 0) {
-#ifdef TRACE
-    printf("\n## Reading LP file. ##\n");
-#endif
-    status = solver->readLp(params.get(stringParam::FILENAME).c_str());
-  } else {
-    if (in_file_ext.compare("mps") == 0) {
-#ifdef TRACE
-      printf("\n## Reading MPS file. ##\n");
-#endif
-      status = solver->readMps(params.get(stringParam::FILENAME).c_str());
-    } else {
-      try {
-#ifdef TRACE
-        printf("\n## Reading MPS file. ##\n");
-#endif
-        status = solver->readMps(params.get(stringParam::FILENAME).c_str());
-      } catch (std::exception& e) {
-        error_msg(errorstring, "Unrecognized extension: %s.\n",
-            in_file_ext.c_str());
-        writeErrorToLog(errorstring, params.logfile);
-        exit(1);
-      }
-    }
-  } // read file
-  if (status < 0) {
-    error_msg(errorstring, "Unable to read in file %s.\n",
-        params.get(stringParam::FILENAME).c_str());
-    writeErrorToLog(errorstring, params.logfile);
-    exit(1);
-  }
-
-  // Make sure we are doing a minimization problem; this is just to make later
-  // comparisons simpler (i.e., a higher LP obj after adding the cut is better).
-  if (solver->getObjSense() < 1e-3) {
-    printf(
-        "\n## Detected maximization problem. Negating objective function to make it minimization. ##\n");
-    solver->setObjSense(1.0);
-    const double* obj = solver->getObjCoefficients();
-    for (int col = 0; col < solver->getNumCols(); col++) {
-      solver->setObjCoeff(col, -1. * obj[col]);
-    }
-    double objOffset = getObjOffset(solver);
-    if (objOffset != 0.) {
-      solver->setDblParam(OsiDblParam::OsiObjOffset, -1. * objOffset);
-    }
-  }
-} /* initializeSolver */
 
 /**
  * See params.hpp for descriptions of the parameters
