@@ -1117,7 +1117,7 @@ void analyzeStrength(
     output += tmpstring;
     output += ")\n";
   }
-  if (!isInfinity(std::abs(boundInfo.mycut_obj))) {
+  if (mycuts && mycuts->sizeCuts() > 0 && !isInfinity(std::abs(boundInfo.mycut_obj))) {
     snprintf(tmpstring, sizeof(tmpstring) / sizeof(char),
         "%-*.*s%s (%d cuts", NAME_WIDTH, NAME_WIDTH, "MYCUTs: ",
         stringValue(boundInfo.mycut_obj, "% -*.*g",
