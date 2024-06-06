@@ -2,7 +2,7 @@
 \Problem name: example.lp
 
 Minimize
- COST: 0 X1 + 1 X2
+ COST: 1 X1 + 1 X2
 Subject To
  GE1:  2 X1 + X2 >= 0.5
  GE2: -2 X1 + X2 >= -1.5
