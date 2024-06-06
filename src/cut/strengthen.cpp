@@ -281,8 +281,8 @@ int strengthenCutS(
   std::vector<double> lb_term(num_terms, 0.0); // u^t_0 (D^t_0 - \ell^t)
   for (int term_ind = 0; term_ind < num_terms; term_ind++) {
     const DisjunctiveTerm& term = disj->terms[term_ind];
-    const int num_common = (int) disj->common_changed_var.size();
-    const int num_disj_ineqs = num_common + term.changed_var.size();
+    const int num_common = (int) disj->common_changed_var.size() + disj->common_ineqs.size();
+    const int num_disj_ineqs = num_common + term.changed_var.size() + term.ineqs.size();
     // Resize current term vector
     disj_lb_diff[term_ind].resize(num_disj_ineqs, 0.0);
 
@@ -341,7 +341,7 @@ int strengthenCutS(
     int lt_zero_ind = -1, gt_zero_ind = -1;
     for (int term_ind = 0; term_ind < disj->num_terms; term_ind++) {
       const DisjunctiveTerm& term = disj->terms[term_ind];
-      const int num_disj_ineqs = (int) disj->common_changed_var.size() + term.changed_var.size();
+      const int num_disj_ineqs = (int) disj->common_changed_var.size() + disj->common_ineqs.size() + term.changed_var.size() + term.ineqs.size();
       const double ukt = v[term_ind][solver->getNumRows() + num_disj_ineqs + col];
       if (lessThanVal(ukt, 0)) {
         if (lt_zero_ind == -1) lt_zero_ind = term_ind;
@@ -461,8 +461,8 @@ int strengthenCut(
       continue;
     }
 
-    const int num_common = (int) disj->common_changed_var.size();
-    const int num_disj_ineqs = num_common + term.changed_var.size();
+    const int num_common = (int) disj->common_changed_var.size() + disj->common_ineqs.size();
+    const int num_disj_ineqs = num_common + term.changed_var.size() + term.ineqs.size();
     // Resize current term vector
     disj_lb_diff[term_ind].resize(num_disj_ineqs, 0.0);
 
@@ -523,7 +523,7 @@ int strengthenCut(
     int lt_zero_ind = -1, gt_zero_ind = -1;
     for (int term_ind = 0; term_ind < disj->num_terms; term_ind++) {
       const DisjunctiveTerm& term = disj->terms[term_ind];
-      const int num_disj_ineqs = (int) disj->common_changed_var.size() + term.changed_var.size() + term.ineqs.size();
+      const int num_disj_ineqs = (int) disj->common_changed_var.size() + disj->common_ineqs.size() + term.changed_var.size() + term.ineqs.size();
       const double ukt = v[term_ind][solver->getNumRows() + num_disj_ineqs + col];
       if (lessThanVal(ukt, 0)) {
         if (lt_zero_ind == -1) lt_zero_ind = term_ind;
@@ -611,7 +611,7 @@ bool strengthenCutCoefficient(
   int lt_zero_ind = -1, gt_zero_ind = -1;
   for (int term_ind = 0; term_ind < disj->num_terms; term_ind++) {
     const DisjunctiveTerm& term = disj->terms[term_ind];
-    const int num_disj_ineqs = (int) disj->common_changed_var.size() + term.changed_var.size();
+    const int num_disj_ineqs = (int) disj->common_changed_var.size() + disj->common_ineqs.size() + term.changed_var.size() + term.ineqs.size();
     const double ukt = v[term_ind][solver->getNumRows() + num_disj_ineqs + var];
     if (lessThanVal(ukt, 0)) {
       if (lt_zero_ind == -1) lt_zero_ind = term_ind;
@@ -623,7 +623,7 @@ bool strengthenCutCoefficient(
   const double mult = (gt_zero_ind == -1) ? -1 : 1.;
   // Can it happen that one of the multipliers is on the lower bound, and one is on the upper bound?
   if (lt_zero_ind != -1 && gt_zero_ind != -1) {
-    const int num_common = (int) disj->common_changed_var.size();
+    const int num_common = (int) disj->common_changed_var.size() + disj->common_ineqs.size();
     const double uk0 = v[lt_zero_ind][solver->getNumRows() + num_common + disj->terms[lt_zero_ind].changed_var.size() + var];
     const double uk1 = v[gt_zero_ind][solver->getNumRows() + num_common + disj->terms[gt_zero_ind].changed_var.size() + var];
     if (!isZero(uk0) && !isZero(uk1)) {
@@ -657,7 +657,7 @@ bool strengthenCutCoefficient(
       double max_term_val = std::numeric_limits<double>::lowest(); 
       for (int term_ind = 0; term_ind < num_terms; term_ind++) {
         const DisjunctiveTerm& term = disj->terms[term_ind];
-        const int num_disj_ineqs = (int) disj->common_changed_var.size() + term.changed_var.size();
+        const int num_disj_ineqs = (int) disj->common_changed_var.size() + disj->common_ineqs.size() + term.changed_var.size() + term.ineqs.size();
         const double utk = v[term_ind][solver->getNumRows() + num_disj_ineqs + var];
         // TODO figure out safe floating point comparison
         const double curr_val = ((mult > 0 && utk < 0) ? 0. : -utk * mult) + lb_term[term_ind] * m[term_ind];
@@ -690,10 +690,10 @@ bool strengthenCutCoefficient(
     throw("Unable to strengthen coefficient.\n");
   }
 
+  str_coeff *= mult; // 2024-06-06 fixed bug: previously was done after checking isVal, overcounting # str coeffs
   if (!isVal(str_coeff, coeff)) {
     // If complemented, adjust right-hand side
     if (mult < 0) {
-      str_coeff *= -1;
       if (!isZero(solver->getColUpper()[var])) {
         str_rhs += (str_coeff - coeff) * solver->getColUpper()[var];
       }
@@ -771,7 +771,7 @@ void setupMonoidalIP(
     el_ind++;
 
     const DisjunctiveTerm& term = disj->terms[t];
-    const int num_disj_ineqs = (int) disj->common_changed_var.size() + term.changed_var.size() + term.ineqs.size();
+    const int num_disj_ineqs = (int) disj->common_changed_var.size() + disj->common_ineqs.size() + term.changed_var.size() + term.ineqs.size();
     //const double utk = std::abs(v[t][solver->getNumRows() + num_disj_ineqs + var]);
     const double utk = v[t][solver->getNumRows() + num_disj_ineqs + var];
     // TODO figure out safe floating point comparison
@@ -842,7 +842,7 @@ void updateMonoidalIP(
   if (!disj) { return; }
   for (int t = 0; t < disj->num_terms; t++) {
     const DisjunctiveTerm& term = disj->terms[t];
-    const int num_disj_ineqs = (int) disj->common_changed_var.size() + term.changed_var.size();
+    const int num_disj_ineqs = (int) disj->common_changed_var.size() + disj->common_ineqs.size() + term.changed_var.size() + term.ineqs.size();
     //const double utk = std::abs(v[t][solver->getNumRows() + num_disj_ineqs + var]);
     const double utk = v[t][solver->getNumRows() + num_disj_ineqs + var];
     // TODO figure out safe floating point comparison
