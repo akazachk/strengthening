@@ -109,7 +109,7 @@ ifeq ($(USER),akazachkov)
 	endif
 	# MacStudio
   ifeq ($(UNAME),Darwin)
-    GUROBI_LINK = gurobi95
+    GUROBI_LINK = gurobi110
     GUROBI_DIR = ${GUROBI_HOME}
     CPLEX_DIR = ${CPLEX_HOME}
   endif
@@ -125,7 +125,7 @@ ifeq ($(USER),akazachk)
   endif
 	# Mac
   ifeq ($(UNAME),Darwin)
-    GUROBI_LINK = gurobi91
+    GUROBI_LINK = gurobi10
     GUROBI_DIR = ${GUROBI_HOME}
     CPLEX_DIR = ${CPLEX_HOME}
 		#COIN_OR = $(PROJ_DIR)/../coin-or/Cbc-$(COIN_VERSION)
@@ -202,7 +202,7 @@ ifeq ($(BUILD_CONFIG),debug)
   OUT_DIR = Debug
   DEBUG_FLAG = -g3
   OPT_FLAG = -O0
-  DEFS = -DTRACE -DVPC_DEBUG -DCODE_VERSION="\#${CODE_VERSION}" -DVPC_VERSION="\#${VPC_VERSION}"
+  DEFS = -DTRACE -DPRINT_LP_WITH_CUTS -DVPC_DEBUG -DCODE_VERSION="\#${CODE_VERSION}" -DVPC_VERSION="\#${VPC_VERSION}"
   # message-length sets line wrapping for error messages; 0 = no line wrapping
 	# PIC stands for "position-independent code" to generate machine code that
 	# can be loaded at different memory addresses, such as by using relative rather than absolute jumps
