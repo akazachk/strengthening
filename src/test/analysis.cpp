@@ -1129,23 +1129,25 @@ void analyzeStrength(
     output += tmpstring;
     output += ")\n";
   }
-  if (boundInfo.num_str_affected_cuts > 0 && !isInfinity(std::abs(boundInfo.unstr_mycut_obj))) {
-    snprintf(tmpstring, sizeof(tmpstring) / sizeof(char),
-        "%-*.*s%s (%d cuts", NAME_WIDTH, NAME_WIDTH, "unstr MYCUTs: ",
-        stringValue(boundInfo.unstr_mycut_obj, "% -*.*g",
-          INF,
-          NUM_DIGITS_BEFORE_DEC,
-          NUM_DIGITS_AFTER_DEC).c_str(),
-        boundInfo.num_mycut);
-    output += tmpstring;
-    snprintf(tmpstring, sizeof(tmpstring) / sizeof(char),
-        " -> %d strengthened", boundInfo.num_str_affected_cuts);
-    output += tmpstring;
-    output += ")\n";
-  }
   if (mycuts && mycuts->sizeCuts() > 0 && !isInfinity(std::abs(boundInfo.mycut_obj))) {
+    const bool CUTS_WERE_STRENGTHENED = boundInfo.num_str_affected_cuts + boundInfo.num_rcvmip_str_affected_cuts > 0; //&& !isInfinity(std::abs(boundInfo.unstr_mycut_obj))
+    if (CUTS_WERE_STRENGTHENED) {
+      snprintf(tmpstring, sizeof(tmpstring) / sizeof(char),
+          "%-*.*s%s (%d cuts", NAME_WIDTH, NAME_WIDTH, "unstr MYCUTs: ",
+          stringValue(boundInfo.unstr_mycut_obj, "% -*.*g",
+            INF,
+            NUM_DIGITS_BEFORE_DEC,
+            NUM_DIGITS_AFTER_DEC).c_str(),
+          boundInfo.num_mycut);
+      output += tmpstring;
+      snprintf(tmpstring, sizeof(tmpstring) / sizeof(char),
+          " -> %d strengthened", boundInfo.num_str_affected_cuts);
+      output += tmpstring;
+      output += ")\n";
+    }
     snprintf(tmpstring, sizeof(tmpstring) / sizeof(char),
-        "%-*.*s%s (%d cuts", NAME_WIDTH, NAME_WIDTH, "MYCUTs: ",
+        "%-*.*s%s (%d cuts", NAME_WIDTH, NAME_WIDTH,
+        (CUTS_WERE_STRENGTHENED) ? "str MYCUTs: " : "unstr MYCUTs: ",
         stringValue(boundInfo.mycut_obj, "% -*.*g",
           INF,
           NUM_DIGITS_BEFORE_DEC,
