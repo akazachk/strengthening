@@ -17,7 +17,7 @@
 #include "verify.hpp" // getCutFromCertificate
 
 /** 
- * @brief Generate Gomory cuts based on mode 
+ * @details Generate Gomory cuts based on selected \p option (see #GomoryType) and \p strengthen_option
  *
  * Option 1: GglGMI
  * Option 2: custom generate intersection cuts, calculate Farkas certificate, do strengthening
@@ -28,7 +28,7 @@ void generateGomoryCuts(
     OsiCuts& currGMICs,
     /// [in/out] solver from which we generate cuts; assumed optimal; non-const because we need to enable factorization
     OsiSolverInterface* const solver,
-    /// [in] which GMIC generation method to use
+    /// [in] which GMIC generation method to use (see #GomoryType)
     const int option,
     /// [in] how to strengthen the cut
     const int strengthen_option,
@@ -47,7 +47,7 @@ void generateGomoryCuts(
   if (std::abs(option) != 1) num_coeffs_strengthened[(int) Stat::min] = std::numeric_limits<int>::max();
 
   // Use CglGMI
-  if (std::abs(option) == 1) {
+  if (std::abs(option) == static_cast<int>(GomoryType::CglGMI)) {
     CglGMI GMIGen;
     // Set parameters so that many GMIs are generated
     // CglGMI's MAX_SUPPORT parameter is equivalent to the MIN_SUPPORT_THRESHOLD value in this code
@@ -60,8 +60,8 @@ void generateGomoryCuts(
     GMIGen.generateCuts(*solver, currGMICs);
   } // generate GMICs via CglGMI
 
-  // Generate GMICs via gmic.hpp and strengthen via strengthen.hpp
-  else if (std::abs(option) == 2) {
+  // Generate GMICs via createMIG and apply custom strengthening via strengthen.hpp
+  else if (std::abs(option) == static_cast<int>(GomoryType::CreateMIG_CustomStrengthen)) {
     solver->enableFactorization();
 
     // Get variables basic in which row
@@ -167,10 +167,10 @@ void generateGomoryCuts(
       num_coeffs_strengthened[(int) Stat::avg] /= currGMICs.sizeCuts();
       num_coeffs_strengthened[(int) Stat::stddev] /= currGMICs.sizeCuts();
     }
-  } // generate GMICs via gmic.hpp and strengthen via strengthen.hpp
+  } // Generate GMICs via createMIG and apply custom strengthening via strengthen.hpp
 
-  // Test closed-form strengthening for GMICs
-  else if (std::abs(option) == 3) {
+  // Generate GMICs via createMIG and apply closed-form strengthening
+  else if (std::abs(option) == static_cast<int>(GomoryType::CreateMIG_ClosedFormStrengthen)) {
     solver->enableFactorization();
 
     // Get variables basic in which row
@@ -354,7 +354,7 @@ void generateGomoryCuts(
       num_coeffs_strengthened[(int) Stat::avg] /= currGMICs.sizeCuts();
       num_coeffs_strengthened[(int) Stat::stddev] /= currGMICs.sizeCuts();
     }
-  } // test closed-form strengthening for GMICs
+  } // Generate GMICs via createMIG and apply closed-form strengthening
 
   // Finish stddev calculation = sqrt(E[X^2] - E[X]^2)
   num_coeffs_strengthened[(int) Stat::stddev] -= num_coeffs_strengthened[(int) Stat::avg] * num_coeffs_strengthened[(int) Stat::avg];

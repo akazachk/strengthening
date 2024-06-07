@@ -12,6 +12,14 @@ class OsiCuts;
 class OsiRowCut;
 class OsiSolverInterface;
 
+/// @brief enum for the different types of Gomory cuts
+enum class GomoryType {
+  CglGMI = 1, ///< Generate GMICs via CglGMI
+  CreateMIG_CustomStrengthen = 2, ///< Generate GMICs via createMIG and apply custom strengthening via strengthen.hpp
+  CreateMIG_ClosedFormStrengthen = 3, ///< Generate GMICs via createMIG and apply closed-form strengthening
+};
+
+/// @brief Generate Gomory cuts based on \p option (0: CglGMI, 1: ) 
 void generateGomoryCuts(
     OsiCuts& currGMICs,
     OsiSolverInterface* const solver,

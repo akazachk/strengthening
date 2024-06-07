@@ -44,13 +44,14 @@ struct SummaryBoundInfo {
   double worst_disj_obj = std::numeric_limits<double>::lowest();
   double root_obj = std::numeric_limits<double>::lowest();
   double ip_obj = std::numeric_limits<double>::max();
-  double gmic_obj = std::numeric_limits<double>::max();
   double lpc_obj = std::numeric_limits<double>::max();
 
+  double unstr_gmic_obj = std::numeric_limits<double>::max();
   double unstr_mycut_obj = std::numeric_limits<double>::max();
   double unstr_gmic_mycut_obj = std::numeric_limits<double>::max();
   double unstr_all_cuts_obj = std::numeric_limits<double>::max();
   
+  double gmic_obj = std::numeric_limits<double>::max();
   double mycut_obj = std::numeric_limits<double>::max();
   double gmic_mycut_obj = std::numeric_limits<double>::max();
   double all_cuts_obj = std::numeric_limits<double>::max();
@@ -163,8 +164,10 @@ void printCutInfo(const SummaryCutInfo& cutInfoGMICs,
     FILE* logfile, const char SEP = ',');
 
 /// @brief Check cut density and update min/max support in \p cutInfo
-int checkCutDensity(SummaryCutInfo& cutInfo,
-    const OsiRowCut* const cut, const double EPS = 1e-14);
+int checkCutDensity(
+    SummaryCutInfo& cutInfo,
+    const OsiRowCut* const cut,
+    const double EPS = 1e-14);
 
 /// @brief Check cut activity in solver and return true if activity of cut equals rhs
 bool checkCutActivity(

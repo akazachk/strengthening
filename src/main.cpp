@@ -127,7 +127,7 @@ OsiSolverInterface* allCutSolver = NULL;  ///< all generated cuts (same as solve
 
 OsiCuts unstrgmics, gmics, mycuts, rcvmip_cuts;
 
-std::string dir = "", filename = "", instname = "", in_file_ext = "";
+std::string dir = "", filename_stub = "", instname = "", in_file_ext = "";
 
 CglVPC::ExitReason exitReason;
 TimeStats timer;
@@ -347,12 +347,16 @@ int main(int argc, char** argv) {
   // Also save copies for calculating other objective values
   // We only need these if cuts other than mycuts are generated
   // solver         ::  stores the cuts we actually want to "count" (i.e., the base LP from which we generate cuts in each round)
+  // unstrGMICSolver::  only unstrengthened Gomory cuts
   // GMICSolver     ::  only GMICs
   // strCutSolver   ::  if GMICs count, this is only mycuts; otherwise, it is both GMICs and mycuts
   // allCutSolver   ::  all generated cuts (same as solver if no GMICs or RCVMIP-strengthened cuts, in which case not generated)
   const int GOMORY_OPTION = params.get(intParam::GOMORY);
   const int SHOULD_ANALYZE_REGULARITY = params.get(StrengtheningParameters::intParam::ANALYZE_REGULARITY);
   if (GOMORY_OPTION != 0) {
+    if (params.get(intParam::STRENGTHEN) != 0) {
+      unstrGMICSolver = solver->clone();
+    }
     GMICSolver = solver->clone();
     strCutSolver = solver->clone();
     allCutSolver = solver->clone();
@@ -394,11 +398,12 @@ int main(int argc, char** argv) {
 
     //====================================================================================================//
     // Generate Gomory cuts
-    // > 0: apply cuts to solver (affects disjunctive cuts generated); < 0: apply cuts to strCutSolver only
+    // > 0: apply cuts to solver (affects disjunctive cuts generated);
+    // < 0: apply cuts to strCutSolver only
     // Option 1: GglGMI
     // Option 2: custom generate intersection cuts, calculate Farkas certificate, do strengthening
     // Option 3: custom generate intersection cuts, calculate Farkas certificate, do closed-form strengthening
-    OsiCuts currGMICs;
+    OsiCuts currUnstrGMICs, currGMICs;
     if (GOMORY_OPTION != 0) {
       timer.start_timer(OverallTimeStats::GOMORY_GEN_TIME);
       generateGomoryCuts(currGMICs, solver, GOMORY_OPTION, params.get(intParam::STRENGTHEN), params.get(intConst::MIN_SUPPORT_THRESHOLD), params.get(doubleParam::MAX_SUPPORT_REL), params.get(doubleConst::AWAY), params.get(doubleConst::DIFFEPS), params.logfile);
@@ -419,13 +424,36 @@ int main(int argc, char** argv) {
       boundInfo.gmic_obj = GMICSolver->getObjValue();
       boundInfoVec[round_ind].gmic_obj = boundInfo.gmic_obj;
 
+      // Get unstrengthened GMICs
+      if (params.get(intParam::STRENGTHEN) == 0) {
+        currUnstrGMICs = currGMICs;
+        boundInfo.unstr_gmic_obj = boundInfo.gmic_obj;
+        boundInfoVec[round_ind].unstr_gmic_obj = boundInfo.gmic_obj;
+      } else {
+        generateGomoryCuts(currUnstrGMICs, solver,
+            // Cannot avoid strengthening with CglGMI so avoid that option
+            (std::abs(GOMORY_OPTION) != static_cast<int>(GomoryType::CglGMI)) ? GOMORY_OPTION : static_cast<int>(GomoryType::CreateMIG_CustomStrengthen),
+            // do not strengthen
+            0,
+            params.get(intConst::MIN_SUPPORT_THRESHOLD), params.get(doubleParam::MAX_SUPPORT_REL), params.get(doubleConst::AWAY), params.get(doubleConst::DIFFEPS),
+            params.logfile);
+        
+        // Add unstrengthened GMICs
+        unstrgmics.insert(currUnstrGMICs);
+        
+        // Apply unstrengthened GMICs to solver
+        applyCutsCustom(unstrGMICSolver, currUnstrGMICs);
+
+        // Update bound
+        boundInfo.unstr_gmic_obj = unstrGMICSolver->getObjValue();
+        boundInfoVec[round_ind].unstr_gmic_obj = boundInfo.unstr_gmic_obj;
+      }
+
+      // Apply cuts to remaining solvers
       if (GOMORY_OPTION > 0) {
-        applyCutsCustom(solver, currGMICs);
+        applyCutsCustom(solver, currGMICs, params.logfile);
       }
       applyCutsCustom(allCutSolver, currGMICs, params.logfile);
-      // else if (GOMORY_OPTION < 0) {
-      //   applyCutsCustom(CutSolver, currGMICs);
-      // }
     } // Gomory cut generation
 
     // { /// DEBUG
@@ -929,24 +957,20 @@ int main(int argc, char** argv) {
         round_ind + 1, params.get(ROUNDS),
         CglVPC::ExitReasonName[static_cast<int>(exitReason)].c_str());
     printf(
-        "Cuts generated = %d (%d total). GMICs generated = %d.\n",
+        "VPCs generated = %d (%d total). GMICs generated = %d.\n",
         boundInfoVec[round_ind].num_mycut,
         boundInfo.num_mycut,
         boundInfoVec[round_ind].num_gmic);
-    fflush(stdout);
     printf("Obj value (unstrengthened): %s.\n", 
         stringValue(boundInfo.unstr_all_cuts_obj, "%1.6f").c_str());
-    fflush(stdout);
     printf("Obj value (%d/%d strengthened): %s.\n",
         strInfo.num_str_affected_cuts, boundInfoVec[round_ind].num_mycut,
         stringValue(boundInfo.all_cuts_obj, "%1.6f").c_str());
-    fflush(stdout);
     if (SHOULD_ANALYZE_REGULARITY > 1 && !isInfinity(boundInfo.rcvmip_all_cuts_obj)) {
       printf("Obj value (%d/%d RCVMIP strengthened): %s.\n",
           boundInfo.num_rcvmip_str_affected_cuts, boundInfoVec[round_ind].num_mycut,
           stringValue(boundInfo.rcvmip_all_cuts_obj, "%1.6f").c_str());
     }
-    fflush(stdout);
     printf("Initial obj value: %s.\n", 
         stringValue(boundInfo.lp_obj, "%1.6f").c_str());
     if (round_ind > 0) {
@@ -955,11 +979,11 @@ int main(int argc, char** argv) {
     }
     printf("Disj lb: %s.\n",
         stringValue(boundInfo.best_disj_obj, "%1.6f").c_str());
-    fflush(stdout);
     printf("Elapsed time: %1.2f seconds. Time limit = %1.2f seconds.\n",
         timer.get_total_time(OverallTimeStatsName[OverallTimeStats::TOTAL_TIME]),
         params.get(TIMELIMIT));
     printf("***\n");
+    fflush(stdout);
     
     // Exit early if reached time limit
     if (timer.reachedTimeLimit(OverallTimeStatsName[OverallTimeStats::TOTAL_TIME], params.get(TIMELIMIT))) {
@@ -972,7 +996,8 @@ int main(int argc, char** argv) {
     if ((SHOULD_GENERATE_CUTS && boundInfoVec[round_ind].num_mycut == 0)
         || (!SHOULD_GENERATE_CUTS && boundInfoVec[round_ind].num_gmic == 0)
         || !solver->isProvenOptimal()
-        || isInfinity(std::abs(solver->getObjValue()))) {
+        || isInfinity(std::abs(solver->getObjValue()))
+        || exitReason == CglVPC::ExitReason::OPTIMAL_SOLUTION_FOUND_EXIT) {
       break;
     }
   } // loop over rounds of cuts
@@ -1012,8 +1037,9 @@ int main(int argc, char** argv) {
   timer.end_timer(OverallTimeStats::TOTAL_TIME);
 
 #ifdef PRINT_LP_WITH_CUTS
-  if (boundInfo.num_gmic + boundInfo.num_mycut > 0) {
-    std::string fileWithCuts = filename + "_cuts";
+  // If num rows in solver is > # initial rows, print cut lp file
+  if (solver->getNumRows() > origSolver->getNumRows()) {
+    std::string fileWithCuts = filename_stub + "_cuts";
     // solver->writeMps(fileWithCuts.c_str());
     solver->writeLp(fileWithCuts.c_str());
   }
@@ -1143,7 +1169,7 @@ int startUp(int argc, char** argv) {
         instname.c_str(), in_file_ext.c_str());
     exit(1);
   }
-  filename = dir + "/" + instname;
+  filename_stub = dir + "/" + instname;
 
   // Prepare logfile
   const std::string logname = params.get(stringParam::LOGFILE);

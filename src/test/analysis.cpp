@@ -43,7 +43,7 @@ std::vector<double> computeStats(const std::vector<T>& vec) {
 } /* computeStats */
 
 // Below values are used to doublecheck that the columns in the header are correctly counted
-const int countBoundInfoEntries = 20;
+const int countBoundInfoEntries = 21;
 const int countGapInfoEntries = 9;
 const int countSummaryBBInfoEntries = 4 * 2;
 const int countFullBBInfoEntries = static_cast<int>(BB_INFO_CONTENTS.size()) * 4 * 2;
@@ -157,19 +157,20 @@ void printHeader(const StrengtheningParameters::Parameters& params,
     fprintf(logfile, "%s%c", "NUM CHANGED ROOT BOUNDS", SEP); count++; // 5
     fprintf(logfile, "%s%c", "ROOT OBJ", SEP); count++; // 6
     fprintf(logfile, "%s%c", "NUM GMIC", SEP); count++; // 7
-    fprintf(logfile, "%s%c", "GMIC OBJ", SEP); count++; // 8
-    fprintf(logfile, "%s%c", "NUM L&PC", SEP); count++; // 9
-    fprintf(logfile, "%s%c", "L&PC OBJ", SEP); count++; // 10
-    fprintf(logfile, "%s%c", "NUM MYCUTS", SEP); count++; // 11
-    fprintf(logfile, "%s%c", "MYCUTS OBJ", SEP); count++; // 12
-    fprintf(logfile, "%s%c", "MYCUTS+GMIC BOUND", SEP); count++; // 13
-    fprintf(logfile, "%s%c", "NUM AFFECTED STR MYCUTS", SEP); count++; // 14
-    fprintf(logfile, "%s%c", "UNSTR MYCUTS OBJ", SEP); count++; // 15
-    fprintf(logfile, "%s%c", "UNSTR MYCUTS+GMIC BOUND", SEP); count++; // 16
-    fprintf(logfile, "%s%c", "NUM AFFECTED RCVMIP-STR MYCUTS", SEP); count++; // 17
-    fprintf(logfile, "%s%c", "RCVMIP MYCUTS OBJ", SEP); count++; // 18
-    fprintf(logfile, "%s%c", "RCVMIP MYCUTS+GMIC BOUND", SEP); count++; // 19
-    fprintf(logfile, "%s%c", "RCVMIP ALL BOUND", SEP); count++; // 20
+    fprintf(logfile, "%s%c", "UNSTR GMIC OBJ", SEP); count++; // 8
+    fprintf(logfile, "%s%c", "GMIC OBJ", SEP); count++; // 9
+    fprintf(logfile, "%s%c", "NUM L&PC", SEP); count++; // 10
+    fprintf(logfile, "%s%c", "L&PC OBJ", SEP); count++; // 11
+    fprintf(logfile, "%s%c", "NUM MYCUTS", SEP); count++; // 12
+    fprintf(logfile, "%s%c", "MYCUTS OBJ", SEP); count++; // 13
+    fprintf(logfile, "%s%c", "MYCUTS+GMIC BOUND", SEP); count++; // 14
+    fprintf(logfile, "%s%c", "NUM AFFECTED STR MYCUTS", SEP); count++; // 15
+    fprintf(logfile, "%s%c", "UNSTR MYCUTS OBJ", SEP); count++; // 16
+    fprintf(logfile, "%s%c", "UNSTR MYCUTS+GMIC BOUND", SEP); count++; // 17
+    fprintf(logfile, "%s%c", "NUM AFFECTED RCVMIP-STR MYCUTS", SEP); count++; // 18
+    fprintf(logfile, "%s%c", "RCVMIP MYCUTS OBJ", SEP); count++; // 19
+    fprintf(logfile, "%s%c", "RCVMIP MYCUTS+GMIC BOUND", SEP); count++; // 20
+    fprintf(logfile, "%s%c", "RCVMIP ALL BOUND", SEP); count++; // 21
     assert(count == countBoundInfoEntries);
   } // BOUND INFO
   { // GAP INFO
@@ -387,6 +388,7 @@ void printBoundAndGapInfo(const SummaryBoundInfo& boundInfo, FILE* logfile, cons
     }
     fprintf(logfile, "%s%c", stringValue(boundInfo.num_gmic).c_str(), SEP); count++;
     if (boundInfo.num_gmic > 0) {
+      fprintf(logfile, "%s%c", stringValue(boundInfo.unstr_gmic_obj, "%2.20f").c_str(), SEP); count++;
       fprintf(logfile, "%s%c", stringValue(boundInfo.gmic_obj, "%2.20f").c_str(), SEP); count++;
     } else {
       fprintf(logfile, "%c", SEP); count++;
@@ -433,6 +435,13 @@ void printBoundAndGapInfo(const SummaryBoundInfo& boundInfo, FILE* logfile, cons
   { // GAP INFO
     int count = 0;
     if (!isInfinity(std::abs(boundInfo.ip_obj))) {
+      if (!isInfinity(std::abs(boundInfo.unstr_gmic_obj))) {
+        double val = 100. * (boundInfo.unstr_gmic_obj - boundInfo.lp_obj)
+            / (boundInfo.ip_obj - boundInfo.lp_obj);
+        fprintf(logfile, "%s%c", stringValue(val, "%2.6f").c_str(), SEP); count++;
+      } else {
+        fprintf(logfile, "%c", SEP); count++; // unstr_gmic
+      }
       if (!isInfinity(std::abs(boundInfo.gmic_obj))) {
         double val = 100. * (boundInfo.gmic_obj - boundInfo.lp_obj)
             / (boundInfo.ip_obj - boundInfo.lp_obj);
@@ -1091,6 +1100,17 @@ void analyzeStrength(
           NUM_DIGITS_AFTER_DEC).c_str(),
         boundInfo.num_root_bounds_changed);
     output += tmpstring;
+  }
+  if (!isInfinity(std::abs(boundInfo.unstr_gmic_obj))) {
+    snprintf(tmpstring, sizeof(tmpstring) / sizeof(char),
+        "%-*.*s%s (%d cuts", NAME_WIDTH, NAME_WIDTH, "Unstr GMICs: ",
+        stringValue(boundInfo.unstr_gmic_obj, "% -*.*g",
+          INF,
+          NUM_DIGITS_BEFORE_DEC,
+          NUM_DIGITS_AFTER_DEC).c_str(),
+        boundInfo.num_gmic);
+    output += tmpstring;
+    output += ")\n";
   }
   if (!isInfinity(std::abs(boundInfo.gmic_obj))) {
     snprintf(tmpstring, sizeof(tmpstring) / sizeof(char),
