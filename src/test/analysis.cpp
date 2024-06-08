@@ -44,7 +44,7 @@ std::vector<double> computeStats(const std::vector<T>& vec) {
 
 // Below values are used to doublecheck that the columns in the header are correctly counted
 const int countBoundInfoEntries = 21;
-const int countGapInfoEntries = 9;
+const int countGapInfoEntries = 10;
 const int countSummaryBBInfoEntries = 4 * 2;
 const int countFullBBInfoEntries = static_cast<int>(BB_INFO_CONTENTS.size()) * 4 * 2;
 const int countOrigProbEntries = 13;
@@ -175,15 +175,16 @@ void printHeader(const StrengtheningParameters::Parameters& params,
   } // BOUND INFO
   { // GAP INFO
     int count = 0;
-    fprintf(logfile, "%s%c", "GMIC % GAP CLOSED", SEP); count++; // 1
-    fprintf(logfile, "%s%c", "L&PC % GAP CLOSED", SEP); count++; // 2
-    fprintf(logfile, "%s%c", "MYCUTS % GAP CLOSED", SEP); count++; // 3
-    fprintf(logfile, "%s%c", "GMIC+MYCUTS % GAP CLOSED", SEP); count++; // 4
-    fprintf(logfile, "%s%c", "UNSTR MYCUTS % GAP CLOSED", SEP); count++; // 5
-    fprintf(logfile, "%s%c", "UNSTR GMIC+MYCUTS % GAP CLOSED", SEP); count++; // 6
-    fprintf(logfile, "%s%c", "RCVMIP MYCUTS % GAP CLOSED", SEP); count++; // 7
-    fprintf(logfile, "%s%c", "RCVMIP GMIC+MYCUTS % GAP CLOSED", SEP); count++; // 8
-    fprintf(logfile, "%s%c", "RCVMIP ALL % GAP CLOSED", SEP); count++; // 9
+    fprintf(logfile, "%s%c", "UNSTR GMIC % GAP CLOSED", SEP); count++; // 1
+    fprintf(logfile, "%s%c", "GMIC % GAP CLOSED", SEP); count++; // 2
+    fprintf(logfile, "%s%c", "L&PC % GAP CLOSED", SEP); count++; // 3
+    fprintf(logfile, "%s%c", "MYCUTS % GAP CLOSED", SEP); count++; // 4
+    fprintf(logfile, "%s%c", "GMIC+MYCUTS % GAP CLOSED", SEP); count++; // 5
+    fprintf(logfile, "%s%c", "UNSTR MYCUTS % GAP CLOSED", SEP); count++; // 6
+    fprintf(logfile, "%s%c", "UNSTR GMIC+MYCUTS % GAP CLOSED", SEP); count++; // 7
+    fprintf(logfile, "%s%c", "RCVMIP MYCUTS % GAP CLOSED", SEP); count++; // 8
+    fprintf(logfile, "%s%c", "RCVMIP GMIC+MYCUTS % GAP CLOSED", SEP); count++; // 9
+    fprintf(logfile, "%s%c", "RCVMIP ALL % GAP CLOSED", SEP); count++; // 10
     assert(count == countGapInfoEntries);
   } // GAP INFO
   { // BB INFO
@@ -440,7 +441,7 @@ void printBoundAndGapInfo(const SummaryBoundInfo& boundInfo, FILE* logfile, cons
             / (boundInfo.ip_obj - boundInfo.lp_obj);
         fprintf(logfile, "%s%c", stringValue(val, "%2.6f").c_str(), SEP); count++;
       } else {
-        fprintf(logfile, "%c", SEP); count++; // unstr_gmic
+        fprintf(logfile, "%c", SEP); count++; // unstr gmic
       }
       if (!isInfinity(std::abs(boundInfo.gmic_obj))) {
         double val = 100. * (boundInfo.gmic_obj - boundInfo.lp_obj)
@@ -493,6 +494,7 @@ void printBoundAndGapInfo(const SummaryBoundInfo& boundInfo, FILE* logfile, cons
         }
       }
     } else {
+      fprintf(logfile, "%c", SEP); count++; // unstr gmic
       fprintf(logfile, "%c", SEP); count++; // gmic
       fprintf(logfile, "%c", SEP); count++; // lpc
       fprintf(logfile, "%c", SEP); count++; // mycuts
