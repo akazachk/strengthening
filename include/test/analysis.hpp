@@ -18,6 +18,7 @@ namespace StrengtheningParameters {
   struct Parameters;
 }
 
+class CglVPC; // CglVPC.hpp
 class Disjunction; // Disjunction.hpp
 struct SummaryBBInfo; // BBHelper.hpp
 
@@ -195,8 +196,10 @@ double getNumGomoryRounds(const StrengtheningParameters::Parameters& params,
     const OsiSolverInterface* const origSolver,
     const OsiSolverInterface* const postCutSolver);
 
+/// @brief Update average number of terms, density, rows, cols, points, rays, and partial tree information if applicable
+void updateDisjInfo(SummaryDisjunctionInfo& disjInfo, const int num_disj, const CglVPC& gen);
 /// @brief Add to cut information after a round, such as number of cuts, objectives, failures, etc.
-void updateCutInfo(SummaryCutInfo& cutInfo, const CglAdvCut* const gen);
+void updateCutInfo(SummaryCutInfo& cutInfo, const CglAdvCut& gen, const OsiCuts* cuts = NULL, const double EPS = 1e-14);
 /// @brief Use this to merge cut info from multiple rounds
 void setCutInfo(SummaryCutInfo& cutInfo, const int num_rounds, const SummaryCutInfo* const oldCutInfos);
 

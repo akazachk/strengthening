@@ -20,6 +20,10 @@
 using namespace StrengtheningParameters;
 #include "utility.hpp" // isInfinity, stringValue
 
+#include "CglVPC.hpp"
+#include "PRLP.hpp"
+#include "PartialBBDisjunction.hpp"
+
 template <typename T>
 std::vector<double> computeStats(const std::vector<T>& vec) {
   std::vector<double> stats(static_cast<int>(Stat::num_stats), 0.);
@@ -1027,7 +1031,7 @@ void analyzeStrength(
     const OsiSolverInterface* const solver_all,
     SummaryCutInfo& cutInfoGMICs, SummaryCutInfo& cutInfo,
     const OsiCuts* const gmics, const OsiCuts* const mycuts,
-    const SummaryBoundInfo& boundInfo, std::string& output) {
+    const SummaryBoundInfo& boundInfo, std::string& cut_output) {
   cutInfoGMICs.num_active_gmic = 0;
   cutInfoGMICs.num_active_mycut = 0;
   cutInfoGMICs.num_active_all = 0;
@@ -1085,14 +1089,14 @@ void analyzeStrength(
 
   snprintf(tmpstring, sizeof(tmpstring) / sizeof(char),
       "\n## Results from adding cuts ##\n");
-  output += tmpstring;
+  cut_output += tmpstring;
   snprintf(tmpstring, sizeof(tmpstring) / sizeof(char), "%-*.*s%s\n",
       NAME_WIDTH, NAME_WIDTH, "LP: ",
       stringValue(boundInfo.lp_obj, "% -*.*g",
         INF,
         NUM_DIGITS_BEFORE_DEC,
         NUM_DIGITS_AFTER_DEC).c_str());
-  output += tmpstring;
+  cut_output += tmpstring;
   if (!isInfinity(std::abs(boundInfo.root_obj))) {
     snprintf(tmpstring, sizeof(tmpstring) / sizeof(char),
         "%-*.*s%s (%d bounds changed)\n", NAME_WIDTH, NAME_WIDTH, "Root: ",
@@ -1101,7 +1105,7 @@ void analyzeStrength(
           NUM_DIGITS_BEFORE_DEC,
           NUM_DIGITS_AFTER_DEC).c_str(),
         boundInfo.num_root_bounds_changed);
-    output += tmpstring;
+    cut_output += tmpstring;
   }
   if (!isInfinity(std::abs(boundInfo.unstr_gmic_obj))) {
     snprintf(tmpstring, sizeof(tmpstring) / sizeof(char),
@@ -1111,8 +1115,8 @@ void analyzeStrength(
           NUM_DIGITS_BEFORE_DEC,
           NUM_DIGITS_AFTER_DEC).c_str(),
         boundInfo.num_gmic);
-    output += tmpstring;
-    output += ")\n";
+    cut_output += tmpstring;
+    cut_output += ")\n";
   }
   if (!isInfinity(std::abs(boundInfo.gmic_obj))) {
     snprintf(tmpstring, sizeof(tmpstring) / sizeof(char),
@@ -1122,14 +1126,14 @@ void analyzeStrength(
           NUM_DIGITS_BEFORE_DEC,
           NUM_DIGITS_AFTER_DEC).c_str(),
         boundInfo.num_gmic);
-    output += tmpstring;
+    cut_output += tmpstring;
     snprintf(tmpstring, sizeof(tmpstring) / sizeof(char),
         ", %d active GMICs", cutInfoGMICs.num_active_gmic);
-    output += tmpstring;
+    cut_output += tmpstring;
     snprintf(tmpstring, sizeof(tmpstring) / sizeof(char),
         ", %d active MYCUTs", cutInfo.num_active_gmic);
-    output += tmpstring;
-    output += ")\n";
+    cut_output += tmpstring;
+    cut_output += ")\n";
   }
   if (mycuts && mycuts->sizeCuts() > 0 && !isInfinity(std::abs(boundInfo.mycut_obj))) {
     const bool CUTS_WERE_STRENGTHENED = boundInfo.num_str_affected_cuts + boundInfo.num_rcvmip_str_affected_cuts > 0; //&& !isInfinity(std::abs(boundInfo.unstr_mycut_obj))
@@ -1141,11 +1145,11 @@ void analyzeStrength(
             NUM_DIGITS_BEFORE_DEC,
             NUM_DIGITS_AFTER_DEC).c_str(),
           boundInfo.num_mycut);
-      output += tmpstring;
+      cut_output += tmpstring;
       snprintf(tmpstring, sizeof(tmpstring) / sizeof(char),
           " -> %d strengthened", boundInfo.num_str_affected_cuts);
-      output += tmpstring;
-      output += ")\n";
+      cut_output += tmpstring;
+      cut_output += ")\n";
     }
     snprintf(tmpstring, sizeof(tmpstring) / sizeof(char),
         "%-*.*s%s (%d cuts", NAME_WIDTH, NAME_WIDTH,
@@ -1155,16 +1159,16 @@ void analyzeStrength(
           NUM_DIGITS_BEFORE_DEC,
           NUM_DIGITS_AFTER_DEC).c_str(),
         boundInfo.num_mycut);
-    output += tmpstring;
+    cut_output += tmpstring;
     if (gmics && gmics->sizeCuts() > 0) {
       snprintf(tmpstring, sizeof(tmpstring) / sizeof(char),
           ", %d active GMICs", cutInfoGMICs.num_active_mycut);
-      output += tmpstring;
+      cut_output += tmpstring;
     }
     snprintf(tmpstring, sizeof(tmpstring) / sizeof(char),
         ", %d active MYCUTs", cutInfo.num_active_mycut);
-    output += tmpstring;
-    output += ")\n";
+    cut_output += tmpstring;
+    cut_output += ")\n";
   }
   if (boundInfo.num_str_affected_cuts > 0 && !isInfinity(std::abs(boundInfo.unstr_mycut_obj))) {
     if (boundInfo.num_gmic + boundInfo.num_lpc > 0) { // Even if there are no MYCUTs, but not if there are *only* MYCUTs
@@ -1173,7 +1177,7 @@ void analyzeStrength(
           stringValue(boundInfo.unstr_all_cuts_obj, "% -*.*g",
             INF, NUM_DIGITS_BEFORE_DEC, NUM_DIGITS_AFTER_DEC).c_str(),
           boundInfo.num_gmic + boundInfo.num_lpc + boundInfo.num_mycut);
-      output += tmpstring;
+      cut_output += tmpstring;
     }
   }
   if (boundInfo.num_gmic + boundInfo.num_lpc > 0) { // Even if there are no MYCUTs, but not if there are *only* MYCUTs
@@ -1181,18 +1185,18 @@ void analyzeStrength(
         "%-*.*s%s (%d cuts", NAME_WIDTH, NAME_WIDTH, "All: ",
         stringValue(boundInfo.all_cuts_obj, "% -*.*g", INF, NUM_DIGITS_BEFORE_DEC, NUM_DIGITS_AFTER_DEC).c_str(), 
         boundInfo.num_gmic + boundInfo.num_lpc + boundInfo.num_mycut);
-    output += tmpstring;
+    cut_output += tmpstring;
     if (gmics && gmics->sizeCuts() > 0) {
       snprintf(tmpstring, sizeof(tmpstring) / sizeof(char),
           ", %d active GMICs", cutInfoGMICs.num_active_all);
-      output += tmpstring;
+      cut_output += tmpstring;
     }
     if (mycuts && mycuts->sizeCuts() > 0) {
       snprintf(tmpstring, sizeof(tmpstring) / sizeof(char),
           ", %d active MYCUTs", cutInfo.num_active_all);
-      output += tmpstring;
+      cut_output += tmpstring;
     }
-    output += ")\n";
+    cut_output += ")\n";
   }
 
   // Finally, print effect when RCVMIP-strengthened cuts are used, if applicable
@@ -1204,8 +1208,8 @@ void analyzeStrength(
           NUM_DIGITS_BEFORE_DEC,
           NUM_DIGITS_AFTER_DEC).c_str(),
         boundInfo.num_rcvmip_str_affected_cuts);
-    output += tmpstring;
-    output += ")\n";
+    cut_output += tmpstring;
+    cut_output += ")\n";
   }
 
   if (!isInfinity(std::abs(boundInfo.best_disj_obj))) {
@@ -1215,7 +1219,7 @@ void analyzeStrength(
           INF,
           NUM_DIGITS_BEFORE_DEC,
           NUM_DIGITS_AFTER_DEC).c_str());
-    output += tmpstring;
+    cut_output += tmpstring;
   }
   if (!isInfinity(std::abs(boundInfo.worst_disj_obj))) {
     snprintf(tmpstring, sizeof(tmpstring) / sizeof(char), "%-*.*s%s\n",
@@ -1224,7 +1228,7 @@ void analyzeStrength(
           INF,
           NUM_DIGITS_BEFORE_DEC,
           NUM_DIGITS_AFTER_DEC).c_str());
-    output += tmpstring;
+    cut_output += tmpstring;
   }
   if (!isInfinity(std::abs(boundInfo.ip_obj))) {
     snprintf(tmpstring, sizeof(tmpstring) / sizeof(char), "%-*.*s%s\n",
@@ -1233,7 +1237,7 @@ void analyzeStrength(
           INF,
           NUM_DIGITS_BEFORE_DEC,
           NUM_DIGITS_AFTER_DEC).c_str());
-    output += tmpstring;
+    cut_output += tmpstring;
   }
 } /* analyzeStrength */
 
@@ -1375,54 +1379,146 @@ double getNumGomoryRounds(const StrengtheningParameters::Parameters& params,
   return final_sic_bound;
 } /* getNumGomoryRounds */
 
+// void updateDisjInfo(SummaryDisjunctionInfo& disjInfo, const int num_disj, const CglVPC& gen) {
+//   if (num_disj <= 0)
+//     return;
+//   const Disjunction* const disj = gen.getDisjunction();
+//   const PRLP* const prlp = gen.getPRLP();
+//   if (!prlp)
+//     return;
+//   disjInfo.num_integer_sol += !(disj->integer_sol.empty());
+//   disjInfo.avg_num_terms = (disjInfo.avg_num_terms * (num_disj - 1) + disj->num_terms) / num_disj;
+//   disjInfo.avg_density_prlp = (disjInfo.avg_density_prlp * (num_disj - 1) + prlp->density) / num_disj;
+//   disjInfo.avg_num_rows_prlp += (disjInfo.avg_num_rows_prlp * (num_disj - 1) + prlp->getNumRows()) / num_disj;
+//   disjInfo.avg_num_cols_prlp += (disjInfo.avg_num_cols_prlp * (num_disj - 1) + prlp->getNumCols()) / num_disj;
+//   disjInfo.avg_num_points_prlp += (disjInfo.avg_num_points_prlp * (num_disj - 1) + prlp->numPoints) / num_disj;
+//   disjInfo.avg_num_rays_prlp += (disjInfo.avg_num_rays_prlp * (num_disj - 1) + prlp->numRays) / num_disj;
+//   try {
+//     const PartialBBDisjunction* const partialDisj =
+//         dynamic_cast<const PartialBBDisjunction* const >(disj);
+//     disjInfo.avg_explored_nodes += (disjInfo.avg_explored_nodes * (num_disj - 1) + partialDisj->data.num_nodes_on_tree) / num_disj;
+//     disjInfo.avg_pruned_nodes += (disjInfo.avg_pruned_nodes * (num_disj - 1) + partialDisj->data.num_pruned_nodes) / num_disj;
+//     disjInfo.avg_min_depth += (disjInfo.avg_min_depth * (num_disj - 1) + partialDisj->data.min_node_depth) / num_disj;
+//     disjInfo.avg_max_depth += (disjInfo.avg_max_depth * (num_disj - 1) + partialDisj->data.max_node_depth) / num_disj;
+//   } catch (std::exception& e) {
+
+//   }
+// } /* updateDisjInfo */
+void updateDisjInfo(SummaryDisjunctionInfo& disjInfo, const int num_disj, const CglVPC& gen) {
+  if (num_disj <= 0)
+    return;
+  const PRLP* const prlp = gen.getPRLP();
+  if (!prlp)
+    return;
+  disjInfo.num_disj = num_disj;
+
+  const DisjunctionSet* const disjSet = gen.getDisjunctionSet();
+  const int num_disj_to_check = (disjSet == NULL) ? 1 : disjSet->size();
+  for (int disj_ind = 0; disj_ind < num_disj_to_check; disj_ind++) {
+    const Disjunction* const disj = (disjSet == NULL) ? gen.getDisjunction() : disjSet->getDisjunction(disj_ind);
+    disjInfo.num_integer_sol += !(disj->integer_sol.empty());
+    disjInfo.avg_num_terms = (disjInfo.avg_num_terms * (num_disj - 1) + disj->num_terms) / num_disj;
+    disjInfo.avg_density_prlp = (disjInfo.avg_density_prlp * (num_disj - 1) + prlp->density) / num_disj;
+    disjInfo.avg_num_rows_prlp += (disjInfo.avg_num_rows_prlp * (num_disj - 1) + prlp->getNumRows()) / num_disj;
+    disjInfo.avg_num_cols_prlp += (disjInfo.avg_num_cols_prlp * (num_disj - 1) + prlp->getNumCols()) / num_disj;
+    disjInfo.avg_num_points_prlp += (disjInfo.avg_num_points_prlp * (num_disj - 1) + prlp->numPoints) / num_disj;
+    disjInfo.avg_num_rays_prlp += (disjInfo.avg_num_rays_prlp * (num_disj - 1) + prlp->numRays) / num_disj;
+    try {
+      const PartialBBDisjunction* const partialDisj =
+          dynamic_cast<const PartialBBDisjunction* const >(disj);
+      disjInfo.avg_explored_nodes += (disjInfo.avg_explored_nodes * (num_disj - 1) + partialDisj->data.num_nodes_on_tree) / num_disj;
+      disjInfo.avg_pruned_nodes += (disjInfo.avg_pruned_nodes * (num_disj - 1) + partialDisj->data.num_pruned_nodes) / num_disj;
+      disjInfo.avg_min_depth += (disjInfo.avg_min_depth * (num_disj - 1) + partialDisj->data.min_node_depth) / num_disj;
+      disjInfo.avg_max_depth += (disjInfo.avg_max_depth * (num_disj - 1) + partialDisj->data.max_node_depth) / num_disj;
+    } catch (std::exception& e) {
+
+    }
+  }
+} /* updateDisjInfo */
+
 /**
- * @brief Use this to add to cutInfo
- *
  * @details Use this to add to cutInfo (but within one round,
  * because the cutType and objType vectors are cleared in gen in each round
  * (so tracking that based on isSetupForRepeatedUse does not work,
  * and the old cutType and objType stored in cutInfo would be overwritten)
  */
-void updateCutInfo(SummaryCutInfo& cutInfo, const CglAdvCut* const gen) {
-  cutInfo.num_cuts += gen->num_cuts;
-  cutInfo.num_obj_tried += gen->num_obj_tried;
-  cutInfo.num_failures += gen->num_failures;
+void updateCutInfo(
+    /// [in,out] The SummaryCutInfo object to update
+    SummaryCutInfo& cutInfo,
+    /// [in] Generator for cuts generated in this round
+    const CglAdvCut& gen,
+    /// [in] Cuts generated in this round
+    const OsiCuts* cuts,
+    /// [in] Value of epsilon to use for checking cut density
+    const double EPS) {
+  const int old_num_cuts = cutInfo.num_cuts;
+  cutInfo.num_cuts += gen.num_cuts;
+  cutInfo.num_obj_tried += gen.num_obj_tried;
+  cutInfo.num_failures += gen.num_failures;
 
   // For cutType and objType, what we do depends on whether the generator is setup for repeated use or not
-  if (gen->isSetupForRepeatedUse) {
-    cutInfo.cutType = gen->cutType;
-    cutInfo.objType = gen->objType;
+  if (gen.isSetupForRepeatedUse) {
+    cutInfo.cutType = gen.cutType;
+    cutInfo.objType = gen.objType;
   } else {
-    cutInfo.cutType.insert(cutInfo.cutType.end(), gen->cutType.begin(), gen->cutType.end());
-    cutInfo.objType.insert(cutInfo.objType.end(), gen->objType.begin(), gen->objType.end());
+    cutInfo.cutType.insert(cutInfo.cutType.end(), gen.cutType.begin(), gen.cutType.end());
+    cutInfo.objType.insert(cutInfo.objType.end(), gen.objType.begin(), gen.objType.end());
   }
 
   if (cutInfo.numCutsOfType.size() > 0) {
     for (int i = 0; i < static_cast<int>(CglAdvCut::CutType::NUM_CUT_TYPES); i++) {
-      cutInfo.numCutsOfType[i] += gen->numCutsOfType[i];
+      cutInfo.numCutsOfType[i] += gen.numCutsOfType[i];
     }
   } else {
-    cutInfo.numCutsOfType = gen->numCutsOfType;
+    cutInfo.numCutsOfType = gen.numCutsOfType;
   }
 
   if (cutInfo.numCutsFromHeur.size() > 0) {
     for (int i = 0; i < static_cast<int>(CglAdvCut::ObjectiveType::NUM_OBJECTIVE_TYPES); i++) {
-      cutInfo.numCutsFromHeur[i] += gen->numCutsFromHeur[i];
-      cutInfo.numObjFromHeur[i] += gen->numObjFromHeur[i];
-      cutInfo.numFailsFromHeur[i] += gen->numFailsFromHeur[i];
+      cutInfo.numCutsFromHeur[i] += gen.numCutsFromHeur[i];
+      cutInfo.numObjFromHeur[i] += gen.numObjFromHeur[i];
+      cutInfo.numFailsFromHeur[i] += gen.numFailsFromHeur[i];
     }
   } else {
-    cutInfo.numCutsFromHeur = gen->numCutsFromHeur;
-    cutInfo.numObjFromHeur = gen->numObjFromHeur;
-    cutInfo.numFailsFromHeur = gen->numFailsFromHeur;
+    cutInfo.numCutsFromHeur = gen.numCutsFromHeur;
+    cutInfo.numObjFromHeur = gen.numObjFromHeur;
+    cutInfo.numFailsFromHeur = gen.numFailsFromHeur;
   }
 
   if (cutInfo.numFails.size() > 0) {
     for (int i = 0; i < static_cast<int>(CglAdvCut::FailureType::NUM_FAILURE_TYPES); i++) {
-      cutInfo.numFails[i] += gen->numFails[i];
+      cutInfo.numFails[i] += gen.numFails[i];
     }
   } else {
-    cutInfo.numFails = gen->numFails;
+    cutInfo.numFails = gen.numFails;
+  }
+
+  if (cuts) {
+    // Check that cuts contains all the cuts generated by gen
+    if (cuts->sizeCuts() < gen.num_cuts) {
+      error_msg(errorstring,
+        "updateCutInfo: cuts->sizeCuts() = %d < gen.num_cuts = %d\n",
+        cuts->sizeCuts(), gen.num_cuts);
+      exit(1);
+    }
+    // It may contain _more_ if it contains cuts from previous rounds
+    // Check that if there are more cuts, then there are old_num_cuts + gen.num_cuts cuts
+    if (cuts->sizeCuts() > gen.num_cuts && cuts->sizeCuts() != old_num_cuts + gen.num_cuts) {
+      error_msg(errorstring,
+        "updateCutInfo: cuts->sizeCuts() = %d > gen.num_cuts = %d, but cuts->sizeCuts() != old_num_cuts + gen.num_cuts\n",
+        cuts->sizeCuts(), gen.num_cuts);
+      exit(1);
+    }
+    // We assume the last set of cuts is the latest one
+    const int start_ind = cuts->sizeCuts() - gen.num_cuts;
+
+    int total_support = 0;
+    for (int cut_ind = start_ind; cut_ind < cuts->sizeCuts(); cut_ind++) {
+      const OsiRowCut* const cut = cuts->rowCutPtr(cut_ind);
+
+      total_support += checkCutDensity(cutInfo, cut, EPS);
+    }
+    cutInfo.avg_support = (cutInfo.avg_support * old_num_cuts + 1. * total_support) / (old_num_cuts + cuts->sizeCuts());
   }
 } /* updateCutInfo (within one round) */
 

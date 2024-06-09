@@ -196,9 +196,6 @@ int processArgs(int argc, char** argv);
 void initializeSolver(OsiSolverInterface* &solver);
 int wrapUp(int retCode, int argc, char** argv);
 
-/// @brief Update average number of terms, density, rows, cols, points, rays, and partial tree information if applicable
-void updateDisjInfo(SummaryDisjunctionInfo& disjInfo, const int num_disj, const CglVPC& gen);
-
 /// @brief Strengthen \p currCuts using the Farkas multipliers that will be computed and stored in \p v
 void strengtheningHelper(
     OsiCuts& currCuts,
@@ -235,7 +232,6 @@ void applyStrengtheningCertificateHelper(
 
 /// @brief For debugging purposes, this will create a custom disjunction and potentially add a cut to currCuts
 void testDisjunctionAndCut(
-    Disjunction* disj,
     CglAdvCut& gen,
     OsiCuts& currCuts);
 
@@ -369,20 +365,25 @@ int main(int argc, char** argv) {
     return wrapUp(1, argc, argv);
   }
 
-  //====================================================================================================//
-  // Now do rounds of cuts, until a limit is reached (e.g., time, number failures, number cuts, or all rounds are exhausted)
-  boundInfo.num_mycut = 0, boundInfo.num_gmic = 0, boundInfo.num_str_affected_cuts = 0, boundInfo.num_rcvmip_str_affected_cuts = 0;
-  int num_rounds = params.get(ROUNDS);
+  // Information from each round of cuts will be saved and optionally printed
+  int num_rounds = params.get(ROUNDS); // not const in case we do not exhaust the limit
   std::vector<OsiCuts> mycuts_by_round(num_rounds);
   cutInfoVec.resize(num_rounds);
   boundInfoVec.resize(num_rounds);
   origCertInfoVec.resize(num_rounds);
   rcvmipCertInfoVec.resize(num_rounds);
+
+  //====================================================================================================//
+  // Now do rounds of cuts, until a limit is reached (e.g., time, number failures, number cuts, or all rounds are exhausted)
+  boundInfo.num_mycut = 0, boundInfo.num_gmic = 0;
+  boundInfo.num_str_affected_cuts = 0;
+  boundInfo.num_rcvmip_str_affected_cuts = 0;
   int round_ind = 0;
   for (round_ind = 0; round_ind < num_rounds; ++round_ind) {
     if (num_rounds > 1) {
       printf("\n## Starting round %d/%d. ##\n", round_ind+1, num_rounds);
     }
+    int num_disj = 0;
 
     // Save a copy of the solver with all the cuts from previous rounds, but none of the cuts from this round
     OsiSolverInterface* roundOrigSolver = (round_ind > 0) ? solver->clone() : origSolver;
@@ -405,6 +406,7 @@ int main(int argc, char** argv) {
     // Option 3: custom generate intersection cuts, calculate Farkas certificate, do closed-form strengthening
     OsiCuts currUnstrGMICs, currGMICs;
     if (GOMORY_OPTION != 0) {
+      // Generate GMICs
       timer.start_timer(OverallTimeStats::GOMORY_GEN_TIME);
       generateGomoryCuts(currGMICs, solver, GOMORY_OPTION, params.get(intParam::STRENGTHEN), params.get(intConst::MIN_SUPPORT_THRESHOLD), params.get(doubleParam::MAX_SUPPORT_REL), params.get(doubleConst::AWAY), params.get(doubleConst::DIFFEPS), params.logfile);
       timer.end_timer(OverallTimeStats::GOMORY_GEN_TIME);
@@ -430,6 +432,7 @@ int main(int argc, char** argv) {
         boundInfo.unstr_gmic_obj = boundInfo.gmic_obj;
         boundInfoVec[round_ind].unstr_gmic_obj = boundInfo.gmic_obj;
       } else {
+        // Generate unstrengthened GMICs
         generateGomoryCuts(currUnstrGMICs, solver,
             // Cannot avoid strengthening with CglGMI so avoid that option
             (std::abs(GOMORY_OPTION) != static_cast<int>(GomoryType::CglGMI)) ? GOMORY_OPTION : static_cast<int>(GomoryType::CreateMIG_CustomStrengthen),
@@ -447,7 +450,7 @@ int main(int argc, char** argv) {
         // Update bound
         boundInfo.unstr_gmic_obj = unstrGMICSolver->getObjValue();
         boundInfoVec[round_ind].unstr_gmic_obj = boundInfo.unstr_gmic_obj;
-      }
+      } // get unstrengthened GMICs
 
       // Apply cuts to remaining solvers
       if (GOMORY_OPTION > 0) {
@@ -467,15 +470,13 @@ int main(int argc, char** argv) {
       params.set(intParam::DISJ_TERMS, disjOptions[round_ind]);
     }
     const bool SHOULD_GENERATE_CUTS = (params.get(intParam::DISJ_TERMS) != 0 || disjOptions.size() > 0);
-
-    OsiCuts& currCuts = mycuts_by_round[round_ind];
-    OsiCuts extraCuts;
-
     const bool USE_CUSTOM = 
         use_temp_option(params.get(StrengtheningParameters::intParam::TEMP), TempOptions::SERRA_BALAS_2020_EXAMPLE)
         || use_temp_option(params.get(StrengtheningParameters::intParam::TEMP), TempOptions::PYRAMID_EXAMPLE)
         || use_temp_option(params.get(StrengtheningParameters::intParam::TEMP), TempOptions::WEDGE_EXAMPLE);
     double CURR_EPS = params.get(StrengtheningParameters::doubleParam::EPS);
+
+    OsiCuts extraCuts;
     Disjunction* disj = NULL;
     if (SHOULD_GENERATE_CUTS) {
       timer.start_timer(OverallTimeStats::CUT_GEN_TIME);
@@ -490,13 +491,59 @@ int main(int argc, char** argv) {
 
       // Set up custom disjunction
       if (USE_CUSTOM) {
-        testDisjunctionAndCut(disj, gen, extraCuts);
+        testDisjunctionAndCut(gen, extraCuts);
       }
 
       // Generate disjunctive cuts
-      gen.generateCuts(*solver, currCuts);
+      gen.generateCuts(*solver, mycuts_by_round[round_ind]);
       CURR_EPS = gen.probData.EPS;
 
+      // Update statistics about the disjunction objective value and cuts
+      exitReason = gen.gen.exitReason;
+      if (gen.gen.disj() || gen.gen.disjSet()) {
+        DisjunctionSet* disjSet = gen.gen.disjSet();
+        if (gen.gen.disjSet() == NULL) {
+          disjSet = new DisjunctionSet;
+          disjSet->addDisjunction(gen.gen.disj());
+          disj = (gen.gen.disj())->clone();
+        }
+
+        boundInfo.num_mycut += gen.num_cuts; // TODO: does this need to be in this "if", and do we need to subtract initial num cuts?
+        boundInfoVec[round_ind].num_mycut += gen.num_cuts;
+
+        for (const Disjunction* const disj : disjSet->disjunctions) {
+          num_disj++;
+
+          if (boundInfo.best_disj_obj < disj->best_obj) {
+            boundInfo.best_disj_obj = disj->best_obj;
+          }
+          if (boundInfoVec[round_ind].best_disj_obj < disj->best_obj) {
+            boundInfoVec[round_ind].best_disj_obj = disj->best_obj;
+          }
+          if (boundInfo.worst_disj_obj < disj->worst_obj) {
+            boundInfo.worst_disj_obj = disj->worst_obj;
+          }
+          if (boundInfoVec[round_ind].worst_disj_obj < disj->worst_obj) {
+            boundInfoVec[round_ind].best_disj_obj = disj->worst_obj;
+          }
+
+          if (round_ind == 0) {
+            // The following should be the same across all disjunctions
+            boundInfo.num_root_bounds_changed = disj->common_changed_var.size();
+            boundInfo.root_obj = disj->root_obj;
+          }
+          boundInfoVec[round_ind].num_root_bounds_changed = disj->common_changed_var.size();
+          boundInfoVec[round_ind].root_obj = disj->root_obj;
+        } // loop over disjunctions used for this round
+
+        if (gen.gen.disjSet() == NULL) {
+          delete disjSet;
+          disjSet = NULL;
+        }
+      } // check if any disjunctions were used
+      updateDisjInfo(disjInfo, num_disj, gen.gen);
+      updateCutInfo(cutInfoVec[round_ind], gen, &mycuts_by_round[round_ind], params.get(EPS) / 2.);
+      
       // Update timing from underlying generator
       CglVPC* vpc = &(gen.gen);
       TimeStats vpctimer = vpc->timer;
@@ -523,69 +570,23 @@ int main(int argc, char** argv) {
         timer.add_value(overall_stat, currtimevalue);
       }
 
-      // timer.add_value(
-      //     CglAdvCut::CutTimeStatsName[static_cast<int>(CglVPC::VPCTimeStats::DISJ_SETUP_TIME)],
-      //     vpc->timer.get_value(CglVPC::VPCTimeStats::DISJ_SETUP_TIME));
-
-      // Update statistics about the disjunction objective value and cuts
-      exitReason = gen.gen.exitReason;
-      if (gen.gen.disj()) {
-        disj = (gen.gen.disj())->clone();
-        disjInfo.num_disj++;
-        boundInfo.num_mycut += gen.num_cuts;
-        boundInfoVec[round_ind].num_mycut += gen.num_cuts;
-        if (boundInfo.best_disj_obj < disj->best_obj) {
-          boundInfo.best_disj_obj = disj->best_obj;
-        }
-        if (boundInfoVec[round_ind].best_disj_obj < disj->best_obj) {
-          boundInfoVec[round_ind].best_disj_obj = disj->best_obj;
-        }
-        if (boundInfo.worst_disj_obj < disj->worst_obj) {
-          boundInfo.worst_disj_obj = disj->worst_obj;
-        }
-        if (boundInfoVec[round_ind].worst_disj_obj < disj->worst_obj) {
-          boundInfoVec[round_ind].best_disj_obj = disj->worst_obj;
-        }
-        if (round_ind == 0) {
-          boundInfo.num_root_bounds_changed = disj->common_changed_var.size();
-          boundInfo.root_obj = disj->root_obj;
-        }
-        boundInfoVec[round_ind].num_root_bounds_changed = disj->common_changed_var.size();
-        boundInfoVec[round_ind].root_obj = disj->root_obj;
-
-      //   // Delete any infeasible terms
-      //   std::vector<int> terms_to_erase;
-      //   for (int term_ind = 0; term_ind < disj->num_terms; term_ind++) {
-      //     if (!disj->terms[term_ind].is_feasible) {
-      //       terms_to_erase.push_back(term_ind);
-      //     }
-      //   }
-      //   for (int i = (int) terms_to_erase.size() - 1; i >= 0; i--) {
-      //     const int term_ind = terms_to_erase[i];
-      //     disj->terms.erase(disj->terms.begin() + term_ind);
-      //     disj->num_terms--;
-      //   }
-      }
-      updateDisjInfo(disjInfo, disjInfo.num_disj, gen.gen);
-      updateCutInfo(cutInfoVec[round_ind], &gen);
-      
       timer.end_timer(OverallTimeStats::CUT_GEN_TIME);
-    } // SHOULD_GENERATE_CUTS
+    } // check if SHOULD_GENERATE_CUTS (num disj terms requested != 0)
     else { // else update cutInfo with blanks
       setCutInfo(cutInfoVec[round_ind], 0, NULL);
     }
 
     // Insert extra cuts
     if (extraCuts.sizeCuts() > 0) {
-      currCuts.insert(extraCuts);
+      mycuts_by_round[round_ind].insert(extraCuts);
       cutInfoVec[round_ind].num_cuts += extraCuts.sizeCuts();
     }
 
-    if (currCuts.sizeCuts() > 0) {
+    if (mycuts_by_round[round_ind].sizeCuts() > 0) {
       // Get density of unstr cuts
       int total_support = 0;
-      for (int cut_ind = 0; cut_ind < currCuts.sizeCuts(); cut_ind++) {
-          OsiRowCut* disjCut = currCuts.rowCutPtr(cut_ind);
+      for (int cut_ind = 0; cut_ind < mycuts_by_round[round_ind].sizeCuts(); cut_ind++) {
+          OsiRowCut* disjCut = mycuts_by_round[round_ind].rowCutPtr(cut_ind);
           const CoinPackedVector lhs = disjCut->row();
           const int num_elem = lhs.getNumElements();
           /*for (const double coeff : strCutCoeff) {
@@ -597,39 +598,41 @@ int main(int argc, char** argv) {
             cutInfoUnstr.max_support = num_elem;
           total_support += num_elem;
       }
-      cutInfoUnstr.avg_support = (double) total_support / currCuts.sizeCuts();
-      cutInfoUnstr.num_cuts += currCuts.sizeCuts();
+      cutInfoUnstr.avg_support = (double) total_support / mycuts_by_round[round_ind].sizeCuts();
+      cutInfoUnstr.num_cuts += mycuts_by_round[round_ind].sizeCuts();
     }
 
 #if 0
     fprintf(stdout, "\n## Printing custom cuts ##\n");
-    for (int cut_ind = 0; cut_ind < currCuts.sizeCuts(); cut_ind++) {
+    for (int cut_ind = 0; cut_ind < mycuts_by_round[round_ind].sizeCuts(); cut_ind++) {
       printf("## Cut %d ##\n", cut_ind);
-      const OsiRowCut* const cut = currCuts.rowCutPtr(cut_ind);
+      const OsiRowCut* const cut = mycuts_by_round[round_ind].rowCutPtr(cut_ind);
       cut->print();
     }
     fprintf(stdout, "Finished printing custom cuts.\n\n");
 #endif
 
-    // Check cuts against ip solution
-    if (params.get(TEMP) == static_cast<int>(TempOptions::CHECK_CUTS_AGAINST_BB_OPT) && !ip_solution.empty()) {
-      const int num_violated = checkCutsAgainstFeasibleSolution(currCuts, ip_solution);
-      printf("\n## Number of cuts violating the IP solution: %d ##\n", num_violated);
-    }
-
     //====================================================================================================//
     // Get Farkas certificate and do strengthening
-    OsiCuts unstrCurrCuts(currCuts); // save unstrengthened cuts
+    OsiCuts unstrCurrCuts(mycuts_by_round[round_ind]); // save unstrengthened cuts
     std::vector<int> str_cut_ind;   // indices of cuts that were strengthened
     std::vector<CutCertificate> v;  // [cut][term][Farkas multiplier] in the end, per term, this will be of dimension rows + disj term ineqs + cols
 
     timer.start_timer(OverallTimeStats::STR_TOTAL_TIME);
-    strengtheningHelper(currCuts, v, str_cut_ind, strInfo, boundInfoVec[round_ind], disj, solver, ip_solution);
+    strengtheningHelper(mycuts_by_round[round_ind], v, str_cut_ind, strInfo, boundInfoVec[round_ind], disj, solver, ip_solution);
     boundInfo.num_str_affected_cuts += str_cut_ind.size();
     setCertificateInfo(origCertInfoVec[round_ind], disj, v, solver->getNumRows(), solver->getNumCols(), str_cut_ind, CURR_EPS);
     timer.end_timer(OverallTimeStats::STR_TOTAL_TIME);
 
-    mycuts.insert(currCuts);
+    //====================================================================================================//
+    // Check cuts against IP solution
+    if (params.get(TEMP) == static_cast<int>(TempOptions::CHECK_CUTS_AGAINST_BB_OPT) && !ip_solution.empty()) {
+      const int num_violated = checkCutsAgainstFeasibleSolution(mycuts_by_round[round_ind], ip_solution);
+      printf("\n## Number of cuts violating the IP solution: %d ##\n", num_violated);
+    }
+
+    // Insert cuts generated in this round into set of all cuts
+    mycuts.insert(mycuts_by_round[round_ind]);
 
     timer.end_timer(OverallTimeStats::CUT_TOTAL_TIME);
 
@@ -638,8 +641,8 @@ int main(int argc, char** argv) {
     timer.start_timer(OverallTimeStats::REG_TOTAL_TIME);
 
     const bool ANALYSIS_CONDITIONS_MET = disj &&
-        (currCuts.sizeCuts() > 0) &&
-        (static_cast<int>(v.size()) == currCuts.sizeCuts());
+        (mycuts_by_round[round_ind].sizeCuts() > 0) &&
+        (static_cast<int>(v.size()) == mycuts_by_round[round_ind].sizeCuts());
 
     // To start, obtain coefficient matrix (after adding globally-valid inequalities)
     CoinPackedMatrix Atilde;
@@ -698,20 +701,20 @@ int main(int argc, char** argv) {
       // Calculate the rank of the existing certificate for each cut
       // (Do not compute regularity of the cut overall)
       printf("\n## Analyzing regularity of certificate computed for each cut. ##\n");
-      orig_regularity_status.resize(currCuts.sizeCuts(), RegularityStatus::UNKNOWN);
+      orig_regularity_status.resize(mycuts_by_round[round_ind].sizeCuts(), RegularityStatus::UNKNOWN);
 
       // For purposes of linear independence,
       // when a bound is used in the certificate on a certain variable
       // it does not matter if it is a lower or upper bound
       // since we can multiply rows by -1 without changing the rank
-      // std::vector<int> certificate_submx_rank(currCuts.sizeCuts(), 0);
+      // std::vector<int> certificate_submx_rank(mycuts_by_round[round_ind].sizeCuts(), 0);
       // std::vector<int> num_nonzero_multipliers(solver->getNumRows() + disj->common_changed_var.size() + solver->getNumCols(), 0);
-      origCertInfoVec[round_ind].submx_rank.resize(currCuts.sizeCuts(), 0);
-      origCertInfoVec[round_ind].num_nnz_mult.resize(currCuts.sizeCuts(), 0);
+      origCertInfoVec[round_ind].submx_rank.resize(mycuts_by_round[round_ind].sizeCuts(), 0);
+      origCertInfoVec[round_ind].num_nnz_mult.resize(mycuts_by_round[round_ind].sizeCuts(), 0);
       // assert(Atilde.getNumRows() == solver->getNumRows() + disj->common_changed_var.size());
       // assert(Atilde.getNumRows() + disj->terms[0].changed_var.size() + solver->getNumCols() == v[0][0].size()); // dimension matches for cut 0, term 0
 
-      for (int cut_ind = 0; cut_ind < currCuts.sizeCuts(); cut_ind++) {
+      for (int cut_ind = 0; cut_ind < mycuts_by_round[round_ind].sizeCuts(); cut_ind++) {
         int curr_submx_rank = -1;
         int curr_num_nnz_mult = -1;
         const RegularityStatus status = analyzeCertificateRegularity(
@@ -787,7 +790,7 @@ int main(int argc, char** argv) {
           Atilde, Atilderank, params);
       timer.end_timer(OverallTimeStats::REG_CALC_CERT_TIME);
     
-      for (int cut_ind = 0; cut_ind < currCuts.sizeCuts(); cut_ind++) {
+      for (int cut_ind = 0; cut_ind < mycuts_by_round[round_ind].sizeCuts(); cut_ind++) {
         const RegularityStatus status = rcvmip_regularity_status[cut_ind];
 
         switch (status) {
@@ -842,7 +845,7 @@ int main(int argc, char** argv) {
     
     //====================================================================================================//
     // Apply cuts
-    printf("\n## Applying disjunctive cuts (# cuts = %d). ##\n", (int) currCuts.sizeCuts());
+    printf("\n## Applying disjunctive cuts (# cuts = %d). ##\n", (int) mycuts_by_round[round_ind].sizeCuts());
     timer.start_timer(OverallTimeStats::TOTAL_APPLY_TIME);
 
     // To track time to apply cuts, need to be careful of which solver they are being added to
@@ -851,25 +854,25 @@ int main(int argc, char** argv) {
     // If GOMORY = 1, then solver has GMICs from this round applied already (will be identical to allCutSolver)
     // If GOMORY = -1, then solver has only disjcuts from prior rounds (will be identical to strCutSolver)
     // Recall that "solver" is the one used for generating cuts for each round
-    if (currCuts.sizeCuts() > 0) {
+    if (mycuts_by_round[round_ind].sizeCuts() > 0) {
       if (GOMORY_OPTION != 0) { // GMICs generated, so need to track strVPC-only objective with strCutSolver
         // Apply to "strCutSolver", which tracks effect of strengthened cuts, without the effect of other cuts such as GMICs
         timer.start_timer(OverallTimeStats::CUT_APPLY_TIME);
-        applyCutsCustom(strCutSolver, currCuts, params.logfile);
+        applyCutsCustom(strCutSolver, mycuts_by_round[round_ind], params.logfile);
         timer.end_timer(OverallTimeStats::CUT_APPLY_TIME);
 
         // Apply to "solver" which has either only strengthened cuts, or also GMICs depending on GOMORY parameter
         // When GOMORY = -1, strCutSolver and solver are identical
-        applyCutsCustom(solver, currCuts, params.logfile);
+        applyCutsCustom(solver, mycuts_by_round[round_ind], params.logfile);
 
         // Apply to "allCutSolver", which has all cuts
         // When GOMORY = 1, allCutSolver and solver are identical
-        applyCutsCustom(allCutSolver, currCuts, params.logfile);
+        applyCutsCustom(allCutSolver, mycuts_by_round[round_ind], params.logfile);
       } // check if GMICs generated (params.get(GOMORY) != 0)
       else {
         // Else, no GMICs generated; only solver needed
         timer.start_timer(OverallTimeStats::CUT_APPLY_TIME);
-        applyCutsCustom(solver, currCuts, params.logfile);
+        applyCutsCustom(solver, mycuts_by_round[round_ind], params.logfile);
         timer.end_timer(OverallTimeStats::CUT_APPLY_TIME);
       }
     } // apply cuts if any were generated
@@ -918,7 +921,7 @@ int main(int argc, char** argv) {
       boundInfo.rcvmip_gmic_mycut_obj = rcvmipCutSolver->getObjValue();
 
       // Add original-strengthened cuts
-      applyCutsCustom(rcvmipCutSolver, currCuts, params.logfile);
+      applyCutsCustom(rcvmipCutSolver, mycuts_by_round[round_ind], params.logfile);
       boundInfo.rcvmip_all_cuts_obj = rcvmipCutSolver->getObjValue();
 
       if (rcvmipCutSolver) { delete rcvmipCutSolver; }
@@ -975,7 +978,7 @@ int main(int argc, char** argv) {
         stringValue(boundInfo.lp_obj, "%1.6f").c_str());
     if (round_ind > 0) {
       printf("Round start obj value: %s.\n",
-        stringValue(roundOrigSolver->getObjValue(), "%1.6f").c_str());
+        stringValue(boundInfoVec[round_ind-1].all_cuts_obj, "%1.6f").c_str());
     }
     printf("Disj lb: %s.\n",
         stringValue(boundInfo.best_disj_obj, "%1.6f").c_str());
@@ -1745,32 +1748,6 @@ int processArgs(int argc, char** argv) {
   return status;
 } /* processArgs */
 
-void updateDisjInfo(SummaryDisjunctionInfo& disjInfo, const int num_disj, const CglVPC& gen) {
-  if (num_disj <= 0)
-    return;
-  const Disjunction* const disj = gen.getDisjunction();
-  const PRLP* const prlp = gen.getPRLP();
-  if (!prlp)
-    return;
-  disjInfo.num_integer_sol += !(disj->integer_sol.empty());
-  disjInfo.avg_num_terms = (disjInfo.avg_num_terms * (num_disj - 1) + disj->num_terms) / num_disj;
-  disjInfo.avg_density_prlp = (disjInfo.avg_density_prlp * (num_disj - 1) + prlp->density) / num_disj;
-  disjInfo.avg_num_rows_prlp += (disjInfo.avg_num_rows_prlp * (num_disj - 1) + prlp->getNumRows()) / num_disj;
-  disjInfo.avg_num_cols_prlp += (disjInfo.avg_num_cols_prlp * (num_disj - 1) + prlp->getNumCols()) / num_disj;
-  disjInfo.avg_num_points_prlp += (disjInfo.avg_num_points_prlp * (num_disj - 1) + prlp->numPoints) / num_disj;
-  disjInfo.avg_num_rays_prlp += (disjInfo.avg_num_rays_prlp * (num_disj - 1) + prlp->numRays) / num_disj;
-  try {
-    const PartialBBDisjunction* const partialDisj =
-        dynamic_cast<const PartialBBDisjunction* const >(disj);
-    disjInfo.avg_explored_nodes += (disjInfo.avg_explored_nodes * (num_disj - 1) + partialDisj->data.num_nodes_on_tree) / num_disj;
-    disjInfo.avg_pruned_nodes += (disjInfo.avg_pruned_nodes * (num_disj - 1) + partialDisj->data.num_pruned_nodes) / num_disj;
-    disjInfo.avg_min_depth += (disjInfo.avg_min_depth * (num_disj - 1) + partialDisj->data.min_node_depth) / num_disj;
-    disjInfo.avg_max_depth += (disjInfo.avg_max_depth * (num_disj - 1) + partialDisj->data.max_node_depth) / num_disj;
-  } catch (std::exception& e) {
-
-  }
-} /* updateDisjInfo */
-
 void strengtheningHelper(
     OsiCuts& currCuts,                      ///< [in/out] The cuts to be strengthened (in place)
     std::vector<CutCertificate>& v,         ///< [in/out] Certificate of cuts, per term, of dimension rows + disj term ineqs + cols with indices [cut][term][Farkas multiplier]
@@ -1923,11 +1900,10 @@ void applyStrengtheningCertificateHelper(
 } /* applyStrengtheningCertificateHelper */
 
 void testDisjunctionAndCutSerraBalas2020(
-    Disjunction* disj,
     CglAdvCut& gen,
     OsiCuts& currCuts) {
   // Set up custom disjunction
-  disj = new PartialBBDisjunction();
+  Disjunction* disj = new PartialBBDisjunction();
   disj->setupAsNew();
 
   // Create disjunction (X0 <= 0; X1 <= 0) V (X0 <= 0; X1 >= 1) V (X0 >= 1; X1 <= 0) V (X0 >= 1; X1 >= 1)
@@ -1994,7 +1970,9 @@ void testDisjunctionAndCutSerraBalas2020(
   }
 
   // Set disjunction for CglVPC inside of gen
+  gen.gen.ownsDisjunction = true;
   gen.gen.setDisjunction(disj);
+  if (disj) { delete disj; }
 
   // Add cut X0 - 2 X1 >= 1
   CoinPackedVector newCutRow;
@@ -2007,11 +1985,10 @@ void testDisjunctionAndCutSerraBalas2020(
 } /* testDisjunctionAndCutSerraBalas2020 */
 
 void testDisjunctionAndCutPyramid(
-    Disjunction* disj,
     CglAdvCut& gen,
     OsiCuts& currCuts) {
   // Set up custom disjunction
-  disj = new PartialBBDisjunction();
+  Disjunction* disj = new PartialBBDisjunction();
   disj->setupAsNew();
 
   // Create disjunction (x0 <= 0) V (x1 <= 0) V (x0 + x1 >= 2)
@@ -2067,7 +2044,9 @@ void testDisjunctionAndCutPyramid(
   }
 
   // Set disjunction for CglVPC inside of gen
+  gen.gen.ownsDisjunction = true;
   gen.gen.setDisjunction(disj);
+  if (disj) { delete disj; }
 
   // Add cut -x2 >= -1/2
   CoinPackedVector newCutRow;
@@ -2079,11 +2058,10 @@ void testDisjunctionAndCutPyramid(
 } /* testDisjunctionAndCutPyramid */
 
 void testDisjunctionAndCutRegWedge(
-    Disjunction* disj,
     CglAdvCut& gen,
     OsiCuts& currCuts) {
   // Set up custom disjunction
-  disj = new PartialBBDisjunction();
+  Disjunction* disj = new PartialBBDisjunction();
   disj->setupAsNew();
 
   // Create disjunction (x0 <= 0) V (x0 >= 1)
@@ -2116,7 +2094,9 @@ void testDisjunctionAndCutRegWedge(
   }
 
   // Set disjunction for CglVPC inside of gen
+  gen.gen.ownsDisjunction = true;
   gen.gen.setDisjunction(disj);
+  if (disj) { delete disj; }
 
   // Add cut -x2 >= -1/2
   CoinPackedVector newCutRow;
@@ -2128,16 +2108,15 @@ void testDisjunctionAndCutRegWedge(
 } /* testDisjunctionAndCutRegWedge */
 
 void testDisjunctionAndCut(
-    Disjunction* disj,
     CglAdvCut& gen,
     OsiCuts& currCuts) {
   if (use_temp_option(params.get(StrengtheningParameters::intParam::TEMP), TempOptions::SERRA_BALAS_2020_EXAMPLE)) {
-    testDisjunctionAndCutSerraBalas2020(disj, gen, currCuts);
+    testDisjunctionAndCutSerraBalas2020(gen, currCuts);
   }
   else if (use_temp_option(params.get(StrengtheningParameters::intParam::TEMP), TempOptions::PYRAMID_EXAMPLE)) {
-    testDisjunctionAndCutPyramid(disj, gen, currCuts);
+    testDisjunctionAndCutPyramid(gen, currCuts);
   }
   else if (use_temp_option(params.get(StrengtheningParameters::intParam::TEMP), TempOptions::WEDGE_EXAMPLE)) {
-    testDisjunctionAndCutRegWedge(disj, gen, currCuts);
+    testDisjunctionAndCutRegWedge(gen, currCuts);
   }
 } /* testDisjunctionAndCut */
