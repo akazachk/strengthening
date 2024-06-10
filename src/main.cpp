@@ -509,12 +509,13 @@ int main(int argc, char** argv) {
       // Update statistics about the disjunction objective value and cuts
       exitReason = gen.gen.exitReason;
       if (gen.gen.disj() || gen.gen.disjSet()) {
-        disjSet = gen.gen.disjSet()->clone();
         disjIDPerCut = gen.gen.disjID;
         if (gen.gen.disjSet() == NULL) {
           disjSet = new DisjunctionSet;
           disjSet->addDisjunction(gen.gen.disj());
           disj = (gen.gen.disj())->clone();
+        } else {
+          disjSet = gen.gen.disjSet()->clone();
         }
 
         boundInfo.num_mycut += gen.num_cuts; // TODO: does this need to be in this "if", and do we need to subtract initial num cuts?
