@@ -478,6 +478,7 @@ int main(int argc, char** argv) {
 
     OsiCuts extraCuts;
     Disjunction* disj = NULL;
+    DisjunctionSet* disjSet = NULL;
     if (SHOULD_GENERATE_CUTS) {
       timer.start_timer(OverallTimeStats::CUT_GEN_TIME);
 
@@ -1766,6 +1767,19 @@ void strengtheningHelper(
   do_strengthening = do_strengthening && disj->integer_sol.size() == 0; // TODO right now (2021-05-22) we cannot handle integer-feasible solutions found during branching
 
   if (!do_strengthening) {
+    if (params.get(intParam::STRENGTHEN) >= 1) {
+      fprintf(stdout, "\n## Strengthening requested but aborted. ##\n");
+      if (!disj) {
+        fprintf(stdout, "No disjunction found.\n");
+      } else if (disj->terms.size() == 0) {
+        fprintf(stdout, "No terms found in disjunction.\n");
+      } else if (currCuts.sizeCuts() == 0) {
+        fprintf(stdout, "No cuts found.\n");
+      } else if (disj->integer_sol.size() > 0) {
+        fprintf(stdout, "Integer-feasible solution found during branching.\n");
+      
+      }
+    }
     return;
   }
 
