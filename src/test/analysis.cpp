@@ -397,6 +397,7 @@ void printBoundAndGapInfo(const SummaryBoundInfo& boundInfo, FILE* logfile, cons
       fprintf(logfile, "%s%c", stringValue(boundInfo.gmic_obj, "%2.20f").c_str(), SEP); count++;
     } else {
       fprintf(logfile, "%c", SEP); count++;
+      fprintf(logfile, "%c", SEP); count++;
     }
     fprintf(logfile, "%s%c", stringValue(boundInfo.num_lpc).c_str(), SEP); count++;
     if (boundInfo.num_lpc > 0) {
