@@ -502,7 +502,7 @@ int main(int argc, char** argv) {
       // Update statistics about the disjunction objective value and cuts
       exitReason = gen.gen.exitReason;
       if (gen.gen.disj() || gen.gen.disjSet()) {
-        DisjunctionSet* disjSet = gen.gen.disjSet();
+        disjSet = gen.gen.disjSet()->clone();
         if (gen.gen.disjSet() == NULL) {
           disjSet = new DisjunctionSet;
           disjSet->addDisjunction(gen.gen.disj());
@@ -536,11 +536,6 @@ int main(int argc, char** argv) {
           boundInfoVec[round_ind].num_root_bounds_changed = disj->common_changed_var.size();
           boundInfoVec[round_ind].root_obj = disj->root_obj;
         } // loop over disjunctions used for this round
-
-        if (gen.gen.disjSet() == NULL) {
-          delete disjSet;
-          disjSet = NULL;
-        }
       } // check if any disjunctions were used
       updateDisjInfo(disjInfo, num_disj, gen.gen);
       updateCutInfo(cutInfoVec[round_ind], gen, &mycuts_by_round[round_ind], params.get(EPS) / 2.);
@@ -952,7 +947,14 @@ int main(int argc, char** argv) {
 
     // Free memory from solvers/disj specific for this round
     if (roundOrigSolver && roundOrigSolver != origSolver) { delete roundOrigSolver; }
-    if (disj) { delete disj; }
+    if (disj) {
+      delete disj;
+      disj = NULL;
+    }
+    if (disjSet) {
+      delete disjSet;
+      disjSet = NULL;
+    }
     
     // Print summary of bounds after this round
     printf("\n*** INFO:\n");
