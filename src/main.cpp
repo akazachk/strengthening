@@ -206,7 +206,9 @@ void strengtheningHelper(
     const Disjunction* const disj,
     const OsiSolverInterface* const solver,
     const std::vector<double>& ip_solution,
-    const bool is_rcvmip = false
+    const bool is_rcvmip = false,
+    const int start_ind = 0,
+    const int num_cuts = -1
 );
 
 /// @brief Calculate the strengthening certificate (Farkas multipliers) \p v for \p currCuts
@@ -214,7 +216,9 @@ void calcStrengtheningCertificateHelper(
     const OsiCuts& currCuts,
     std::vector<CutCertificate>& v,
     const Disjunction* const disj,
-    const OsiSolverInterface* const solver
+    const OsiSolverInterface* const solver,
+    const int start_ind = 0,
+    const int num_cuts = -1
 );
 
 /// @brief Apply the strengthening certificate (Farkas multipliers) \p v to \p currCuts
@@ -227,7 +231,9 @@ void applyStrengtheningCertificateHelper(
     const Disjunction* const disj,
     const OsiSolverInterface* const solver,
     const std::vector<double>& ip_solution,
-    const bool is_rcvmip = false
+    const bool is_rcvmip = false,
+    const int start_ind = 0,
+    const int num_cuts = -1
 );
 
 /// @brief For debugging purposes, this will create a custom disjunction and potentially add a cut to currCuts
@@ -479,6 +485,7 @@ int main(int argc, char** argv) {
     OsiCuts extraCuts;
     Disjunction* disj = NULL;
     DisjunctionSet* disjSet = NULL;
+    std::vector<int> disjIDPerCut;
     if (SHOULD_GENERATE_CUTS) {
       timer.start_timer(OverallTimeStats::CUT_GEN_TIME);
 
@@ -503,6 +510,7 @@ int main(int argc, char** argv) {
       exitReason = gen.gen.exitReason;
       if (gen.gen.disj() || gen.gen.disjSet()) {
         disjSet = gen.gen.disjSet()->clone();
+        disjIDPerCut = gen.gen.disjID;
         if (gen.gen.disjSet() == NULL) {
           disjSet = new DisjunctionSet;
           disjSet->addDisjunction(gen.gen.disj());
@@ -611,13 +619,42 @@ int main(int argc, char** argv) {
     //====================================================================================================//
     // Get Farkas certificate and do strengthening
     OsiCuts unstrCurrCuts(mycuts_by_round[round_ind]); // save unstrengthened cuts
-    std::vector<int> str_cut_ind;   // indices of cuts that were strengthened
     std::vector<CutCertificate> v;  // [cut][term][Farkas multiplier] in the end, per term, this will be of dimension rows + disj term ineqs + cols
 
     timer.start_timer(OverallTimeStats::STR_TOTAL_TIME);
-    strengtheningHelper(mycuts_by_round[round_ind], v, str_cut_ind, strInfo, boundInfoVec[round_ind], disj, solver, ip_solution);
-    boundInfo.num_str_affected_cuts += str_cut_ind.size();
-    setCertificateInfo(origCertInfoVec[round_ind], disj, v, solver->getNumRows(), solver->getNumCols(), str_cut_ind, CURR_EPS);
+
+    // Find batch of cuts that all correspond to the same disjunction
+    int start_ind = 0;
+    int curr_num_cuts = 0;
+    int disj_id = -1;
+    for (int cut_ind = 0; cut_ind < mycuts_by_round[round_ind].sizeCuts(); cut_ind++) {
+      const int curr_disj_id = disjIDPerCut[cut_ind];
+
+      // If we are still on the same disjunction, increment the number of cuts for this disjunction
+      if (curr_disj_id == disj_id) {
+        curr_num_cuts++;
+        continue;
+      }
+
+      // Else, it is a new disjunction, get the certificate for the last batch of cuts
+      if (curr_num_cuts > 0) {
+        Disjunction* disj = disjSet->disjunctions[curr_disj_id];
+        std::vector<int> str_cut_ind;   // indices of cuts that were strengthened
+        strengtheningHelper(mycuts_by_round[round_ind], v, str_cut_ind, strInfo, boundInfoVec[round_ind], disj, solver, ip_solution, false, start_ind, curr_num_cuts);
+        boundInfo.num_str_affected_cuts += str_cut_ind.size();
+        setCertificateInfo(origCertInfoVec[round_ind], disj, v, solver->getNumRows(), solver->getNumCols(), str_cut_ind, CURR_EPS);
+      }
+
+      // Start a new batch
+      start_ind = cut_ind;
+      curr_num_cuts = 1;
+      disj_id = curr_disj_id;
+    } // loop over cuts to find certificates for batches from same disjunction
+
+    // strengtheningHelper(mycuts_by_round[round_ind], v, str_cut_ind, strInfo, boundInfoVec[round_ind], disj, solver, ip_solution);
+    // boundInfo.num_str_affected_cuts += str_cut_ind.size();
+    // setCertificateInfo(origCertInfoVec[round_ind], disj, v, solver->getNumRows(), solver->getNumCols(), str_cut_ind, CURR_EPS);
+
     timer.end_timer(OverallTimeStats::STR_TOTAL_TIME);
 
     //====================================================================================================//
@@ -1760,13 +1797,16 @@ void strengtheningHelper(
     const Disjunction* const disj,          ///< [in] The disjunction that generated the cuts
     const OsiSolverInterface* const solver, ///< [in] The solver that generated the cuts
     const std::vector<double>& ip_solution, ///< [in] Feasible integer solution
-    const bool is_rcvmip                    ///< [in] Whether we are using the original (false) or RCVMIP (true) certificate --- if false, certificate \p v is calculated using #calcStrengtheningCertificate
+    const bool is_rcvmip,                   ///< [in] Whether we are using the original (false) or RCVMIP (true) certificate --- if false, certificate \p v is calculated using #calcStrengtheningCertificate
+    const int start_ind,                    ///< [in] The index of the first cut to be strengthened
+    const int num_cuts_requested            ///< [in] The number of cuts to be strengthened
 ) {
   // Check if cuts should be strengthened
+  const int num_cuts = (num_cuts_requested < 0) ? currCuts.sizeCuts() - start_ind : num_cuts_requested;
   bool do_strengthening = params.get(intParam::STRENGTHEN) >= 1; // the strengthening parameter is set
-  do_strengthening = do_strengthening && disj && disj->terms.size() > 0; // a disjunction exists, and it has terms
-  do_strengthening = do_strengthening && currCuts.sizeCuts() > 0; // cuts have been generated
-  do_strengthening = do_strengthening && disj->integer_sol.size() == 0; // TODO right now (2021-05-22) we cannot handle integer-feasible solutions found during branching
+  do_strengthening = do_strengthening && disj && (disj->terms.size() > 0); // a disjunction exists, and it has terms
+  do_strengthening = do_strengthening && (num_cuts > 0); // cuts have been generated
+  do_strengthening = do_strengthening && (disj->integer_sol.size() == 0); // TODO right now (2021-05-22) we cannot handle integer-feasible solutions found during branching
 
   if (!do_strengthening) {
     if (params.get(intParam::STRENGTHEN) >= 1) {
@@ -1775,8 +1815,8 @@ void strengtheningHelper(
         fprintf(stdout, "No disjunction found.\n");
       } else if (disj->terms.size() == 0) {
         fprintf(stdout, "No terms found in disjunction.\n");
-      } else if (currCuts.sizeCuts() == 0) {
-        fprintf(stdout, "No cuts found.\n");
+      } else if (num_cuts == 0) {
+        fprintf(stdout, "No cuts found (currCuts size = %d, start_ind = %d, num cuts requested = %d).\n", currCuts.sizeCuts(), start_ind, num_cuts_requested);
       } else if (disj->integer_sol.size() > 0) {
         fprintf(stdout, "Integer-feasible solution found during branching.\n");
       
@@ -1785,16 +1825,15 @@ void strengtheningHelper(
     return;
   }
 
-  const int num_cuts = currCuts.sizeCuts();
   printf("\n## Strengthening disjunctive cuts: (# cuts = %d). ##\n", num_cuts);
 
   // Retrieve the certificate
   if (!is_rcvmip) {
-    calcStrengtheningCertificateHelper(currCuts, v, disj, solver);
+    calcStrengtheningCertificateHelper(currCuts, v, disj, solver, start_ind, num_cuts_requested);
   }
 
   // Apply the certificate
-  applyStrengtheningCertificateHelper(currCuts, v, str_cut_ind, strInfo, boundInfo, disj, solver, ip_solution);
+  applyStrengtheningCertificateHelper(currCuts, v, str_cut_ind, strInfo, boundInfo, disj, solver, ip_solution, is_rcvmip, start_ind, num_cuts_requested);
 
   // Print the results
   fprintf(stdout, "\nFinished strengthening (%d / %d cuts affected).\n", strInfo.num_str_affected_cuts, boundInfo.num_mycut);
@@ -1820,13 +1859,17 @@ void calcStrengtheningCertificateHelper(
     const OsiCuts& currCuts,                ///< [in] The cuts to be strengthened (in place)
     std::vector<CutCertificate>& v,         ///< [out] Certifcate of cuts that, in the end, per term, this will be of dimension rows + disj term ineqs + cols with indices [cut][term][Farkas multiplier]
     const Disjunction* const disj,          ///< [in] The disjunction that generated the cuts
-    const OsiSolverInterface* const solver  ///< [in] The solver that generated the cuts
+    const OsiSolverInterface* const solver, ///< [in] The solver that generated the cuts
+    const int start_ind,                    ///< [in] The index of the first cut to be strengthened
+    const int num_cuts_requested            ///< [in] The number of cuts to be strengthened
 ) {
   timer.start_timer(OverallTimeStats::STR_CALC_CERT_TIME);
 
-  const int num_cuts = currCuts.sizeCuts();
-  v.resize(num_cuts);
-  for (int cut_ind = 0; cut_ind < num_cuts; cut_ind++) {
+  // const int num_cuts = currCuts.sizeCuts();
+  const int num_cuts = (num_cuts_requested < 0) ? currCuts.sizeCuts() - start_ind : num_cuts_requested;
+  const int end_ind = start_ind + num_cuts;
+  v.resize(num_cuts + v.size());
+  for (int cut_ind = start_ind; cut_ind < end_ind; cut_ind++) {
     v[cut_ind].resize(disj->num_terms);
   }
   for (int term_ind = 0; term_ind < disj->num_terms; term_ind++) {
@@ -1836,7 +1879,7 @@ void calcStrengtheningCertificateHelper(
       printf("Disjunctive term %d/%d not created successfully.\n", term_ind+1, disj->num_terms);
       continue;
     }
-    for (int cut_ind = 0; cut_ind < num_cuts; cut_ind++) {
+    for (int cut_ind = start_ind; cut_ind < end_ind; cut_ind++) {
       const OsiRowCut* disjCut = currCuts.rowCutPtr(cut_ind);
 
       // For each term of the disjunction,
@@ -1847,7 +1890,6 @@ void calcStrengtheningCertificateHelper(
     } // loop over cuts
 
     if (termSolver) { delete termSolver; }
-
   } // loop over disjunctive terms to retrieve certificate
 
   timer.end_timer(OverallTimeStats::STR_CALC_CERT_TIME);
@@ -1862,17 +1904,20 @@ void applyStrengtheningCertificateHelper(
     const Disjunction* const disj,          ///< [in] The disjunction that generated the cuts
     const OsiSolverInterface* const solver, ///< [in] The solver that generated the cuts
     const std::vector<double>& ip_solution, ///< [in] Feasible integer solution
-    const bool is_rcvmip                    ///< [in] Whether we are using the original (false) or RCVMIP (true) certificate
+    const bool is_rcvmip,                   ///< [in] Whether we are using the original (false) or RCVMIP (true) certificate
+    const int start_ind,                    ///< [in] The index of the first cut to be strengthened
+    const int num_cuts_requested            ///< [in] The number of cuts to be strengthened
 ) {
   OverallTimeStats which_time = is_rcvmip ? OverallTimeStats::REG_APPLY_CERT_TIME : OverallTimeStats::STR_APPLY_CERT_TIME;
   timer.start_timer(which_time);
 
-  const int num_cuts = currCuts.sizeCuts();
+  const int num_cuts = (num_cuts_requested < 0) ? currCuts.sizeCuts() - start_ind : num_cuts_requested;
+  const int end_ind = start_ind + num_cuts;
   strInfo.num_coeffs_strengthened.resize(static_cast<int>(Stat::num_stats), 0.); // total,avg,stddev,min,max
   strInfo.num_coeffs_strengthened[(int) Stat::min] = std::numeric_limits<int>::max();
-  str_cut_ind.reserve(num_cuts);
+  str_cut_ind.reserve(num_cuts + str_cut_ind.size());
 
-  for (int cut_ind = 0; cut_ind < num_cuts; cut_ind++) {
+  for (int cut_ind = start_ind; cut_ind < end_ind; cut_ind++) {
     OsiRowCut* disjCut = currCuts.rowCutPtr(cut_ind);
     const CoinPackedVector lhs = disjCut->row();
     const double rhs = disjCut->rhs();
