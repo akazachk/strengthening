@@ -483,7 +483,7 @@ int main(int argc, char** argv) {
     double CURR_EPS = params.get(StrengtheningParameters::doubleParam::EPS);
 
     OsiCuts extraCuts;
-    Disjunction* disj = NULL;
+    // Disjunction* disj = NULL;
     DisjunctionSet* disjSet = NULL;
     std::vector<int> disjIDPerCut;
     if (SHOULD_GENERATE_CUTS) {
@@ -513,7 +513,7 @@ int main(int argc, char** argv) {
         if (gen.gen.disjSet() == NULL) {
           disjSet = new DisjunctionSet;
           disjSet->addDisjunction(gen.gen.disj());
-          disj = (gen.gen.disj())->clone();
+          // disj = (gen.gen.disj())->clone();
         } else {
           disjSet = gen.gen.disjSet()->clone();
         }
@@ -652,10 +652,6 @@ int main(int argc, char** argv) {
       disj_id = curr_disj_id;
     } // loop over cuts to find certificates for batches from same disjunction
 
-    // strengtheningHelper(mycuts_by_round[round_ind], v, str_cut_ind, strInfo, boundInfoVec[round_ind], disj, solver, ip_solution);
-    // boundInfo.num_str_affected_cuts += str_cut_ind.size();
-    // setCertificateInfo(origCertInfoVec[round_ind], disj, v, solver->getNumRows(), solver->getNumCols(), str_cut_ind, CURR_EPS);
-
     timer.end_timer(OverallTimeStats::STR_TOTAL_TIME);
 
     //====================================================================================================//
@@ -674,57 +670,79 @@ int main(int argc, char** argv) {
     // Analyze regularity and irregularity
     timer.start_timer(OverallTimeStats::REG_TOTAL_TIME);
 
-    const bool ANALYSIS_CONDITIONS_MET = disj &&
+    const bool ANALYSIS_CONDITIONS_MET = disjSet &&
         (mycuts_by_round[round_ind].sizeCuts() > 0) &&
         (static_cast<int>(v.size()) == mycuts_by_round[round_ind].sizeCuts());
 
     // To start, obtain coefficient matrix (after adding globally-valid inequalities)
-    CoinPackedMatrix Atilde;
-    std::vector<double> btilde;
-    if (SHOULD_ANALYZE_REGULARITY != 0 && disj != NULL) {
-      const int mtilde = calculateNumRowsAtilde(disj, solver);
-      const int num_orig_rows = solver->getNumRows();
-      const int num_common_rows = disj->common_changed_var.size();
-      const int num_bound_rows = calculateNumFiniteBounds(solver);
-      printf("\n## Preparing Atilde matrix to analyze regularity (matrix will have %d rows = %d original constraints, %d globally-valid inequalities, %d finite lower+upper bounds). ##\n",
-          mtilde, num_orig_rows, num_common_rows, num_bound_rows);
-      
-      timer.start_timer(OverallTimeStats::REG_GEN_ATILDE_TIME);
-      prepareAtilde(Atilde, btilde, disj, solver, params.logfile);
-      timer.end_timer(OverallTimeStats::REG_GEN_ATILDE_TIME);
+    std::vector<CoinPackedMatrix> AtildeVec(disjSet->size());
+    std::vector<std::vector<double>> btildeVec(disjSet->size());
+    std::vector<int> AtilderankVec(disjSet->size(), solver->getNumCols());
+    if (SHOULD_ANALYZE_REGULARITY != 0 && disjSet != NULL) {
+      printf("\n## Preparing Atilde matrix to analyze regularity (# disjunctions = %d). ##\n", disjSet->size());
+      int disj_id = -1;
+      for (const Disjunction* const disj : disjSet->disjunctions) {
+        disj_id++;
+        const int mtilde = calculateNumRowsAtilde(disj, solver);
+        const int num_orig_rows = solver->getNumRows();
+        const int num_common_rows = disj->common_changed_var.size();
+        const int num_bound_rows = calculateNumFiniteBounds(solver);
+        if (disj_id > 0) { printf("\n"); }
+        printf("Disjunction %d/%d: Preparing Atilde matrix to analyze regularity (matrix will have %d rows = %d original constraints, %d globally-valid inequalities, %d finite lower+upper bounds).\n",
+            disj_id+1, disjSet->size(), mtilde, num_orig_rows, num_common_rows, num_bound_rows);
 
-      printf("Finished preparing Atilde matrix.\n");
-    }
+        CoinPackedMatrix& Atilde = AtildeVec[disj_id];
+        std::vector<double>& btilde = btildeVec[disj_id];
+        int& Atilderank = AtilderankVec[disj_id];
 
-    // Compute rank of Atilde
-    const bool SHOULD_COMPUTE_RANK = (params.get(StrengtheningParameters::intParam::ATILDE_COMPUTE_RANK) >= 1)
-      && (Atilde.getNumRows() > 0);
-    if (SHOULD_COMPUTE_RANK) {
-      printf("\n## Computing rank of Atilde matrix (%d rows, %d columns, %1.4f sparsity). ##\n",
-          Atilde.getNumRows(), Atilde.getNumCols(),
-          Atilde.getNumElements() / (double) (Atilde.getNumRows() * Atilde.getNumCols()));
-    }
-    timer.start_timer(OverallTimeStats::REG_RANK_ATILDE_TIME);
-    std::vector<int> nb_rows, nb_cols;
-    if (SHOULD_COMPUTE_RANK) {
-      for (int var_ind = 0; var_ind < solver->getNumCols() + solver->getNumRows(); var_ind++) {
-        if (isBasicVar(solver, var_ind)) {
-          continue;
+        const double reg_gen_atilde_time_start = timer.get_total_time(OverallTimeStats::REG_GEN_ATILDE_TIME);
+        timer.start_timer(OverallTimeStats::REG_GEN_ATILDE_TIME);
+        prepareAtilde(Atilde, btilde, disj, solver, params.logfile);
+        timer.end_timer(OverallTimeStats::REG_GEN_ATILDE_TIME);
+        const double reg_gen_atilde_time_end = timer.get_total_time(OverallTimeStats::REG_GEN_ATILDE_TIME);
+
+        printf("Disjunction %d/%d: Finished preparing Atilde matrix in %s seconds.\n",
+            disj_id+1, disjSet->size(), stringValue(reg_gen_atilde_time_end - reg_gen_atilde_time_start, "%1.2e").c_str());
+
+        // Compute rank of Atilde
+        const bool SHOULD_COMPUTE_RANK = (params.get(StrengtheningParameters::intParam::ATILDE_COMPUTE_RANK) >= 1)
+          && (Atilde.getNumRows() > 0);
+        if (SHOULD_COMPUTE_RANK) {
+          printf("Disjunction %d/%d: Computing rank of Atilde matrix (%d rows, %d columns, %1.4f sparsity).\n",
+              disj_id+1, disjSet->size(),
+              Atilde.getNumRows(), Atilde.getNumCols(),
+              Atilde.getNumElements() / (double) (Atilde.getNumRows() * Atilde.getNumCols()));
         }
-        if (var_ind < solver->getNumCols()) {
-          nb_cols.push_back(var_ind);
-        } else {
-          nb_rows.push_back(var_ind - solver->getNumCols());
+
+        const double reg_rank_atilde_time_start = timer.get_total_time(OverallTimeStats::REG_RANK_ATILDE_TIME);
+        timer.start_timer(OverallTimeStats::REG_RANK_ATILDE_TIME);
+
+        std::vector<int> nb_rows, nb_cols;
+        if (SHOULD_COMPUTE_RANK) {
+          for (int var_ind = 0; var_ind < solver->getNumCols() + solver->getNumRows(); var_ind++) {
+            if (isBasicVar(solver, var_ind)) {
+              continue;
+            }
+            if (var_ind < solver->getNumCols()) {
+              nb_cols.push_back(var_ind);
+            } else {
+              nb_rows.push_back(var_ind - solver->getNumCols());
+            }
+          }
+        }
+        Atilderank = SHOULD_COMPUTE_RANK ?
+            computeRank(&Atilde, nb_rows, nb_cols) :
+            solver->getNumCols();
+
+        timer.end_timer(OverallTimeStats::REG_RANK_ATILDE_TIME);
+        const double reg_rank_atilde_time_end = timer.get_total_time(OverallTimeStats::REG_RANK_ATILDE_TIME);
+
+        if (SHOULD_COMPUTE_RANK) {
+          printf("Disjunction %d/%d: Finished computing Atilde matrix rank = %d in %s seconds.\n",
+              disj_id+1, disjSet->size(),
+              Atilderank, stringValue(reg_rank_atilde_time_end - reg_rank_atilde_time_start, "%1.2e").c_str());
         }
       }
-    }
-    const int Atilderank = SHOULD_COMPUTE_RANK ?
-        computeRank(&Atilde, nb_rows, nb_cols) :
-        solver->getNumCols();
-    timer.end_timer(OverallTimeStats::REG_RANK_ATILDE_TIME);
-    if (SHOULD_COMPUTE_RANK) {
-      printf("Finished computing Atilde matrix rank = %d in %s seconds.\n",
-          Atilderank, stringValue(timer.get_total_time(OverallTimeStats::REG_RANK_ATILDE_TIME), "%1.2f").c_str());
     }
 
     // Analyze regularity of the existing certificate for each cut
@@ -751,6 +769,11 @@ int main(int argc, char** argv) {
       for (int cut_ind = 0; cut_ind < mycuts_by_round[round_ind].sizeCuts(); cut_ind++) {
         int curr_submx_rank = -1;
         int curr_num_nnz_mult = -1;
+        const int disj_id = disjIDPerCut[cut_ind];
+        const Disjunction* const disj = disjSet->disjunctions[disj_id];
+        const CoinPackedMatrix& Atilde = AtildeVec[disj_id];
+        // const std::vector<double>& btilde = btildeVec[disj_id];
+        const int Atilderank = AtilderankVec[disj_id];
         const RegularityStatus status = analyzeCertificateRegularity(
             curr_submx_rank, curr_num_nnz_mult, v[cut_ind],
             disj, solver, Atilde, Atilderank, params);
@@ -804,77 +827,77 @@ int main(int argc, char** argv) {
     std::vector<int> rcvmip_str_cut_ind; // indices of cuts that were strengthened
     std::vector<RegularityStatus> rcvmip_regularity_status;
 
-    if (SHOULD_ANALYZE_REGULARITY >= 2 && ANALYSIS_CONDITIONS_MET) {
-      printf("\n## Analyzing regularity of cuts via RCVMIP of Serra and Balas (2020). ##\n");
+    // if (SHOULD_ANALYZE_REGULARITY >= 2 && ANALYSIS_CONDITIONS_MET) {
+    //   printf("\n## Analyzing regularity of cuts via RCVMIP of Serra and Balas (2020). ##\n");
 
-      // Copy to rcvmip_v the contents of v
-      rcvmip_v = v;
-      rcvmip_regularity_status = orig_regularity_status;
-      rcvmipCertInfoVec[round_ind].submx_rank = origCertInfoVec[round_ind].submx_rank;
-      rcvmipCertInfoVec[round_ind].num_nnz_mult = origCertInfoVec[round_ind].num_nnz_mult;
+    //   // Copy to rcvmip_v the contents of v
+    //   rcvmip_v = v;
+    //   rcvmip_regularity_status = orig_regularity_status;
+    //   rcvmipCertInfoVec[round_ind].submx_rank = origCertInfoVec[round_ind].submx_rank;
+    //   rcvmipCertInfoVec[round_ind].num_nnz_mult = origCertInfoVec[round_ind].num_nnz_mult;
 
-      timer.start_timer(OverallTimeStats::REG_CALC_CERT_TIME);
-      analyzeCutRegularity(rcvmip_v,
-          rcvmipCertInfoVec[round_ind].submx_rank,
-          rcvmipCertInfoVec[round_ind].num_nnz_mult,
-          rcvmip_regularity_status,
-          rcvmipCertInfoVec[round_ind].num_iterations,
-          rcvmipCertInfoVec[round_ind].rcvmip_time,
-          unstrCurrCuts, disj, solver,
-          Atilde, Atilderank, params);
-      timer.end_timer(OverallTimeStats::REG_CALC_CERT_TIME);
+    //   timer.start_timer(OverallTimeStats::REG_CALC_CERT_TIME);
+    //   analyzeCutRegularity(rcvmip_v,
+    //       rcvmipCertInfoVec[round_ind].submx_rank,
+    //       rcvmipCertInfoVec[round_ind].num_nnz_mult,
+    //       rcvmip_regularity_status,
+    //       rcvmipCertInfoVec[round_ind].num_iterations,
+    //       rcvmipCertInfoVec[round_ind].rcvmip_time,
+    //       unstrCurrCuts, disj, solver,
+    //       Atilde, Atilderank, params);
+    //   timer.end_timer(OverallTimeStats::REG_CALC_CERT_TIME);
     
-      for (int cut_ind = 0; cut_ind < mycuts_by_round[round_ind].sizeCuts(); cut_ind++) {
-        const RegularityStatus status = rcvmip_regularity_status[cut_ind];
+    //   for (int cut_ind = 0; cut_ind < mycuts_by_round[round_ind].sizeCuts(); cut_ind++) {
+    //     const RegularityStatus status = rcvmip_regularity_status[cut_ind];
 
-        switch (status) {
-          case RegularityStatus::IRREG_LESS:
-            rcvmipCertInfoVec[round_ind].num_irreg_less++;
-            break;
-          case RegularityStatus::REG:
-            rcvmipCertInfoVec[round_ind].num_reg++;
-            break;
-          case RegularityStatus::IRREG_MORE:
-            rcvmipCertInfoVec[round_ind].num_irreg_more++;
-            break;
-          // case RegularityStatus::TENTATIVE_IRREG_LESS:
-          //   rcvmipCertInfoVec[round_ind].num_tentative_irreg_less++;
-          //   break;
-          case RegularityStatus::TENTATIVE_IRREG_MORE:
-            rcvmipCertInfoVec[round_ind].num_tentative_irreg_more++;
-            break;
-          case RegularityStatus::UNCONVERGED:
-            rcvmipCertInfoVec[round_ind].num_unconverged++;
-            break;
-          case RegularityStatus::NUMERICALLY_UNSTABLE:
-            rcvmipCertInfoVec[round_ind].num_numerically_unstable++;
-            break;
-          default:
-            error_msg(errorstring, "Invalid status %d from rcvmipCertInfoVec for round %d cut %d.\n", static_cast<int>(status), round_ind, cut_ind);
-            writeErrorToLog(errorstring, params.logfile);
-            exit(1);
-        } // switch on status
+    //     switch (status) {
+    //       case RegularityStatus::IRREG_LESS:
+    //         rcvmipCertInfoVec[round_ind].num_irreg_less++;
+    //         break;
+    //       case RegularityStatus::REG:
+    //         rcvmipCertInfoVec[round_ind].num_reg++;
+    //         break;
+    //       case RegularityStatus::IRREG_MORE:
+    //         rcvmipCertInfoVec[round_ind].num_irreg_more++;
+    //         break;
+    //       // case RegularityStatus::TENTATIVE_IRREG_LESS:
+    //       //   rcvmipCertInfoVec[round_ind].num_tentative_irreg_less++;
+    //       //   break;
+    //       case RegularityStatus::TENTATIVE_IRREG_MORE:
+    //         rcvmipCertInfoVec[round_ind].num_tentative_irreg_more++;
+    //         break;
+    //       case RegularityStatus::UNCONVERGED:
+    //         rcvmipCertInfoVec[round_ind].num_unconverged++;
+    //         break;
+    //       case RegularityStatus::NUMERICALLY_UNSTABLE:
+    //         rcvmipCertInfoVec[round_ind].num_numerically_unstable++;
+    //         break;
+    //       default:
+    //         error_msg(errorstring, "Invalid status %d from rcvmipCertInfoVec for round %d cut %d.\n", static_cast<int>(status), round_ind, cut_ind);
+    //         writeErrorToLog(errorstring, params.logfile);
+    //         exit(1);
+    //     } // switch on status
 
-    #ifdef TRACE
-        fprintf(stdout, "Cut %d: rank = %d/%d,\tnum_nonzero_multipliers = %d,\tregularity status = % d (%s)\n",
-            cut_ind,
-            rcvmipCertInfoVec[round_ind].submx_rank[cut_ind],
-            Atilderank,
-            rcvmipCertInfoVec[round_ind].num_nnz_mult[cut_ind],
-            static_cast<int>(status),
-            getRegularityStatusName(status).c_str());
-    #endif
-      } // loop over cuts, analyzing each for regularity
+    // #ifdef TRACE
+    //     fprintf(stdout, "Cut %d: rank = %d/%d,\tnum_nonzero_multipliers = %d,\tregularity status = % d (%s)\n",
+    //         cut_ind,
+    //         rcvmipCertInfoVec[round_ind].submx_rank[cut_ind],
+    //         Atilderank,
+    //         rcvmipCertInfoVec[round_ind].num_nnz_mult[cut_ind],
+    //         static_cast<int>(status),
+    //         getRegularityStatusName(status).c_str());
+    // #endif
+    //   } // loop over cuts, analyzing each for regularity
 
-      // Apply the new strengthening certificates to get new cuts
-      rcvmipCurrCuts = unstrCurrCuts; // assignment operator essentially inserts each of the unstrCurrCuts into rcvmipCurrCuts
-      strengtheningHelper(rcvmipCurrCuts, rcvmip_v, rcvmip_str_cut_ind, rcvmipStrInfo, boundInfoVec[round_ind], disj, solver, ip_solution, false);
-      setCertificateInfo(rcvmipCertInfoVec[round_ind], disj, rcvmip_v, solver->getNumRows(), solver->getNumCols(), rcvmip_str_cut_ind, CURR_EPS);
-      boundInfo.num_rcvmip_str_affected_cuts += rcvmip_str_cut_ind.size();
+    //   // Apply the new strengthening certificates to get new cuts
+    //   rcvmipCurrCuts = unstrCurrCuts; // assignment operator essentially inserts each of the unstrCurrCuts into rcvmipCurrCuts
+    //   strengtheningHelper(rcvmipCurrCuts, rcvmip_v, rcvmip_str_cut_ind, rcvmipStrInfo, boundInfoVec[round_ind], disj, solver, ip_solution, false);
+    //   setCertificateInfo(rcvmipCertInfoVec[round_ind], disj, rcvmip_v, solver->getNumRows(), solver->getNumCols(), rcvmip_str_cut_ind, CURR_EPS);
+    //   boundInfo.num_rcvmip_str_affected_cuts += rcvmip_str_cut_ind.size();
       
-      rcvmip_cuts.insert(rcvmipCurrCuts);
+    //   rcvmip_cuts.insert(rcvmipCurrCuts);
 
-    } // analyze regularity of *cut* (not just certificate)
+    // } // analyze regularity of *cut* (not just certificate)
     timer.end_timer(OverallTimeStats::REG_TOTAL_TIME);
     
     //====================================================================================================//
@@ -985,10 +1008,10 @@ int main(int argc, char** argv) {
 
     // Free memory from solvers/disj specific for this round
     if (roundOrigSolver && roundOrigSolver != origSolver) { delete roundOrigSolver; }
-    if (disj) {
-      delete disj;
-      disj = NULL;
-    }
+    // if (disj) {
+    //   delete disj;
+    //   disj = NULL;
+    // }
     if (disjSet) {
       delete disjSet;
       disjSet = NULL;
