@@ -178,7 +178,6 @@ elif [ $MODE == "disjset" ] ; then
   PARAMS="$PARAMS --bb_strategy=536"
   PARAMS="$PARAMS --mode=4"
   PARAMS="$PARAMS --disj_options=\"2:4:8:16:32:64\""
-  PARAMS="$PARAMS --cutlimit=-6"
 elif [ $MODE == "test" ]; then
   depthList=(2)
 else
