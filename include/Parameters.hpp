@@ -732,7 +732,7 @@ inline int parseDisjOptions(
     /// [in] parameters (including string of disjunctive options via DISJ_OPTIONS)
     const StrengtheningParameters::Parameters& params,
     /// [in] delimiter for disjunctive options
-    const char SEP = ';') {
+    const char SEP = ':') {
   const int OK_STATUS = 0;
   const int ERROR_STATUS = 0;
 
@@ -847,7 +847,7 @@ inline void printParams(
   }
   if (printStringParams)
   for (auto param : params.stringParamValues) {
-    fprintf(logfile, "%s%c", param.second.to_string(amountToPrint).c_str(), SEP);
+    fprintf(logfile, "\"%s\"%c", param.second.to_string(amountToPrint).c_str(), SEP);
   }
   if (printIntConsts)
   for (auto param : params.intConstValues) {
