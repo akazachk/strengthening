@@ -195,7 +195,6 @@ void signal_handler_with_error_msg(int signal_number) {
 
 int startUp(int argc, char** argv);
 int processArgs(int argc, char** argv);
-void initializeSolver(OsiSolverInterface* &solver);
 int wrapUp(int retCode, int argc, char** argv);
 
 /// @brief Strengthen \p currCuts using the Farkas multipliers that will be computed and stored in \p v
@@ -264,7 +263,7 @@ int main(int argc, char** argv) {
 
   //====================================================================================================//
   // Set up solver and get initial solution
-  initializeSolver(solver, params.get(stringParam::FILENAME));
+  initializeSolver(solver, params.get(stringParam::FILENAME), params.get(StrengtheningParameters::intParam::VERBOSITY), params.get(StrengtheningParameters::doubleParam::TIMELIMIT), params.logfile);
   timer.start_timer(OverallTimeStats::INIT_SOLVE_TIME);
   solver->initialSolve();
   if (!checkSolverOptimality(solver, false)) {
@@ -619,7 +618,7 @@ int main(int argc, char** argv) {
 #endif
 
     assert(!SHOULD_GENERATE_CUTS || (disjSet != NULL));
-    assert(!SHOULD_GENERATE_CUTS || (disjIDPerCut.size() == mycuts_by_round[round_ind].sizeCuts()));
+    assert(!SHOULD_GENERATE_CUTS || (static_cast<int>(disjIDPerCut.size()) == mycuts_by_round[round_ind].sizeCuts()));
 
     //====================================================================================================//
     // Get Farkas certificate and do strengthening
