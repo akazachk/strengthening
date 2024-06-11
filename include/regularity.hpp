@@ -12,6 +12,7 @@
 // Project files
 #include "CutCertificate.hpp"
 class Disjunction;
+class DisjunctionSet;
 namespace StrengtheningParameters {
   struct Parameters;
 }
@@ -110,9 +111,10 @@ void analyzeCutRegularity(
     std::vector<int>& num_iters,
     std::vector<double>& rcvmip_time,
     const OsiCuts& cuts,
-    const Disjunction* const disj,
+    const std::vector<int>& disjIDPerCut,
+    const DisjunctionSet* const disjSet,
     const OsiSolverInterface* const solver,
-    const CoinPackedMatrix& Atilde,
-    const int Atilderank,
+    const std::vector<CoinPackedMatrix>& AtildeVec,
+    const std::vector<int>& AtilderankVec,
     const StrengtheningParameters::Parameters& params,
     const bool USE_INPUT_CERTIFICATE = false);

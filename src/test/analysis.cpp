@@ -1606,20 +1606,22 @@ void setCutInfo(SummaryCutInfo& cutInfo, const int num_rounds,
 ///
 /// TODO only works with bounds defining disjunctive terms for now
 void setCertificateInfo(
+    /// [in/out] Updates avg_num_cgs_facet and num_unmatched_bounds
     SummaryCertificateInfo& info,
     const Disjunction* const disj,
     /// [in] Index is [term][multiplier] where the first m multipliers are on original rows, then there are m0 on the disjunctive term ineqs, and finally n on columns
     const std::vector<CutCertificate>& v_vec,
     const int num_rows,
     const int num_cols,
-    /// [in] Indices of strengthened cuts
+    /// [in] Indices of strengthened cuts for this disjunction
     const std::vector<int>& str_cut_ind,
+    /// [in] Number of strengthened cuts across all disjunctions, for averaging correctly
+    const int num_str_cuts,
     const double EPS) {
   if (!disj) { return; }
 
   assert( disj->common_ineqs.size() == 0 ); // TODO handle this case
   const int num_common_rows = disj->common_changed_bound.size() + disj->common_ineqs.size();
-  const int num_str_cuts = (int) str_cut_ind.size();
   
   for (const int cut_ind : str_cut_ind) {
     const CutCertificate& v = v_vec[cut_ind];

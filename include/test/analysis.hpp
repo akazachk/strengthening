@@ -210,4 +210,5 @@ void setCertificateInfo(
     const std::vector<CutCertificate>& v_vec,
     const int num_rows, const int num_cols,
     const std::vector<int>& str_cut_ind,
+    const int num_str_cuts,
     const double EPS);

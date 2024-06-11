@@ -2260,14 +2260,16 @@ void analyzeCutRegularity(
     std::vector<double>& rcvmip_time,
     /// [in] Set of cuts that are to be analyzed for regularity
     const OsiCuts& cuts,
+    /// [in] ID of the disjunction from which each cut was generated
+    const std::vector<int>& disjIDPerCut,
     /// [in] Disjunction from which cuts were generated
-    const Disjunction* const disj,
+    const DisjunctionSet* const disjSet,
     /// [in] Solver corresponding to instance for which cuts are valid
     const OsiSolverInterface* const solver,
     /// [in] Matrix containing original + globally-valid constraints
-    const CoinPackedMatrix& Atilde,
+    const std::vector<CoinPackedMatrix>& AtildeVec,
     /// [in] Rank of Atilde matrix
-    const int Atilderank,
+    const std::vector<int>& AtilderankVec,
     /// [in] Parameters for setting verbosity and logfile
     const StrengtheningParameters::Parameters& params,
     /// [in] Indicate whether warm start is provided
@@ -2275,8 +2277,8 @@ void analyzeCutRegularity(
   if (cuts.sizeCuts() == 0) return;
   
    // Check that disjunction has not been lost
-  if (disj == NULL) return;
-  if (disj->terms.size() == 0) return;
+  if (disjSet == NULL) return;
+  // if (disj->terms.size() == 0) return;
 
   // Initialize timer
   TimeStats rcvmip_timer; ///< holds time statistics for all timers enumerated in #RCVMIPTimeStats
@@ -2335,51 +2337,54 @@ void analyzeCutRegularity(
   // Compute rank of Atilde
   // const int rank_atilde = computeRank(&Atilde, std::vector<int>(), std::vector<int>());
 
-  // Prepare solver for computing certificate
-  // TODO: Probably should just input directly to other solver if we are not using Cbc...
-  OsiSolverInterface* liftingSolver = new SolverInterface;
-  setLPSolverParameters(liftingSolver, params.get(StrengtheningParameters::VERBOSITY));
-  genRCVMIPFromCut(liftingSolver, cuts.rowCutPtr(0), disj, solver, params);
-
   // Check that if Gurobi is selected, then USE_GUROBI is defined
   const bool use_gurobi = use_bb_option(params.get(StrengtheningParameters::intParam::BB_STRATEGY),
       StrengtheningParameters::BB_Strategy_Options::gurobi);
   const bool use_cbc = use_bb_option(params.get(StrengtheningParameters::intParam::BB_STRATEGY),
       StrengtheningParameters::BB_Strategy_Options::cbc);
-      
-#ifdef USE_GUROBI
-  GRBModel* grbSolver = NULL;
-#endif
-  if (use_gurobi) {
-#ifndef USE_GUROBI
-    error_msg(errorstring, "analyzeCutRegularity: Gurobi is selected as the branch-and-bound solver, but USE_GUROBI is not defined.\n");
-    writeErrorToLog(errorstring, params.logfile);
-    throw std::logic_error(errorstring);
-#else
-    grbSolver = buildGRBModelFromOsi(liftingSolver, params.logfile); 
-    // relaxRCVMIPAlphaBetaConstraints(grbSolver, disj, solver);
-    setStrategyForBBTestGurobi(params, 0, *grbSolver);
-#endif
-  }
-
-#ifdef USE_CBC
-  CbcModel* cbcSolver = NULL;
-#endif
-  if (use_cbc) {
-#ifndef USE_CBC
-    error_msg(errorstring, "analyzeCutRegularity: Cbc is selected as the branch-and-bound solver, but USE_CBC is not defined.\n");
-    writeErrorToLog(errorstring, params.logfile);
-    throw std::logic_error(errorstring);
-#else
-    cbcSolver = new CbcModel(*liftingSolver);
-    setIPSolverParameters(cbcSolver, params.get(StrengtheningParameters::VERBOSITY));
-#endif
-  }
-
   if (!use_gurobi && !use_cbc) {
     error_msg(errorstring, "analyzeCutRegularity: Implementation for solving RCVMIP is available only for Cbc and Gurobi.\n");
     writeErrorToLog(errorstring, params.logfile);
     throw std::logic_error(errorstring);
+  }
+
+  // Prepare solver for computing certificate
+  // TODO: Probably should just input directly to other solver if we are not using Cbc...
+  std::vector<OsiSolverInterface*> liftingSolverVec(disjSet->size(), NULL);
+#ifdef USE_CBC
+  std::vector<CbcModel*> cbcSolverVec(disjSet->size(), NULL);
+#endif
+#ifdef USE_GUROBI
+  std::vector<GRBModel*> grbSolverVec(disjSet->size(), NULL);
+#endif
+
+  for (int disj_ind = 0; disj_ind < disjSet->size(); disj_ind++) {
+    liftingSolverVec[disj_ind] = new SolverInterface;
+    setLPSolverParameters(liftingSolverVec[disj_ind], params.get(StrengtheningParameters::VERBOSITY));
+    genRCVMIPFromCut(liftingSolverVec[disj_ind], cuts.rowCutPtr(0), disjSet->disjunctions[disj_ind], solver, params);
+      
+    if (use_gurobi) {
+  #ifndef USE_GUROBI
+      error_msg(errorstring, "analyzeCutRegularity: Gurobi is selected as the branch-and-bound solver, but USE_GUROBI is not defined.\n");
+      writeErrorToLog(errorstring, params.logfile);
+      throw std::logic_error(errorstring);
+  #else
+      grbSolverVec[disj_ind] = buildGRBModelFromOsi(liftingSolverVec[disj_ind], params.logfile); 
+      // relaxRCVMIPAlphaBetaConstraints(grbSolver, disj, solver);
+      setStrategyForBBTestGurobi(params, 0, *(grbSolverVec[disj_ind]));
+  #endif
+    }
+
+    if (use_cbc) {
+  #ifndef USE_CBC
+      error_msg(errorstring, "analyzeCutRegularity: Cbc is selected as the branch-and-bound solver, but USE_CBC is not defined.\n");
+      writeErrorToLog(errorstring, params.logfile);
+      throw std::logic_error(errorstring);
+  #else
+      cbcSolverVec[disj_ind] = new CbcModel(*liftingSolverVec[disj_ind]);
+      setIPSolverParameters(cbcSolverVec[disj_ind], params.get(StrengtheningParameters::VERBOSITY));
+  #endif
+    }
   }
 
   //const bool COMPUTE_UNCONVERGED_CERTIFICATE = !USE_INPUT_CERTIFICATE; // when input certificate provided, then we may want to keep it
@@ -2408,14 +2413,38 @@ void analyzeCutRegularity(
     std::vector<double> solution; // RCVMIP solution
     bool reached_feasibility = false;
 
+    // Get cut-specific disjunction and solver
+    const int disj_ind = disjIDPerCut[cut_ind];
+    const Disjunction* disj = disjSet->disjunctions[disj_ind];
+    const CoinPackedMatrix& Atilde = AtildeVec[disj_ind];
+    const int Atilderank = AtilderankVec[disj_ind];
+#ifdef USE_CBC
+    CbcModel* cbcSolver = NULL;
+#endif
+#ifdef USE_GUROBI
+    GRBModel* grbSolver = NULL;
+#endif
+    if (use_cbc) {
+#ifdef USE_CBC
+      cbcSolver = cbcSolverVec[disj_ind];
+#endif
+    }
+    if (use_gurobi) {
+#ifdef USE_GUROBI
+      grbSolver = grbSolverVec[disj_ind];
+#endif
+    }
+
     // Set theta column for the current cut
     if (cut_ind > 0) {
       if (use_gurobi) {
 #ifdef USE_GUROBI
         updateRCVMIPFromCut(grbSolver, cuts.rowCutPtr(cut_ind), disj, solver, params.logfile);
 #endif
-      } else {
+      } else if (use_cbc) {
+#ifdef USE_CBC
         updateRCVMIPFromCut(cbcSolver, cuts.rowCutPtr(cut_ind), disj, solver, params.logfile);
+#endif
       }
     }
 
@@ -2488,13 +2517,16 @@ void analyzeCutRegularity(
         
         rcvmip_timer.end_all();
 
-        if (liftingSolver) { if (!use_cbc || !cbcSolver || !cbcSolver->modelOwnsSolver()) { delete liftingSolver; } }
+        // Clean up memory
+        for (int disj_ind = 0; disj_ind < disjSet->size(); disj_ind++) {
+          if (liftingSolverVec[disj_ind]) { if (!use_cbc || !cbcSolverVec[disj_ind] || !cbcSolverVec[disj_ind]->modelOwnsSolver()) { delete liftingSolverVec[disj_ind]; } }
   #ifdef USE_GUROBI
-        if (use_gurobi && grbSolver) { delete grbSolver; }
+          if (use_gurobi && grbSolverVec[disj_ind]) { delete grbSolverVec[disj_ind]; }
   #endif
   #ifdef USE_CBC
-        if (use_cbc && cbcSolver) { delete cbcSolver; }
+          if (use_cbc && cbcSolverVec[disj_ind]) { delete cbcSolverVec[disj_ind]; }
   #endif
+        }
         
         throw std::logic_error(errorstring);
       } // exit out if infeasible or unbounded
@@ -2615,11 +2647,14 @@ void analyzeCutRegularity(
   }
   rcvmip_timer.end_timer(getRCVMIPTotalTimeStatsName());
 
-  if (liftingSolver) { if (!use_cbc || !cbcSolver || !cbcSolver->modelOwnsSolver()) { delete liftingSolver; } }
+  // Clean up memory
+  for (int disj_ind = 0; disj_ind < disjSet->size(); disj_ind++) {
+    if (liftingSolverVec[disj_ind]) { if (!use_cbc || !cbcSolverVec[disj_ind] || !cbcSolverVec[disj_ind]->modelOwnsSolver()) { delete liftingSolverVec[disj_ind]; } }
 #ifdef USE_GUROBI
-  if (use_gurobi && grbSolver) { delete grbSolver; }
+    if (use_gurobi && grbSolverVec[disj_ind]) { delete grbSolverVec[disj_ind]; }
 #endif
 #ifdef USE_CBC
-  if (use_cbc && cbcSolver) { delete cbcSolver; }
+    if (use_cbc && cbcSolverVec[disj_ind]) { delete cbcSolverVec[disj_ind]; }
 #endif
+  }
 } /* analyzeCutRegularity */

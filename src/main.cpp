@@ -81,6 +81,7 @@ enum OverallTimeStats {
   REG_GEN_ATILDE_TIME,
   REG_RANK_ATILDE_TIME,
   REG_ANALYZE_ORIG_CERT_TIME,
+  REG_STR_TOTAL_TIME,
   REG_CALC_CERT_TIME,
   REG_APPLY_CERT_TIME,
   BB_TIME,
@@ -108,6 +109,7 @@ const std::vector<std::string> OverallTimeStatsName {
   "REG_GEN_ATILDE_TIME",
   "REG_RANK_ATILDE_TIME",
   "REG_ANALYZE_ORIG_CERT_TIME",
+  "REG_STR_TOTAL_TIME",
   "REG_CALC_CERT_TIME",
   "REG_APPLY_CERT_TIME",
   "BB_TIME",
@@ -483,7 +485,6 @@ int main(int argc, char** argv) {
     double CURR_EPS = params.get(StrengtheningParameters::doubleParam::EPS);
 
     OsiCuts extraCuts;
-    // Disjunction* disj = NULL;
     DisjunctionSet* disjSet = NULL;
     std::vector<int> disjIDPerCut;
     if (SHOULD_GENERATE_CUTS) {
@@ -617,40 +618,57 @@ int main(int argc, char** argv) {
     fprintf(stdout, "Finished printing custom cuts.\n\n");
 #endif
 
+    assert(!SHOULD_GENERATE_CUTS || (disjSet != NULL));
+    assert(!SHOULD_GENERATE_CUTS || (disjIDPerCut.size() == mycuts_by_round[round_ind].sizeCuts()));
+
     //====================================================================================================//
     // Get Farkas certificate and do strengthening
+    timer.start_timer(OverallTimeStats::STR_TOTAL_TIME);
+    
     OsiCuts unstrCurrCuts(mycuts_by_round[round_ind]); // save unstrengthened cuts
     std::vector<CutCertificate> v;  // [cut][term][Farkas multiplier] in the end, per term, this will be of dimension rows + disj term ineqs + cols
+    std::vector<std::vector<int> > str_cut_ind_vec; // indices of cuts that were strengthened
 
-    timer.start_timer(OverallTimeStats::STR_TOTAL_TIME);
+    if (disjSet != NULL) { // Strengthen batches of cuts that all correspond to the same disjunction
+      str_cut_ind_vec.resize(disjSet->size());
+      int disj_id = -1;
+      int start_ind = -1;
+      int curr_num_cuts = 0;
+      int total_num_str_cuts = 0;
+      for (int cut_ind = 0; cut_ind < mycuts_by_round[round_ind].sizeCuts(); cut_ind++) {
+        const int curr_disj_id = disjIDPerCut[cut_ind];
 
-    // Find batch of cuts that all correspond to the same disjunction
-    int start_ind = 0;
-    int curr_num_cuts = 0;
-    int disj_id = -1;
-    for (int cut_ind = 0; cut_ind < mycuts_by_round[round_ind].sizeCuts(); cut_ind++) {
-      const int curr_disj_id = disjIDPerCut[cut_ind];
+        // If it is the last cut or the disjunction has changed, process the batch
+        const bool PROCESS_BATCH = (cut_ind == mycuts_by_round[round_ind].sizeCuts() - 1) || (curr_disj_id != disj_id);
 
-      // If we are still on the same disjunction, increment the number of cuts for this disjunction
-      if (curr_disj_id == disj_id) {
-        curr_num_cuts++;
-        continue;
+        // If we are still on the same disjunction, increment the number of cuts for this disjunction
+        if (!PROCESS_BATCH) {
+          curr_num_cuts++;
+          continue;
+        }
+
+        // Else, we process this batch (either last cut or disjunction has changed)
+        // Get the certificates for the last batch of cuts
+        // Apply the strengthening certificates to get new cuts
+        if (curr_num_cuts > 0) {
+          Disjunction* disj = disjSet->disjunctions[disj_id]; // disjunction for this batch of cuts
+          std::vector<int>& str_cut_ind = str_cut_ind_vec[disj_id]; // append to indices of cuts that were strengthened for this disjunction
+          strengtheningHelper(mycuts_by_round[round_ind], v, str_cut_ind, strInfo, boundInfoVec[round_ind], disj, solver, ip_solution, false, start_ind, curr_num_cuts);
+          boundInfo.num_str_affected_cuts += str_cut_ind.size();
+          total_num_str_cuts += str_cut_ind.size();
+        }
+
+        // Start a new batch
+        start_ind = cut_ind;
+        curr_num_cuts = 1;
+        disj_id = curr_disj_id;
+      } // loop over cuts to find certificates for batches from same disjunction
+
+      // Set certificate info
+      for (int disj_id = 0; disj_id < (int) disjSet->disjunctions.size(); disj_id++) {
+        setCertificateInfo(origCertInfoVec[round_ind], disjSet->disjunctions[disj_id], v, solver->getNumRows(), solver->getNumCols(), str_cut_ind_vec[disj_id], total_num_str_cuts, CURR_EPS);
       }
-
-      // Else, it is a new disjunction, get the certificate for the last batch of cuts
-      if (curr_num_cuts > 0) {
-        Disjunction* disj = disjSet->disjunctions[curr_disj_id];
-        std::vector<int> str_cut_ind;   // indices of cuts that were strengthened
-        strengtheningHelper(mycuts_by_round[round_ind], v, str_cut_ind, strInfo, boundInfoVec[round_ind], disj, solver, ip_solution, false, start_ind, curr_num_cuts);
-        boundInfo.num_str_affected_cuts += str_cut_ind.size();
-        setCertificateInfo(origCertInfoVec[round_ind], disj, v, solver->getNumRows(), solver->getNumCols(), str_cut_ind, CURR_EPS);
-      }
-
-      // Start a new batch
-      start_ind = cut_ind;
-      curr_num_cuts = 1;
-      disj_id = curr_disj_id;
-    } // loop over cuts to find certificates for batches from same disjunction
+    } // check that disjSet != NULL
 
     timer.end_timer(OverallTimeStats::STR_TOTAL_TIME);
 
@@ -670,16 +688,21 @@ int main(int argc, char** argv) {
     // Analyze regularity and irregularity
     timer.start_timer(OverallTimeStats::REG_TOTAL_TIME);
 
-    const bool ANALYSIS_CONDITIONS_MET = disjSet &&
+    const bool ANALYSIS_CONDITIONS_MET = (disjSet != NULL) &&
         (mycuts_by_round[round_ind].sizeCuts() > 0) &&
         (static_cast<int>(v.size()) == mycuts_by_round[round_ind].sizeCuts());
 
     // To start, obtain coefficient matrix (after adding globally-valid inequalities)
-    std::vector<CoinPackedMatrix> AtildeVec(disjSet->size());
-    std::vector<std::vector<double>> btildeVec(disjSet->size());
-    std::vector<int> AtilderankVec(disjSet->size(), solver->getNumCols());
+    std::vector<CoinPackedMatrix> AtildeVec;
+    std::vector<std::vector<double>> btildeVec;
+    std::vector<int> AtilderankVec;
     if (SHOULD_ANALYZE_REGULARITY != 0 && disjSet != NULL) {
       printf("\n## Preparing Atilde matrix to analyze regularity (# disjunctions = %d). ##\n", disjSet->size());
+
+      AtildeVec.resize(disjSet->size());
+      btildeVec.resize(disjSet->size());
+      AtilderankVec.resize(disjSet->size(), solver->getNumCols());
+
       int disj_id = -1;
       for (const Disjunction* const disj : disjSet->disjunctions) {
         disj_id++;
@@ -743,7 +766,7 @@ int main(int argc, char** argv) {
               Atilderank, stringValue(reg_rank_atilde_time_end - reg_rank_atilde_time_start, "%1.2e").c_str());
         }
       }
-    }
+    } // SHOULD_ANALYZE_REGULARITY != 0 && disjSet != NULL
 
     // Analyze regularity of the existing certificate for each cut
     std::vector<RegularityStatus> orig_regularity_status;
@@ -806,7 +829,7 @@ int main(int argc, char** argv) {
             exit(1);
         } // switch on status
         
-    #ifdef TRACE
+#ifdef TRACE
         fprintf(stdout, "Cut %d: rank = %d/%d,\tnum_nonzero_multipliers = %d,\tregularity status = % d (%s)\n",
             cut_ind,
             origCertInfoVec[round_ind].submx_rank[cut_ind],
@@ -814,7 +837,7 @@ int main(int argc, char** argv) {
             origCertInfoVec[round_ind].num_nnz_mult[cut_ind],
             static_cast<int>(status),
             getRegularityStatusName(status).c_str());
-    #endif
+#endif
       } // loop over certificates, analyzing each for regularity
 
       timer.end_timer(OverallTimeStats::REG_ANALYZE_ORIG_CERT_TIME);
@@ -823,81 +846,120 @@ int main(int argc, char** argv) {
     // Next, analyze regularity of cut overall, using all possible certificates, with the RCVMIP by Serra and Balas (2020)
     // If this is performed, we can obtain new strengthened cuts to compare against the existing ones
     std::vector<CutCertificate> rcvmip_v; // [cut][term][Farkas multiplier] in the end, per term, this will be of dimension rows + disj term ineqs + cols
-    OsiCuts rcvmipCurrCuts;
-    std::vector<int> rcvmip_str_cut_ind; // indices of cuts that were strengthened
+    std::vector<std::vector<int> > rcvmip_str_cut_ind_vec; // indices of cuts that were strengthened per disjunction
     std::vector<RegularityStatus> rcvmip_regularity_status;
 
-    // if (SHOULD_ANALYZE_REGULARITY >= 2 && ANALYSIS_CONDITIONS_MET) {
-    //   printf("\n## Analyzing regularity of cuts via RCVMIP of Serra and Balas (2020). ##\n");
+    if (SHOULD_ANALYZE_REGULARITY >= 2 && ANALYSIS_CONDITIONS_MET) {
+      timer.start_timer(OverallTimeStats::REG_STR_TOTAL_TIME);
 
-    //   // Copy to rcvmip_v the contents of v
-    //   rcvmip_v = v;
-    //   rcvmip_regularity_status = orig_regularity_status;
-    //   rcvmipCertInfoVec[round_ind].submx_rank = origCertInfoVec[round_ind].submx_rank;
-    //   rcvmipCertInfoVec[round_ind].num_nnz_mult = origCertInfoVec[round_ind].num_nnz_mult;
+      printf("\n## Analyzing regularity of cuts via RCVMIP of Serra and Balas (2020). ##\n");
 
-    //   timer.start_timer(OverallTimeStats::REG_CALC_CERT_TIME);
-    //   analyzeCutRegularity(rcvmip_v,
-    //       rcvmipCertInfoVec[round_ind].submx_rank,
-    //       rcvmipCertInfoVec[round_ind].num_nnz_mult,
-    //       rcvmip_regularity_status,
-    //       rcvmipCertInfoVec[round_ind].num_iterations,
-    //       rcvmipCertInfoVec[round_ind].rcvmip_time,
-    //       unstrCurrCuts, disj, solver,
-    //       Atilde, Atilderank, params);
-    //   timer.end_timer(OverallTimeStats::REG_CALC_CERT_TIME);
+      // Copy to rcvmip_v the contents of v
+      OsiCuts rcvmipCurrCuts = unstrCurrCuts; // assignment operator essentially inserts each of the unstrCurrCuts into rcvmipCurrCuts; unstrCurrCuts = mycuts_by_round[round_ind]
+      rcvmip_v = v;
+      rcvmip_regularity_status = orig_regularity_status;
+      rcvmipCertInfoVec[round_ind].submx_rank = origCertInfoVec[round_ind].submx_rank;
+      rcvmipCertInfoVec[round_ind].num_nnz_mult = origCertInfoVec[round_ind].num_nnz_mult;
+
+      timer.start_timer(OverallTimeStats::REG_CALC_CERT_TIME);
+      analyzeCutRegularity(rcvmip_v,
+          rcvmipCertInfoVec[round_ind].submx_rank,
+          rcvmipCertInfoVec[round_ind].num_nnz_mult,
+          rcvmip_regularity_status,
+          rcvmipCertInfoVec[round_ind].num_iterations,
+          rcvmipCertInfoVec[round_ind].rcvmip_time,
+          unstrCurrCuts, disjIDPerCut, disjSet, solver,
+          AtildeVec, AtilderankVec, params);
+      timer.end_timer(OverallTimeStats::REG_CALC_CERT_TIME);
     
-    //   for (int cut_ind = 0; cut_ind < mycuts_by_round[round_ind].sizeCuts(); cut_ind++) {
-    //     const RegularityStatus status = rcvmip_regularity_status[cut_ind];
+      for (int cut_ind = 0; cut_ind < rcvmipCurrCuts.sizeCuts(); cut_ind++) {
+        const RegularityStatus status = rcvmip_regularity_status[cut_ind];
 
-    //     switch (status) {
-    //       case RegularityStatus::IRREG_LESS:
-    //         rcvmipCertInfoVec[round_ind].num_irreg_less++;
-    //         break;
-    //       case RegularityStatus::REG:
-    //         rcvmipCertInfoVec[round_ind].num_reg++;
-    //         break;
-    //       case RegularityStatus::IRREG_MORE:
-    //         rcvmipCertInfoVec[round_ind].num_irreg_more++;
-    //         break;
-    //       // case RegularityStatus::TENTATIVE_IRREG_LESS:
-    //       //   rcvmipCertInfoVec[round_ind].num_tentative_irreg_less++;
-    //       //   break;
-    //       case RegularityStatus::TENTATIVE_IRREG_MORE:
-    //         rcvmipCertInfoVec[round_ind].num_tentative_irreg_more++;
-    //         break;
-    //       case RegularityStatus::UNCONVERGED:
-    //         rcvmipCertInfoVec[round_ind].num_unconverged++;
-    //         break;
-    //       case RegularityStatus::NUMERICALLY_UNSTABLE:
-    //         rcvmipCertInfoVec[round_ind].num_numerically_unstable++;
-    //         break;
-    //       default:
-    //         error_msg(errorstring, "Invalid status %d from rcvmipCertInfoVec for round %d cut %d.\n", static_cast<int>(status), round_ind, cut_ind);
-    //         writeErrorToLog(errorstring, params.logfile);
-    //         exit(1);
-    //     } // switch on status
+        switch (status) {
+          case RegularityStatus::IRREG_LESS:
+            rcvmipCertInfoVec[round_ind].num_irreg_less++;
+            break;
+          case RegularityStatus::REG:
+            rcvmipCertInfoVec[round_ind].num_reg++;
+            break;
+          case RegularityStatus::IRREG_MORE:
+            rcvmipCertInfoVec[round_ind].num_irreg_more++;
+            break;
+          // case RegularityStatus::TENTATIVE_IRREG_LESS:
+          //   rcvmipCertInfoVec[round_ind].num_tentative_irreg_less++;
+          //   break;
+          case RegularityStatus::TENTATIVE_IRREG_MORE:
+            rcvmipCertInfoVec[round_ind].num_tentative_irreg_more++;
+            break;
+          case RegularityStatus::UNCONVERGED:
+            rcvmipCertInfoVec[round_ind].num_unconverged++;
+            break;
+          case RegularityStatus::NUMERICALLY_UNSTABLE:
+            rcvmipCertInfoVec[round_ind].num_numerically_unstable++;
+            break;
+          default:
+            error_msg(errorstring, "Invalid status %d from rcvmipCertInfoVec for round %d cut %d.\n", static_cast<int>(status), round_ind, cut_ind);
+            writeErrorToLog(errorstring, params.logfile);
+            exit(1);
+        } // switch on status
 
-    // #ifdef TRACE
-    //     fprintf(stdout, "Cut %d: rank = %d/%d,\tnum_nonzero_multipliers = %d,\tregularity status = % d (%s)\n",
-    //         cut_ind,
-    //         rcvmipCertInfoVec[round_ind].submx_rank[cut_ind],
-    //         Atilderank,
-    //         rcvmipCertInfoVec[round_ind].num_nnz_mult[cut_ind],
-    //         static_cast<int>(status),
-    //         getRegularityStatusName(status).c_str());
-    // #endif
-    //   } // loop over cuts, analyzing each for regularity
+        #ifdef TRACE
+        fprintf(stdout, "Cut %d: rank = %d/%d,\tnum_nonzero_multipliers = %d,\tregularity status = % d (%s)\n",
+            cut_ind,
+            rcvmipCertInfoVec[round_ind].submx_rank[cut_ind],
+            AtilderankVec[disjIDPerCut[cut_ind]],
+            rcvmipCertInfoVec[round_ind].num_nnz_mult[cut_ind],
+            static_cast<int>(status),
+            getRegularityStatusName(status).c_str());
+        #endif
+      } // loop over cuts, analyzing each for regularity
 
-    //   // Apply the new strengthening certificates to get new cuts
-    //   rcvmipCurrCuts = unstrCurrCuts; // assignment operator essentially inserts each of the unstrCurrCuts into rcvmipCurrCuts
-    //   strengtheningHelper(rcvmipCurrCuts, rcvmip_v, rcvmip_str_cut_ind, rcvmipStrInfo, boundInfoVec[round_ind], disj, solver, ip_solution, false);
-    //   setCertificateInfo(rcvmipCertInfoVec[round_ind], disj, rcvmip_v, solver->getNumRows(), solver->getNumCols(), rcvmip_str_cut_ind, CURR_EPS);
-    //   boundInfo.num_rcvmip_str_affected_cuts += rcvmip_str_cut_ind.size();
+      if (disjSet != NULL) {  // Apply the new strengthening certificates to get new cuts in batches that all correspond to the same disjunction
+        rcvmip_str_cut_ind_vec.resize(disjSet->size());
+
+        int disj_id = -1;
+        int start_ind = -1;
+        int curr_num_cuts = 0;
+        int total_num_str_cuts = 0;
+        for (int cut_ind = 0; cut_ind < rcvmipCurrCuts.sizeCuts(); cut_ind++) {
+          const int curr_disj_id = disjIDPerCut[cut_ind];
+
+          // If it is the last cut or the disjunction has changed, process the batch
+          const bool PROCESS_BATCH = (cut_ind == rcvmipCurrCuts.sizeCuts() - 1) || (curr_disj_id != disj_id);
+
+          // If we are still on the same disjunction, increment the number of cuts for this disjunction
+          if (!PROCESS_BATCH) {
+            curr_num_cuts++;
+            continue;
+          }
+
+          // Else, we process this batch (either last cut or disjunction has changed)
+          // Get the certificates for the last batch of cuts
+          // Apply the strengthening certificates to get new cuts
+          if (curr_num_cuts > 0) {
+            Disjunction* disj = disjSet->disjunctions[disj_id]; // disjunction for this batch of cuts
+            std::vector<int>& rcvmip_str_cut_ind = rcvmip_str_cut_ind_vec[disj_id]; // append to indices of cuts that were strengthened for this disjunction
+            strengtheningHelper(rcvmipCurrCuts, rcvmip_v, rcvmip_str_cut_ind, rcvmipStrInfo, boundInfoVec[round_ind], disj, solver, ip_solution, false, start_ind, curr_num_cuts);
+            boundInfo.num_rcvmip_str_affected_cuts += rcvmip_str_cut_ind.size();
+            total_num_str_cuts += rcvmip_str_cut_ind.size();
+          }
+
+          // Start a new batch
+          start_ind = cut_ind;
+          curr_num_cuts = 1;
+          disj_id = curr_disj_id;
+        } // loop over cuts to find certificates for batches from same disjunction
+
+        // Set certificate info
+        for (int disj_id = 0; disj_id < (int) disjSet->disjunctions.size(); disj_id++) {
+          setCertificateInfo(rcvmipCertInfoVec[round_ind], disjSet->disjunctions[disj_id], rcvmip_v, solver->getNumRows(), solver->getNumCols(), rcvmip_str_cut_ind_vec[disj_id], total_num_str_cuts, CURR_EPS);
+        }
+      } // apply the new strengthening certificates to get new cuts in batches that all correspond to the same disjunction
       
-    //   rcvmip_cuts.insert(rcvmipCurrCuts);
+      rcvmip_cuts.insert(rcvmipCurrCuts);
 
-    // } // analyze regularity of *cut* (not just certificate)
+      timer.end_timer(OverallTimeStats::REG_STR_TOTAL_TIME);
+    } // analyze regularity of *cut* (not just certificate)
     timer.end_timer(OverallTimeStats::REG_TOTAL_TIME);
     
     //====================================================================================================//
@@ -965,12 +1027,12 @@ int main(int argc, char** argv) {
     }
 
     // Repeat for RCVMIP-strengthened cuts
-    const bool rcvmip_cuts_different = (SHOULD_ANALYZE_REGULARITY > 1 && rcvmipCurrCuts.sizeCuts() > 0 && boundInfo.num_rcvmip_str_affected_cuts > 0); // if false, rcvmip info is same as unstr or str info
+    const bool rcvmip_cuts_different = (SHOULD_ANALYZE_REGULARITY > 1 && rcvmip_cuts.sizeCuts() > 0 && boundInfo.num_rcvmip_str_affected_cuts > 0); // if false, rcvmip info is same as unstr or str info
     if (rcvmip_cuts_different) {
       OsiSolverInterface* rcvmipCutSolver = roundOrigSolver->clone();
       
       // Add RCVMIP-strengthened cuts
-      applyCutsCustom(rcvmipCutSolver, rcvmipCurrCuts, params.logfile);
+      applyCutsCustom(rcvmipCutSolver, rcvmip_cuts, params.logfile);
       boundInfo.rcvmip_mycut_obj = rcvmipCutSolver->getObjValue();
 
       // Add GMICs
@@ -1008,10 +1070,6 @@ int main(int argc, char** argv) {
 
     // Free memory from solvers/disj specific for this round
     if (roundOrigSolver && roundOrigSolver != origSolver) { delete roundOrigSolver; }
-    // if (disj) {
-    //   delete disj;
-    //   disj = NULL;
-    // }
     if (disjSet) {
       delete disjSet;
       disjSet = NULL;
@@ -1796,6 +1854,7 @@ int processArgs(int argc, char** argv) {
                 helpstring += "--bb_mode={0,1,10,11,100,...,111}\n\tWhich branch-and-bound experiments to run (ones = no cuts, tens = mycuts, hundreds = gmics).\n";
                 helpstring += "\n# Regularity options #\n";
                 helpstring += "-a 0/1/2, --analyze_regularity=0/1/2\n\t0: no, 1: yes, only first certificate 2: yes, use MIP to check for alternate certificates.\n";
+                helpstring += "--atilde_compute_rank=0/1\n\tCompute rank of Atilde.\n";
                 helpstring += "--rcvmip_max_iters=num iters\n\tMaximum number of iterations for RCVMIP.\n";
                 helpstring += "--rcvmip_total_timelimit=num seconds\n\tTotal number of seconds allotted for RCVMIP (0: infinity). When specified, supercedes RCVMIP_CUT_TIMELIMIT.\n";
                 helpstring += "--rcvmip_cut_timelimit=num seconds\n\tNumber of seconds allotted for generating certificate per cut with RCVMIP (0: infinity).\n";
