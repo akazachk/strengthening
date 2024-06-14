@@ -57,6 +57,7 @@ void generateGomoryCuts(
     GMIGen.getParam().setMAX_SUPPORT_REL(MAX_SUPPORT_REL);
     GMIGen.getParam().setMAXDYN(solver->getInfinity());
     GMIGen.getParam().setMINVIOL(0.0);
+    GMIGen.getParam().setAWAY(AWAY);
     GMIGen.generateCuts(*solver, currGMICs);
   } // generate GMICs via CglGMI
 
@@ -76,7 +77,7 @@ void generateGomoryCuts(
       }
 
       const double val = solver->getColSolution()[var];
-      if (isVal(val, std::floor(val)) || isVal(val, std::ceil(val))) {
+      if (isVal(val, std::floor(val), AWAY) || isVal(val, std::ceil(val), AWAY)) {
         continue;
       }
 
@@ -206,7 +207,7 @@ void generateGomoryCuts(
       }
 
       const double val = solver->getColSolution()[var];
-      if (isVal(val, std::floor(val)) || isVal(val, std::ceil(val))) {
+      if (isVal(val, std::floor(val), AWAY) || isVal(val, std::ceil(val), AWAY)) {
         continue;
       }
 
