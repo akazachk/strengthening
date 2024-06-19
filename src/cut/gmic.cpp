@@ -98,7 +98,7 @@ void generateGomoryCuts(
       // Now we generate the unstrengthened intersection cut and see if we can strengthen it
       // The actual Farkas certificate for this cut can be derived in closed form from the basis
       OsiRowCut intCut;
-      createMIG(intCut, solver, var, splitVarRowIndex, false);
+      createMIG(intCut, solver, var, splitVarRowIndex, false, logfile);
 
       if (strengthen_option > 0) {
         // For each term of the disjunction, 
@@ -158,7 +158,7 @@ void generateGomoryCuts(
 
         // We generate the strengthened intersection cut (to compare against)
         //OsiRowCut strIntCut;
-        //createMIG(strIntCut, solver, var, splitVarRowIndex, true);
+        //createMIG(strIntCut, solver, var, splitVarRowIndex, true, logfile);
       } // do strengthening
 
       // Insert new cut into currGMICs
@@ -228,7 +228,7 @@ void generateGomoryCuts(
       // Now we generate the unstrengthened intersection cut and see if we can strengthen it
       // The actual Farkas certificate for this cut can be derived in closed form from the basis
       OsiRowCut intCut;
-      createMIG(intCut, solver, var, splitVarRowIndex, false);
+      createMIG(intCut, solver, var, splitVarRowIndex, false, logfile);
 
       if (strengthen_option > 0) {
         std::vector<std::vector<double> > v(2); // [term][val] for each term, this will be of dimension rows + cols
@@ -404,7 +404,9 @@ void createMIG(
     /// [in]
     const int splitVarRowIndex,
     /// [in]
-    const bool strengthen) {
+    const bool strengthen,
+    /// [in]
+    FILE* logfile) {
   const int numcols = solver->getNumCols();
   const int numrows = solver->getNumRows();
 
@@ -451,6 +453,7 @@ void createMIG(
         cutRhs += value * colLower[var];
       } else {
         error_msg(errorstring, "createMIG: Invalid basis\n");
+        writeErrorToLog(errorstring, logfile);
         if (mustDelete && basis_) {
           delete basis_;
         }

@@ -32,7 +32,8 @@ void generateGomoryCuts(
     FILE* logfile);
 
 void createMIG(OsiRowCut &cut, const OsiSolverInterface* const solver,
-    const int splitVarIndex, const int splitVarRowIndex, const bool strengthen = true);
+    const int splitVarIndex, const int splitVarRowIndex, const bool strengthen = true,
+    FILE* logfile = NULL);
 
 void eliminate_slacks(std::vector<double>& vec, const OsiSolverInterface* const solver);
 
