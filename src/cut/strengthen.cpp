@@ -680,7 +680,7 @@ bool strengthenCutCoefficient(
     model.setModelOwnsSolver(false);
     model.branchAndBound();
     if (model.status() != 0) {
-      error_msg(errorstring, "Failed to optimize monoidal strengthening solver for var %d.\n", var);
+      error_msg(errorstring, "Failed to optimize monoidal strengthening solver for var %d. Model status: %d.\n", var, model.status());
       writeErrorToLog(errorstring, logfile);
       exit(1);
     }
