@@ -274,6 +274,45 @@ int main(int argc, char** argv) {
   timer.end_timer(OverallTimeStats::INIT_SOLVE_TIME);
   boundInfo.lp_obj = solver->getObjValue();
 
+  //====================================================================================================//
+  { // Check whether the initial solution is integer-feasible
+    const double intTol = params.get(doubleParam::AWAY);
+    fprintf(stdout, "\n## Checking integrality of initial solution using tolerance %g. ##\n", intTol);
+
+    // Now check using solver's getFractionalIndices
+    std::vector<int> fracCore = solver->getFractionalIndices(intTol);
+    if (static_cast<int>(fracCore.size()) == 0) {
+      boundInfo.ip_obj = boundInfo.lp_obj;
+      params.set(doubleParam::IP_OBJ, boundInfo.ip_obj);
+      warning_msg(warnstring, "solver->getFractionalIndices(%g): Initial solution with value %.6f is integer-feasible.\n", intTol, boundInfo.lp_obj);
+    } else {
+      // fprintf(stdout, "solver->getFractionalIndices(%g): Initial solution is not integer-feasible. %d fractional variables.\n", intTol, (int) fracCore.size());
+    }
+
+    // // Double check manually
+    // std::vector<int> fracCore2;
+    // for (int i = 0; i < solver->getNumCols(); i++) {
+    //   if (solver->isInteger(i)) {
+    //     if (!isZero(sol[i] - std::round(sol[i]), intTol)) {
+    //       fracCore2.push_back(i);
+    //     }
+    //   }
+    // }
+    // if (static_cast<int>(fracCore2.size()) == 0) {
+    //   boundInfo.ip_obj = boundInfo.lp_obj;
+    //   params.set(doubleParam::IP_OBJ, boundInfo.ip_obj);
+    //   warning_msg(warnstring, "Manual check: Initial solution is integer-feasible.\n");
+    // } else {
+    //   // fprintf(stdout, "Manual check: Initial solution is not integer-feasible. %d fractional variables.\n", (int) fracCore2.size());
+    // }
+
+    // If no integer variables are fractional, exit early
+    if (static_cast<int>(fracCore.size()) == 0) {
+      exitReason = CglVPC::ExitReason::OPTIMAL_SOLUTION_FOUND_EXIT;
+      return wrapUp(0, argc, argv);
+    }
+  } // Check whether the initial solution is integer-feasible
+
   /** DEBUG TESTING BARRIER METHOD {
     OsiClpSolverInterface* interiorSolver = dynamic_cast<OsiClpSolverInterface*>(solver->clone());
     interiorSolver->getModelPtr()->barrier(false);
@@ -415,7 +454,7 @@ int main(int argc, char** argv) {
     if (GOMORY_OPTION != 0) {
       // Generate GMICs
       timer.start_timer(OverallTimeStats::GOMORY_GEN_TIME);
-      generateGomoryCuts(currGMICs, solver, GOMORY_OPTION, params.get(intParam::STRENGTHEN), params.get(intConst::MIN_SUPPORT_THRESHOLD), params.get(doubleParam::MAX_SUPPORT_REL), params.get(doubleConst::AWAY), params.get(doubleConst::DIFFEPS), params.logfile);
+      generateGomoryCuts(currGMICs, solver, GOMORY_OPTION, params.get(intParam::STRENGTHEN), params.get(intConst::MIN_SUPPORT_THRESHOLD), params.get(doubleParam::MAX_SUPPORT_REL), params.get(doubleParam::AWAY), params.get(doubleConst::DIFFEPS), params.logfile);
       timer.end_timer(OverallTimeStats::GOMORY_GEN_TIME);
 
       // Apply GMICs to solvers
@@ -445,7 +484,7 @@ int main(int argc, char** argv) {
             (std::abs(GOMORY_OPTION) != static_cast<int>(GomoryType::CglGMI)) ? GOMORY_OPTION : static_cast<int>(GomoryType::CreateMIG_CustomStrengthen),
             // do not strengthen
             0,
-            params.get(intConst::MIN_SUPPORT_THRESHOLD), params.get(doubleParam::MAX_SUPPORT_REL), params.get(doubleConst::AWAY), params.get(doubleConst::DIFFEPS),
+            params.get(intConst::MIN_SUPPORT_THRESHOLD), params.get(doubleParam::MAX_SUPPORT_REL), params.get(doubleParam::AWAY), params.get(doubleConst::DIFFEPS),
             params.logfile);
         
         // Add unstrengthened GMICs
@@ -1192,6 +1231,7 @@ int main(int argc, char** argv) {
  */
 int startUp(int argc, char** argv) {
   int status = 0;
+  exitReason = CglVPC::ExitReason::UNKNOWN;
 
   // Input handling
   printf("## Strengthened Cut Generator ##\n");
@@ -1517,6 +1557,7 @@ int processArgs(int argc, char** argv) {
   {
       {"analyze_regularity",    required_argument, 0, 'a'},
       {"atilde_compute_rank",   required_argument, 0, 'a'*'1'},
+      {"away",                  required_argument, 0, 'a'*'2'},
       {"bb_runs",               required_argument, 0, 'b'},
       {"bb_mode",               required_argument, 0, 'b'*'2'},
       {"bb_strategy",           required_argument, 0, 'B'},
@@ -1566,6 +1607,16 @@ int processArgs(int argc, char** argv) {
                   int val;
                   intParam param = intParam::ATILDE_COMPUTE_RANK;
                   if (!parseInt(optarg, val)) {
+                    error_msg(errorstring, "Error reading %s. Given value: %s.\n", params.name(param).c_str(), optarg);
+                    exit(1);
+                  }
+                  params.set(param, val);
+                  break;
+                }
+      case 'a'*'2': {
+                  double val;
+                  doubleParam param = doubleParam::AWAY;
+                  if (!parseDouble(optarg, val)) {
                     error_msg(errorstring, "Error reading %s. Given value: %s.\n", params.name(param).c_str(), optarg);
                     exit(1);
                   }

@@ -110,8 +110,8 @@ void testGomory(
     /// [in] parameters to use for GMIC generation
     const StrengtheningParameters::Parameters params) {
   OsiCuts currGMICs1, currGMICs3;
-  generateGomoryCuts(currGMICs1, solver, 1, params.get(intParam::STRENGTHEN), params.get(intConst::MIN_SUPPORT_THRESHOLD), params.get(doubleParam::MAX_SUPPORT_REL), params.get(doubleConst::AWAY), params.get(doubleConst::DIFFEPS), params.logfile);
-  generateGomoryCuts(currGMICs3, solver, 3, params.get(intParam::STRENGTHEN), params.get(intConst::MIN_SUPPORT_THRESHOLD), params.get(doubleParam::MAX_SUPPORT_REL), params.get(doubleConst::AWAY), params.get(doubleConst::DIFFEPS), params.logfile);
+  generateGomoryCuts(currGMICs1, solver, 1, params.get(intParam::STRENGTHEN), params.get(intConst::MIN_SUPPORT_THRESHOLD), params.get(doubleParam::MAX_SUPPORT_REL), params.get(doubleParam::AWAY), params.get(doubleConst::DIFFEPS), params.logfile);
+  generateGomoryCuts(currGMICs3, solver, 3, params.get(intParam::STRENGTHEN), params.get(intConst::MIN_SUPPORT_THRESHOLD), params.get(doubleParam::MAX_SUPPORT_REL), params.get(doubleParam::AWAY), params.get(doubleConst::DIFFEPS), params.logfile);
   const int num_gmics1 = currGMICs1.sizeCuts();
   const int num_gmics3 = currGMICs3.sizeCuts();
   if (num_gmics1 != num_gmics3) { printf("*** ERROR: %d gmics1 != %d gmics3\n", num_gmics1, num_gmics3); exit(1); }

@@ -175,7 +175,7 @@ void CglAdvCut::generateCuts(const OsiSolverInterface& si, OsiCuts& cuts, const 
   // Set cut limit
   params.set(CUTLIMIT,
       CglAdvCut::getCutLimit(params.get(intParam::CUTLIMIT),
-          si.getFractionalIndices(params.get(doubleConst::AWAY)).size()));
+          si.getFractionalIndices(params.get(doubleParam::AWAY)).size()));
   if (reachedCutLimit()) {
     if (si.getFractionalIndices().size() > 0) {
       status = CglAdvCut::ExitReason::CUT_LIMIT_EXIT;
