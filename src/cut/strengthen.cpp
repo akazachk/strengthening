@@ -677,14 +677,17 @@ bool strengthenCutCoefficient(
   else if (mono) {
     CbcModel model(*mono);
     setIPSolverParameters(&model, mono->messageHandler()->logLevel());
+    model.setMaximumSeconds(5);
     model.setModelOwnsSolver(false);
     model.branchAndBound();
     if (model.status() != 0) {
-      error_msg(errorstring, "Failed to optimize monoidal strengthening solver for var %d. Model status: %d.\n", var, model.status());
-      writeErrorToLog(errorstring, logfile);
-      exit(1);
+      // Might time out
+      warning_msg(errorstring, "Failed to optimize monoidal strengthening solver for var %d. Model status: %d.\n", var, model.status());
+      //writeErrorToLog(errorstring, logfile);
+      //exit(1);
+    } else {
+      str_coeff += model.getObjValue();
     }
-    str_coeff += model.getObjValue();
   } // num_terms > 2
   else {
     throw("Unable to strengthen coefficient.\n");
