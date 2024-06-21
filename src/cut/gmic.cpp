@@ -10,7 +10,7 @@
 #include <OsiCuts.hpp>
 
 #include "SplitDisjunction.hpp"
-#include "SolverHelper.hpp" // isBasicVar
+#include "SolverHelper.hpp" // isBasicVar, isRayVar, isNonBasicLBVar, isNonBasicUBVar
 #include "SolverInterface.hpp"
 #include "strengthen.hpp"
 #include "utility.hpp"
@@ -393,19 +393,18 @@ void generateGomoryCuts(
 #endif
 } /* generateGomoryCuts */
 
-/** Adapted from CglLandP **/
 void createMIG(
-    /// [out]
+    /// [out] Cut to generate
     OsiRowCut &cut, 
-    /// [in]
+    /// [in] Solver from which we generate cuts; assumed optimal
     const OsiSolverInterface* const solver,
-    /// [in]
+    /// [in] Index of the variable to split
     const int splitVarIndex,
-    /// [in]
+    /// [in] Index of the row in which the splitVarIndex is basic
     const int splitVarRowIndex,
-    /// [in]
+    /// [in] Whether to strengthen the cut
     const bool strengthen,
-    /// [in]
+    /// [in] Where to write log messages
     FILE* logfile) {
   const int numcols = solver->getNumCols();
   const int numrows = solver->getNumRows();
@@ -441,10 +440,18 @@ void createMIG(
   double cutRhs = 1.;
   assert(std::abs(cutRhs) < 1e100); // TODO assert gracefully
   for (int var = 0; var < solver->getNumCols() + solver->getNumRows(); var++) {
-    if (isBasicVar(solver, var)) { continue; }
+    // Skip basic variables (be wary of difference between basis_ and isBasicVar)
+    // 2024-06-21: sometimes, such as with bc_presolved, var is basic with basis_,
+    // but not isBasicVar (maybe due to free variables)
+    // if (isBasicVar(solver, var)) { continue; }
+    const int row = var - solver->getNumCols();
+    const CoinWarmStartBasis::Status status = (row < 0) ? basis_->getStructStatus(var) : basis_->getArtifStatus(row);
+    if (status == CoinWarmStartBasis::basic) {
+        continue;
+    }
+
     double value = 0.0;
-    if (var < solver->getNumCols()) {
-      const CoinWarmStartBasis::Status status = basis_->getStructStatus(var);
+    if (var < solver->getNumCols()) {  
       if (status == CoinWarmStartBasis::atUpperBound) { // TODO I think this might be wrong for ub vars
         value = -intersectionCutCoeff(-basisRowStruct[var], f0, solver, var, strengthen);
         cutRhs += value * colUpper[var];
@@ -460,7 +467,6 @@ void createMIG(
         exit(1); // probably better to throw than exit
       }
     } else {
-      const int row = var - solver->getNumCols();
       if (lessThanVal(std::abs(basisRowSlack[row]), 0.0)) {
         continue;
       }
@@ -471,7 +477,7 @@ void createMIG(
         value = -intersectionCutCoeff(-basisRowSlack[row], f0, solver, var, strengthen);
         cutRhs -= value * rowLower[row];
         assert(
-            basis_->getArtifStatus(row) == CoinWarmStartBasis::atUpperBound
+            (status == CoinWarmStartBasis::atUpperBound)
             || !isInfinity(rowUpper[row])); // TODO assert gracefully
       }
     }
@@ -520,7 +526,6 @@ eliminate_slacks(std::vector<double>& vec, const OsiSolverInterface* const solve
     }
 } /* eliminate_slacks */
 
-/** From CglLandP: return the coefficients of the intersection cut */
 double unstrengthenedIntersectionCutCoeff(double abar, double f0) {
   if (abar > 0) {
     //return alpha_i * (1 - beta);
@@ -531,7 +536,6 @@ double unstrengthenedIntersectionCutCoeff(double abar, double f0) {
   }
 } /* unstrengthenedIntersectionCutCoeff */
 
-/** From CglLandP compute the modularized row coefficient for an integer variable */
 double modularizedCoeff(double abar, double f0) {
   double f_i = abar - floor(abar);
   if (f_i <= f0) {
@@ -541,7 +545,6 @@ double modularizedCoeff(double abar, double f0) {
   }
 } /* modularizedCoeff */
 
-/** Adapted from CglLandP: return the coefficients of the strengthened intersection cut */
 double strengthenedIntersectionCutCoeff(double abar, double f0) {
     //const OsiSolverInterface* const solver, 
     //const int currFracVar) {

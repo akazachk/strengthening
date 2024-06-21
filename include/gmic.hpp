@@ -31,26 +31,30 @@ void generateGomoryCuts(
     const double DIFFEPS,
     FILE* logfile);
 
+/// @brief Adapted from CglLandP: create Gomory mixed-integer cut
 void createMIG(OsiRowCut &cut, const OsiSolverInterface* const solver,
     const int splitVarIndex, const int splitVarRowIndex, const bool strengthen = true,
     FILE* logfile = NULL);
 
+/// @brief From CglLandPSimplex: put a vector into structural space
 void eliminate_slacks(std::vector<double>& vec, const OsiSolverInterface* const solver);
 
-/** From CglLandP: return the coefficients of the intersection cut */
+/// @brief From CglLandP: return the coefficients of the intersection cut
 double unstrengthenedIntersectionCutCoeff(double abar, double f0);
 
-/** From CglLandP compute the modularized row coefficient for an integer variable */
+/// @brief From CglLandP: compute the modularized row coefficient for an integer variable
 double modularizedCoeff(double abar, double f0);
 
-/** Adapted from CglLandP: return the coefficients of the unstrengthened intersection cut */
+/// @brief Adapted from CglLandP: return the coefficients of the unstrengthened intersection cut
 double unstrengthenedIntersectionCutCoeff(double abar, double f0);
 
-/** Adapted from CglLandP: return the coefficients of the strengthened intersection cut */
+/// @brief Adapted from CglLandP: return the coefficients of the strengthened intersection cut
 double strengthenedIntersectionCutCoeff(double abar, double f0);
 
+/// @brief Return #strengthenedIntersectionCutCoeff if \p strengthen is true; otherwise #unstrengthenedIntersectionCutCoeff
 double intersectionCutCoeff(double abar, double f0, const bool strengthen = false);
 
+/// @brief Return #strengthenedIntersectionCutCoeff if \p strengthen is true and \p currFracVar is structural integer; otherwise #unstrengthenedIntersectionCutCoeff
 double intersectionCutCoeff(double abar, double f0,
     const OsiSolverInterface* const solver = NULL, 
     const int currFracVar = -1,
