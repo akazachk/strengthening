@@ -68,6 +68,7 @@ enum intParam {
   CUTLIMIT, ///< max number of cuts generated; 0 = none, -k = k * # fractional variables at root
   DISJ_TERMS, ///< number of disjunctive terms or number of disjunctions, depending on ::MODE
   GOMORY, ///< Gomory cut mode, 0: none, +/-1: use CglGMI class to generate cuts (-1: do not add them to LP before generating cuts; 1: do add them)
+  MAX_NUM_HOT_START_VIOL, ///< maximum number of violations to allow before hot start is disabled and use solver resolve instead
   MODE, ///< 0: partial b&b tree, 1: splits, 2: crosses (not implemented), 3: custom, 4: disj_set_partial_bb
   ROUNDS, ///< number of  rounds to do
   STRENGTHEN, ///< 0: no, 1: yes, when possible, 2: same as 1 plus add GMICs to strengthen each disjunctive term
@@ -543,6 +544,9 @@ struct Parameters {
     {intParam::MODE,
         IntParameter(intParam::MODE, "MODE",
             0, {0, 1, 3, 4})},
+    {intParam::MAX_NUM_HOT_START_VIOL,
+      IntParameter(intParam::MAX_NUM_HOT_START_VIOL, "MAX_NUM_HOT_START_VIOL",
+          2, -1, std::numeric_limits<int>::max())},
     {intParam::GOMORY,
         IntParameter(intParam::GOMORY, "GOMORY",
             0, -3, 3)},

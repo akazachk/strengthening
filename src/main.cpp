@@ -1570,6 +1570,7 @@ int processArgs(int argc, char** argv) {
       {"ip_obj",                required_argument, 0, 'i'},
       {"logfile",               required_argument, 0, 'l'},
       {"mode",                  required_argument, 0, 'm'},
+      {"max_num_hot_start_viol",required_argument, 0, 'm'*'2'},
       {"optfile",               required_argument, 0, 'o'},
       {"rounds",                required_argument, 0, 'r'},
       {"rcvmip_max_iters",      required_argument, 0, 'r'*'1'},
@@ -1708,6 +1709,16 @@ int processArgs(int argc, char** argv) {
       case 'm': {
                  int val;
                  intParam param = intParam::MODE;
+                 if (!parseInt(optarg, val)) {
+                   error_msg(errorstring, "Error reading %s. Given value: %s.\n", params.name(param).c_str(), optarg);
+                   exit(1);
+                 }
+                 params.set(param, val);
+                 break;
+               }
+      case 'm'*'2': {
+                 int val;
+                 intParam param = intParam::MAX_NUM_HOT_START_VIOL;
                  if (!parseInt(optarg, val)) {
                    error_msg(errorstring, "Error reading %s. Given value: %s.\n", params.name(param).c_str(), optarg);
                    exit(1);
@@ -1908,6 +1919,8 @@ int processArgs(int argc, char** argv) {
                 helpstring += "--rcvmip_max_iters=num iters\n\tMaximum number of iterations for RCVMIP.\n";
                 helpstring += "--rcvmip_total_timelimit=num seconds\n\tTotal number of seconds allotted for RCVMIP (0: infinity). When specified, supercedes RCVMIP_CUT_TIMELIMIT.\n";
                 helpstring += "--rcvmip_cut_timelimit=num seconds\n\tNumber of seconds allotted for generating certificate per cut with RCVMIP (0: infinity).\n";
+                helpstring += "\n# Other options #\n";
+                helpstring += "--max_num_hot_start_viol=num viols\n\tMaximum number of violations to allow before hot start is disabled and use solver resolve instead.\n";
                 helpstring += "## END OF HELP ##\n";
                 std::cout << helpstring << std::endl;
                 status = 1;
