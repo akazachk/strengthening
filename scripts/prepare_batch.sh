@@ -147,6 +147,7 @@ PARAMS="$PARAMS --use_disj_lb=1"
 PARAMS="$PARAMS --use_tight_points=0"
 PARAMS="$PARAMS --use_tight_rays=0"
 PARAMS="$PARAMS --use_unit_vectors=0"
+PARAMS="$PARAMS --max_num_hot_start_viol=0"
 if [ $MODE = "gmic" ]; then
   depthList=(0)
   PARAMS="$PARAMS --gomory=2"
