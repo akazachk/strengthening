@@ -262,6 +262,15 @@ int main(int argc, char** argv) {
   if (status) { return status; }
 
   //====================================================================================================//
+  // Information from each round of cuts will be saved and optionally printed
+  int num_rounds = params.get(ROUNDS); // not const in case we do not exhaust the limit
+  std::vector<OsiCuts> mycuts_by_round(num_rounds);
+  cutInfoVec.resize(num_rounds);
+  boundInfoVec.resize(num_rounds);
+  origCertInfoVec.resize(num_rounds);
+  rcvmipCertInfoVec.resize(num_rounds);
+
+  //====================================================================================================//
   // Set up solver and get initial solution
   initializeSolver(solver, params.get(stringParam::FILENAME), params.get(StrengtheningParameters::intParam::VERBOSITY), params.get(StrengtheningParameters::doubleParam::TIMELIMIT), params.logfile);
   timer.start_timer(OverallTimeStats::INIT_SOLVE_TIME);
@@ -273,7 +282,7 @@ int main(int argc, char** argv) {
   }
   timer.end_timer(OverallTimeStats::INIT_SOLVE_TIME);
   boundInfo.lp_obj = solver->getObjValue();
-  
+
   //====================================================================================================//
   // Save original solver in case we wish to come back to it later
   origSolver = solver->clone();
@@ -411,14 +420,6 @@ int main(int argc, char** argv) {
   if (parseDisjOptions(disjOptions, params)) {
     return wrapUp(1, argc, argv);
   }
-
-  // Information from each round of cuts will be saved and optionally printed
-  int num_rounds = params.get(ROUNDS); // not const in case we do not exhaust the limit
-  std::vector<OsiCuts> mycuts_by_round(num_rounds);
-  cutInfoVec.resize(num_rounds);
-  boundInfoVec.resize(num_rounds);
-  origCertInfoVec.resize(num_rounds);
-  rcvmipCertInfoVec.resize(num_rounds);
 
   //====================================================================================================//
   // Now do rounds of cuts, until a limit is reached (e.g., time, number failures, number cuts, or all rounds are exhausted)
