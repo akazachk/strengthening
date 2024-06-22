@@ -273,6 +273,32 @@ int main(int argc, char** argv) {
   }
   timer.end_timer(OverallTimeStats::INIT_SOLVE_TIME);
   boundInfo.lp_obj = solver->getObjValue();
+  
+  //====================================================================================================//
+  // Save original solver in case we wish to come back to it later
+  origSolver = solver->clone();
+  if (!origSolver->isProvenOptimal()) {
+    origSolver->initialSolve();
+    checkSolverOptimality(origSolver, false);
+  }
+
+  // Also save copies for calculating other objective values
+  // We only need these if cuts other than mycuts are generated
+  // solver         ::  stores the cuts we actually want to "count" (i.e., the base LP from which we generate cuts in each round)
+  // unstrGMICSolver::  only unstrengthened Gomory cuts
+  // GMICSolver     ::  only GMICs
+  // strCutSolver   ::  if GMICs count, this is only mycuts; otherwise, it is both GMICs and mycuts
+  // allCutSolver   ::  all generated cuts (same as solver if no GMICs or RCVMIP-strengthened cuts, in which case not generated)
+  const int GOMORY_OPTION = params.get(intParam::GOMORY);
+  const int SHOULD_ANALYZE_REGULARITY = params.get(StrengtheningParameters::intParam::ANALYZE_REGULARITY);
+  if (GOMORY_OPTION != 0) {
+    if (params.get(intParam::STRENGTHEN) != 0) {
+      unstrGMICSolver = solver->clone();
+    }
+    GMICSolver = solver->clone();
+    strCutSolver = solver->clone();
+    allCutSolver = solver->clone();
+  }
 
   //====================================================================================================//
   { // Check whether the initial solution is integer-feasible
@@ -379,31 +405,6 @@ int main(int argc, char** argv) {
   timer.start_timer(OverallTimeStats::TOTAL_TIME);
 
   //====================================================================================================//
-  // Save original solver in case we wish to come back to it later
-  origSolver = solver->clone();
-  if (!origSolver->isProvenOptimal()) {
-    origSolver->initialSolve();
-    checkSolverOptimality(origSolver, false);
-  }
-
-  // Also save copies for calculating other objective values
-  // We only need these if cuts other than mycuts are generated
-  // solver         ::  stores the cuts we actually want to "count" (i.e., the base LP from which we generate cuts in each round)
-  // unstrGMICSolver::  only unstrengthened Gomory cuts
-  // GMICSolver     ::  only GMICs
-  // strCutSolver   ::  if GMICs count, this is only mycuts; otherwise, it is both GMICs and mycuts
-  // allCutSolver   ::  all generated cuts (same as solver if no GMICs or RCVMIP-strengthened cuts, in which case not generated)
-  const int GOMORY_OPTION = params.get(intParam::GOMORY);
-  const int SHOULD_ANALYZE_REGULARITY = params.get(StrengtheningParameters::intParam::ANALYZE_REGULARITY);
-  if (GOMORY_OPTION != 0) {
-    if (params.get(intParam::STRENGTHEN) != 0) {
-      unstrGMICSolver = solver->clone();
-    }
-    GMICSolver = solver->clone();
-    strCutSolver = solver->clone();
-    allCutSolver = solver->clone();
-  }
-
   // Process disjunction options, if different by round
   // Parse string DISJ_OPTIONS into vector of ints, splitting by default delimiter
   std::vector<int> disjOptions;
