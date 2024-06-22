@@ -917,8 +917,13 @@ void printCutInfo(const SummaryCutInfo& cutInfoGMICs,
     int count = 0;
     fprintf(logfile, "%s%c", stringValue(cutInfo.num_rounds).c_str(), SEP); count++;
     fprintf(logfile, "%s%c", stringValue(cutInfo.num_cuts).c_str(), SEP); count++;
-    fprintf(logfile, "%s%c", stringValue(cutInfo.numCutsOfType[static_cast<int>(CglAdvCut::CutType::ONE_SIDED_CUT)]).c_str(), SEP); count++;
-    fprintf(logfile, "%s%c", stringValue(cutInfo.numCutsOfType[static_cast<int>(CglAdvCut::CutType::OPTIMALITY_CUT)]).c_str(), SEP); count++;
+    if (cutInfo.num_cuts > 0) {
+      fprintf(logfile, "%s%c", stringValue(cutInfo.numCutsOfType[static_cast<int>(CglAdvCut::CutType::ONE_SIDED_CUT)]).c_str(), SEP); count++;
+      fprintf(logfile, "%s%c", stringValue(cutInfo.numCutsOfType[static_cast<int>(CglAdvCut::CutType::OPTIMALITY_CUT)]).c_str(), SEP); count++;
+    } else {
+      fprintf(logfile, "%s%c", stringValue(0).c_str(), SEP); count++;
+      fprintf(logfile, "%s%c", stringValue(0).c_str(), SEP); count++;
+    }
     if (cutInfoGMICs.num_cuts > 0) {
       fprintf(logfile, "%s%c", stringValue(cutInfoGMICs.min_support).c_str(), SEP); count++;
       fprintf(logfile, "%s%c", stringValue(cutInfoGMICs.max_support).c_str(), SEP); count++;
