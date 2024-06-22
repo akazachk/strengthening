@@ -962,7 +962,11 @@ void printCutInfo(const SummaryCutInfo& cutInfoGMICs,
     int count = 0;
     fprintf(logfile, "%s%c", stringValue(cutInfo.num_failures).c_str(), SEP); count++;
     for (int fail_ind = 0; fail_ind < static_cast<int>(CglAdvCut::FailureType::NUM_FAILURE_TYPES); fail_ind++) {
-      fprintf(logfile, "%s%c", stringValue(cutInfo.numFails[fail_ind]).c_str(), SEP); count++;
+      fprintf(logfile, "%s%c",
+        (cutInfo.num_failures > 0)
+          ? stringValue(cutInfo.numFails[fail_ind]).c_str()
+          : stringValue(0).c_str(),
+        SEP); count++;
     }
     assert(count == countFailInfoEntries);
   } // FAIL INFO
