@@ -31,6 +31,7 @@ const std::vector<std::string> CglAdvCut::ExitReasonName {
   "SUCCESS",
   "CUT_LIMIT",
   "FAIL_LIMIT",
+  "OPTIMAL_SOLUTION_FOUND",
   "TIME_LIMIT",
   "NO_CUTS_LIKELY",
   "UNKNOWN"
@@ -302,6 +303,8 @@ void CglAdvCut::generateCuts(const OsiSolverInterface& si, OsiCuts& cuts, const 
     status = CglAdvCut::ExitReason::CUT_LIMIT_EXIT;
   else if (vpcExitReason == CglVPC::ExitReason::FAIL_LIMIT_EXIT)
     status = CglAdvCut::ExitReason::FAIL_LIMIT_EXIT;
+  else if (vpcExitReason == CglVPC::ExitReason::OPTIMAL_SOLUTION_FOUND_EXIT)
+    status = CglAdvCut::ExitReason::OPTIMAL_SOLUTION_FOUND_EXIT;
   else if (vpcExitReason == CglVPC::ExitReason::TIME_LIMIT_EXIT)
     status = CglAdvCut::ExitReason::TIME_LIMIT_EXIT;
   else if (vpcExitReason == CglVPC::ExitReason::NO_CUTS_LIKELY_EXIT)

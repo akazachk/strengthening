@@ -50,13 +50,14 @@ public:
 
   /// @brief Documenting the exit status after / whether cuts are generated
   enum class ExitReason {
-    SUCCESS_EXIT = 0,
-    CUT_LIMIT_EXIT,
-    FAIL_LIMIT_EXIT,
-    TIME_LIMIT_EXIT,
-    NO_CUTS_LIKELY_EXIT,
-    UNKNOWN,
-    NUM_EXIT_REASONS
+    SUCCESS_EXIT = 0,            ///< everything seems okay
+    CUT_LIMIT_EXIT,              ///< reachedCutLimit() is true
+    FAIL_LIMIT_EXIT,             ///< reachedFailureLimit() is true
+    OPTIMAL_SOLUTION_FOUND_EXIT, ///< found integer-optimal solution
+    TIME_LIMIT_EXIT,             ///< reachedTimeLimit() is true
+    NO_CUTS_LIKELY_EXIT,         ///< e.g., when using CglVP and all leaf nodes have same value as LP solution
+    UNKNOWN,                     ///< TODO expand
+    NUM_EXIT_REASONS             ///< number of possible exit reasons
   }; /* ExitReason */
 
   /// @brief Timing
@@ -69,10 +70,10 @@ public:
 
   /// @brief Type of cuts generated
   enum class CutType {
-    ONE_SIDED_CUT,
-    OPTIMALITY_CUT,
-    OTHER_CUT,
-    NUM_CUT_TYPES
+    ONE_SIDED_CUT,  ///< cuts from disjunctions in which one side is empty
+    OPTIMALITY_CUT, ///< objective cut added when optimal solution is found
+    OTHER_CUT,      ///< generic other cut
+    NUM_CUT_TYPES   ///< number of cut types
   }; /* CutType */
 
   /// @brief Types of objectives used to generate the cuts
