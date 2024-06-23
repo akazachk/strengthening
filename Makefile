@@ -158,20 +158,16 @@ VPC_CLP_VERSION = $(shell git -C ${COIN_OR}/Clp log -1 --pretty=format:"%H")
 
 SOURCES += \
 		cut/CglAdvCut.cpp \
-		cut/CutHelper.cpp \
     cut/disjcuts.cpp \
-    cut/Disjunction.cpp \
     cut/gmic.cpp \
     cut/regularity.cpp \
     cut/strengthen.cpp \
 		utility/eigen.cpp \
-		utility/SolverHelper.cpp \
-		utility/utility.cpp \
 		utility/verify.cpp
 
 # VPC directories
 VPC_SRC_DIR = ${VPC_DIR}/src
-VPC_DIR_LIST = $(VPC_SRC_DIR) $(VPC_SRC_DIR)/branch $(VPC_SRC_DIR)/cut $(VPC_SRC_DIR)/disjunction $(VPC_SRC_DIR)/utility
+VPC_DIR_LIST = branch cut disjunction utility
 
 VPC_SOURCES += \
 		branch/CbcBranchStrongDecision.cpp \
@@ -179,10 +175,14 @@ VPC_SOURCES += \
 		branch/OsiChooseStrongCustom.cpp \
     utility/nbspace.cpp \
     utility/OsiProblemData.cpp \
+		utility/SolverHelper.cpp \
+		utility/utility.cpp \
 		utility/VPCSolverInterface.cpp \
 		branch/VPCEventHandler.cpp \
 		cut/CglVPC.cpp \
+		cut/CutHelper.cpp \
     cut/PRLP.cpp \
+    disjunction/Disjunction.cpp \
     disjunction/PartialBBDisjunction.cpp \
     disjunction/SplitDisjunction.cpp \
     disjunction/VPCDisjunction.cpp
@@ -197,8 +197,8 @@ endif
 ### Set build values based on user variables ###
 ifeq ($(BUILD_CONFIG),debug)
   # "Debug" build - no optimization, include debugging symbols, and keep inline functions
-	SOURCES += utility/debug.cpp
-  VPC_SOURCES += utility/vpc_debug.cpp
+	SOURCES += utility/strengthening_debug.cpp
+  VPC_SOURCES += utility/vpc_debug.cpp utility/debug.cpp
   OUT_DIR = Debug
   DEBUG_FLAG = -g3
   OPT_FLAG = -O0
@@ -275,15 +275,15 @@ OUT_DIR_LIST = $(addprefix $(OUT_DIR)/,$(DIR_LIST))
 OBJECTS = $(SOURCES:.cpp=.o)
 OUT_OBJECTS = $(addprefix $(OBJ_DIR)/,$(OBJECTS))
 
-VPC_OBJ_DIR = $(OUT_DIR)/$(VPC_SRC_DIR)
-VPC_OUT_DIR_LIST = $(addprefix $(OUT_DIR)/,$(VPC_DIR_LIST))
+VPC_OBJ_DIR = $(OUT_DIR)/vpc
+VPC_OUT_DIR_LIST = $(addprefix $(OUT_DIR)/vpc/,$(VPC_DIR_LIST))
 VPC_OBJECTS = $(VPC_SOURCES:.cpp=.o)
 VPC_OUT_OBJECTS = $(addprefix $(VPC_OBJ_DIR)/,$(VPC_OBJECTS))
 
 # Set includes
-APPLINCLS = -Iinclude -Iinclude/common -Iinclude/test
+APPLINCLS = -Iinclude -Iinclude/test
 ## TEMPORARY CHANGE TO PARENT VPC (NO WIFI)
-APPLINCLS += -I${VPC_DIR}/include
+APPLINCLS += -I${VPC_DIR}/include -I${VPC_DIR}/include/common
 
 APPLLIB = -lm -lz -lbz2 -lreadline
 ifeq ($(UNAME),Linux)
@@ -375,6 +375,9 @@ $(EXECUTABLE): $(OUT_OBJECTS) $(VPC_OUT_OBJECTS)
 		@echo 'Invoking' $(CC) 'linker'
 		$(CC) $(DEFS) $(CXXLINKFLAGS) $(APPLINCLS) -o $@ $^ $(APPLLIB)
 
+# Uses pattern matching to determine where source is located and where to put object
+# By this rule, if OBJ_DIR=Debug/src, SRC_DIR=src, and
+# the target is Debug/src/main.o, then source is automatically defined as Debug/src/main.cpp
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp
 		@echo ' '
 		@echo 'Building target: $@'
@@ -501,7 +504,14 @@ print: FORCE
 	$(info EXTRA_FLAGS: ${EXTRA_FLAGS})
 	$(info LIB_DIR: ${LIB_DIR})
 	$(info SOURCES: ${SOURCES})
+	$(info OBJ_DIR: ${OBJ_DIR})
+	$(info OUT_DIR_LIST: ${OUT_DIR_LIST})
 	$(info OUT_OBJECTS: ${OUT_OBJECTS})
+	$(info VPC_SOURCES: ${VPC_SOURCES})
+	$(info VPC_OBJ_DIR: ${VPC_OBJ_DIR})
+	$(info VPC_OUT_DIR_LIST: ${VPC_OUT_DIR_LIST})
+	$(info VPC_OBJECTS: ${VPC_OBJECTS})
+	$(info VPC_OUT_OBJECTS: ${VPC_OUT_OBJECTS})
 
 print_dep: FORCE
 	$(info DEPENDENCIES: ${DEPENDENCIES})

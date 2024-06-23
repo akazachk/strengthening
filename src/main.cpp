@@ -59,6 +59,7 @@ using namespace StrengtheningParameters;
 
 #ifdef VPC_DEBUG
 #include "debug.hpp"
+#include "strengthening_debug.hpp"
 #endif
 
 enum OverallTimeStats {
