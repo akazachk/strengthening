@@ -213,7 +213,7 @@ inline bool isInfinity(const double val, const double infinity = __DBL_MAX__, co
 /// @details Due to precision, \p val might be declared as negative infinity, even if it is technically greater than \p neg_infinity
 inline bool isNegInfinity(const double val, const double neg_infinity = __DBL_MIN__, const double eps = 1e-7) {
   return (val <= neg_infinity) || !greaterThanVal(val, neg_infinity, eps);
-} /* isInfinity */
+} /* isNegInfinity */
 
 ///// @brief Covert an integer into a string, accounting for possible infinite values
 //inline const std::string stringValue(const int value,
@@ -267,13 +267,13 @@ inline const std::string stringValue(
     /// how many digits after the decimal to print (-1 default implies do not limit)
     const int NUM_DIGITS_AFTER_DEC = -1) {
   char temp[500];
-  if (!lessThanVal(value, INF)) {
+  if (isInfinity(value, INF)) {
     if (NUM_DIGITS_BEFORE_DEC == -1) {
       snprintf(temp, sizeof(temp) / sizeof(char), "%s", "\'inf\'");
     } else {
       snprintf(temp, sizeof(temp) / sizeof(char), "%-*s", NUM_DIGITS_BEFORE_DEC, "\'inf\'");
     }
-  } else if (!greaterThanVal(value, -INF)) {
+  } else if (isNegInfinity(value, -INF)) {
     if (NUM_DIGITS_BEFORE_DEC == -1) {
       snprintf(temp, sizeof(temp) / sizeof(char), "%s", "\'-inf\'");
     } else {
