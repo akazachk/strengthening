@@ -36,7 +36,8 @@ void checkCut(
     const TermCutCertificate& v,
     const int term_ind,
     const Disjunction* const disj,
-    const OsiSolverInterface* const solver);
+    const OsiSolverInterface* const solver,
+    const double EPS = 1e-3);
 
 /// @brief Verify that the certificate yields the same cut coefficients as the original cut (wrapper for #checkCut)
 int checkCutHelper(

@@ -154,7 +154,9 @@ void checkCut(
     /// [in] Disjunction from which cut was derived (if \p solver is the original MILP instance)
     const Disjunction* const disj,
     /// [in] LP solver corresponding to disjunctive term OR the original MILP instance
-    const OsiSolverInterface* const solver) {
+    const OsiSolverInterface* const solver,
+    /// [in] Value for epsilon
+    const double EPS) {
   // Obtain the cut that the certificate yields (should be the same as the original cut)
   std::vector<double> new_coeff(solver->getNumCols());
   if (disj == NULL) {
@@ -165,16 +167,49 @@ void checkCut(
 
   num_errors = 0;
   total_diff = 0.;
+  const double DIFFEPS = 1e-4;
   for (int i = 0; i < solver->getNumCols(); i++) {
-    const double diff = cut_coeff[i] - new_coeff[i];
-    if (greaterThanVal(std::abs(diff), 0.0, 1e-4)) {
+    const double val1 = cut_coeff[i];
+    const double val2 = new_coeff[i];
+    const double violation = val1 - val2;
+    if (isVal(violation, 0.0, EPS)) {
+      continue;
+    }
+
+    // Else, we may have a violation
+    // Check absolute and relative violation
+    double ratio = 1.;
+    if ( (lessThanVal(val1, 0.0, EPS) && greaterThanVal(val2, 0.0, EPS))
+        || (lessThanVal(val2, 0.0, EPS) && greaterThanVal(val1, 0.0, EPS)) ) {
+      // If one is negative and the other is positive, then can set ratio to infinity
+      ratio = 1e100;
+    }
+    else if (isZero(val1, EPS) && isZero(val2, EPS)) {
+      // nothing to do, keep ratio = 1.
+      ratio = 1.;
+    }
+    else if (isZero(val1, EPS) || isZero(val2, EPS)) {
+      // ratio is 1 + abs(diff between values, since one of these values is zero)
+      ratio = 1. + std::abs(violation);
+    }
+    else {
+      ratio = val1 / val2;
+      if (ratio < 1.) {
+        ratio = val2 / val1;
+      }
+    }
+
+    // Absolute violation > DIFFEPS and more than 3% difference in ratio leads to an error
+    if (!isVal(violation, 0.0, DIFFEPS) && greaterThanVal(ratio, 1.03)) {
+      #ifdef TRACE
       warning_msg(warnstring,
         "Discrepancy with coefficient %d: cut: %g\tcalc: %g\tdiff: %g\n",
-        i, cut_coeff[i], new_coeff[i], diff);
+        i, cut_coeff[i], new_coeff[i], violation);
+      #endif
       num_errors++;
-      total_diff += std::abs(diff);
+      total_diff += std::abs(violation);
     }
-  }
+  } // loop over columns
 } /* checkCut */
 
 /// @details Run #checkCut and print num errors
@@ -204,10 +239,12 @@ int checkCutHelper(
 
   int num_errors = 0;
   double total_diff = 0;
-  checkCut(num_errors, total_diff, cut_coeff, v, term_ind, disj, solver);
+  const double EPS = 1e-7;
+  checkCut(num_errors, total_diff, cut_coeff, v, term_ind, disj, solver, EPS);
   
   if (num_errors > 0) {
-    const bool should_continue = isZero(total_diff, 1e-3);
+    const double DIFFEPS = 1e-3;
+    const bool should_continue = isZero(total_diff, DIFFEPS);
     if (should_continue) {
       // Send warning
       warning_msg(warnstring,
