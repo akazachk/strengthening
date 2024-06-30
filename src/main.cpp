@@ -2111,10 +2111,6 @@ void applyStrengtheningCertificateHelper(
     }
   } // loop over cuts
   strInfo.finalize(total_num_cuts);
-
-  // // Finish stddev calculation = sqrt(E[X^2] - E[X]^2)
-  // strInfo.num_coeffs_strengthened[(int) Stat::stddev] -= strInfo.num_coeffs_strengthened[(int) Stat::avg] * strInfo.num_coeffs_strengthened[(int) Stat::avg];
-  // strInfo.num_coeffs_strengthened[(int) Stat::stddev] = (strInfo.num_coeffs_strengthened[(int) Stat::stddev] > 0) ? std::sqrt(strInfo.num_coeffs_strengthened[(int) Stat::stddev]) : 0.;
   
   timer.end_timer(which_time);
 } /* applyStrengtheningCertificateHelper */
