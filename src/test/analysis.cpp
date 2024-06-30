@@ -27,8 +27,8 @@ using namespace StrengtheningParameters;
 #include "PartialBBDisjunction.hpp"
 
 template <typename T>
-std::vector<double> computeStats(const std::vector<T>& vals) {
-  std::vector<double> stats(static_cast<int>(Stat::num_stats), 0.);
+StatVector computeStats(const std::vector<T>& vals) {
+  StatVector stats(static_cast<int>(Stat::num_stats), 0.);
   if (vals.empty()) {
     return stats;
   }
@@ -37,7 +37,7 @@ std::vector<double> computeStats(const std::vector<T>& vals) {
   return stats;
 } /* computeStats */
 
-void initializeStats(std::vector<double>& stats) {
+void initializeStats(StatVector& stats) {
   stats.assign(static_cast<int>(Stat::num_stats), 0);
   stats[static_cast<int>(Stat::min)] = std::numeric_limits<double>::max();
   stats[static_cast<int>(Stat::max)] = std::numeric_limits<double>::lowest();
@@ -45,7 +45,7 @@ void initializeStats(std::vector<double>& stats) {
 
 /// @details If \p prev_size is positive, then need to adjust previous average/stddev. New total size is \p prev_size + \p vals size.
 template <typename T>
-void updateAndFinalizeStats(std::vector<double>& stats, const std::vector<T>& vals, const int prev_size) {
+void updateAndFinalizeStats(StatVector& stats, const std::vector<T>& vals, const int prev_size) {
   if (vals.empty()) { return; }
   assert ( prev_size >= 0 );
   const int new_size = prev_size + static_cast<int>(vals.size());
@@ -107,7 +107,7 @@ void updateAndFinalizeStats(std::vector<double>& stats, const std::vector<T>& va
 
 /// @details Parameter \p size is optional and only applied when > 0; when == 0, then we return immediately, and when < 0, we assume that size will be set later.
 template <typename T>
-void updateStatsBeforeFinalize(std::vector<double>& stats, const T& val, const int size) {
+void updateStatsBeforeFinalize(StatVector& stats, const T& val, const int size) {
   if (size == 0) { return; }
   const double divisor = (size > 0) ? static_cast<double>(size) : 1.;
   stats[static_cast<int>(Stat::total)] += val;
@@ -126,7 +126,7 @@ void updateStatsBeforeFinalize(std::vector<double>& stats, const T& val, const i
 /// Similarly, for stddev if \p size > 0, we need to divide by size (assume Stat::stddev holds sum of squares, not E[X^2] as in case of \p size <= 0).
 /// To finish stddev calculation = sqrt(E[X^2] - E[X]^2), need to subtract average squared then take square root.
 /// If \p size == 0, then we return immediately.
-void finalizeStats(std::vector<double>& stats, const int size) {
+void finalizeStats(StatVector& stats, const int size) {
   if (size == 0) { return; }
   const int avg_ind = static_cast<int>(Stat::avg);
   const int stddev_ind = static_cast<int>(Stat::stddev);
@@ -138,6 +138,7 @@ void finalizeStats(std::vector<double>& stats, const int size) {
 } /* finalizeStats */
 
 SummaryStrengtheningInfo::SummaryStrengtheningInfo() {
+  this->num_str_affected_cuts = 0;
   initializeStats(this->num_coeffs_strengthened);
 } /* SummaryStrengtheningInfo constructor */
 

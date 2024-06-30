@@ -32,23 +32,26 @@ struct SummaryCertificateInfo; // analysis.hpp
 /// @brief Container for types of statistics we want to keep
 enum class Stat { total = 0, avg, stddev, min, max, num_stats };
 
+/// Short name for vector of statistics
+using StatVector = std::vector<double>;
+
 /// @brief Compute statistics in #Stat about given templated vector
 template <typename T>
-std::vector<double> computeStats(const std::vector<T>& v);
+StatVector computeStats(const std::vector<T>& v);
 
 /// @brief Initialize a vector of size #Stat::num_stats
-void initializeStats(std::vector<double>& stats);
+void initializeStats(StatVector& stats);
 
 /// @brief Update and finalize (i.e., stddev + avg are correct) a #Stat vector \p stats with new values \p vals
 template <typename T>
-void updateAndFinalizeStats(std::vector<double>& stats, const std::vector<T>& vals, const int prev_size = 0);
+void updateAndFinalizeStats(StatVector& stats, const std::vector<T>& vals, const int prev_size = 0);
 
 /// @brief Update a #Stat vector \p stats with new value \p val but do not finalize (stddev holds sum of squares)
 template <typename T>
-void updateStatsBeforeFinalize(std::vector<double>& stats, const T& val, const int size = -1);
+void updateStatsBeforeFinalize(StatVector& stats, const T& val, const int size = -1);
 
 /// @brief Finalize a #Stat vector \p stats (i.e., compute standard deviation, and also average if \p size > 0)
-void finalizeStats(std::vector<double>& stats, const int size = -1);
+void finalizeStats(StatVector& stats, const int size = -1);
 
 /// @brief Information about objective value at various points in the solution process
 /// @details Gives objective for the LP and IP, and after adding GMICs, L&PCs, VPCs, and combinations of these cuts
@@ -118,7 +121,7 @@ struct SummaryStrengtheningInfo {
   /// number of cuts for which strengthening using the corresponding certificate changes at least one coefficient
   int num_str_affected_cuts;
   /// number of coefficients changed (one entry for each index in #Stat -- total, avg, stddev, min, max)
-  std::vector<double> num_coeffs_strengthened;
+  StatVector num_coeffs_strengthened;
 
   /// @brief Constructor resizing #num_coeffs_strengthened to the appropriate size (#Stat::num_stats)
   SummaryStrengtheningInfo();
