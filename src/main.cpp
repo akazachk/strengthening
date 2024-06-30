@@ -1999,10 +1999,12 @@ void strengtheningHelper(
   }
 
   // Apply the certificate
+  const int orig_num_str_affected_cuts = strInfo.num_str_affected_cuts;
   applyStrengtheningCertificateHelper(currCuts, v, str_cut_ind, strInfo, boundInfo, disj, solver, ip_solution, is_rcvmip, start_ind, num_cuts_requested);
+  const int diff_num_str_affected_cuts = strInfo.num_str_affected_cuts - orig_num_str_affected_cuts;
 
   // Print the results
-  fprintf(stdout, "\nFinished strengthening (%d / %d cuts affected).\n", strInfo.num_str_affected_cuts, boundInfo.num_mycut);
+  fprintf(stdout, "\nFinished strengthening (%d / %d cuts affected).\n", diff_num_str_affected_cuts, num_cuts);
   fprintf(stdout, "Number coeffs changed:\n");
   fprintf(stdout, "\ttotal: %g\n", strInfo.num_coeffs_strengthened[(int) Stat::total]);
   fprintf(stdout, "\tavg: %g\n", strInfo.num_coeffs_strengthened[(int) Stat::avg]);
@@ -2077,10 +2079,9 @@ void applyStrengtheningCertificateHelper(
   OverallTimeStats which_time = is_rcvmip ? OverallTimeStats::REG_APPLY_CERT_TIME : OverallTimeStats::STR_APPLY_CERT_TIME;
   timer.start_timer(which_time);
 
-  const int num_cuts = (num_cuts_requested < 0) ? currCuts.sizeCuts() - start_ind : num_cuts_requested;
+  const int total_num_cuts = currCuts.sizeCuts();
+  const int num_cuts = (num_cuts_requested < 0) ? total_num_cuts - start_ind : num_cuts_requested;
   const int end_ind = start_ind + num_cuts;
-  strInfo.num_coeffs_strengthened.resize(static_cast<int>(Stat::num_stats), 0.); // total,avg,stddev,min,max
-  strInfo.num_coeffs_strengthened[(int) Stat::min] = std::numeric_limits<int>::max();
   str_cut_ind.reserve(num_cuts + str_cut_ind.size());
 
   for (int cut_ind = start_ind; cut_ind < end_ind; cut_ind++) {
@@ -2099,16 +2100,7 @@ void applyStrengtheningCertificateHelper(
     } else {
       boundInfo.num_str_affected_cuts += curr_num_coeffs_str > 0;
     }
-    strInfo.num_str_affected_cuts += curr_num_coeffs_str > 0;
-    strInfo.num_coeffs_strengthened[(int) Stat::total] += curr_num_coeffs_str;
-    strInfo.num_coeffs_strengthened[(int) Stat::avg] += (double) curr_num_coeffs_str / num_cuts;
-    strInfo.num_coeffs_strengthened[(int) Stat::stddev] += (double) curr_num_coeffs_str * curr_num_coeffs_str / num_cuts;
-    if (curr_num_coeffs_str < strInfo.num_coeffs_strengthened[(int) Stat::min]) {
-      strInfo.num_coeffs_strengthened[(int) Stat::min] = curr_num_coeffs_str;
-    }
-    if (curr_num_coeffs_str > strInfo.num_coeffs_strengthened[(int) Stat::max]) {
-      strInfo.num_coeffs_strengthened[(int) Stat::max] = curr_num_coeffs_str;
-    }
+    strInfo.update(curr_num_coeffs_str);
     
     // Replace row if any coefficients were strengthened
     if (curr_num_coeffs_str > 0) {
@@ -2118,10 +2110,11 @@ void applyStrengtheningCertificateHelper(
       str_cut_ind.push_back(cut_ind);
     }
   } // loop over cuts
+  strInfo.finalize(total_num_cuts);
 
-  // Finish stddev calculation = sqrt(E[X^2] - E[X]^2)
-  strInfo.num_coeffs_strengthened[(int) Stat::stddev] -= strInfo.num_coeffs_strengthened[(int) Stat::avg] * strInfo.num_coeffs_strengthened[(int) Stat::avg];
-  strInfo.num_coeffs_strengthened[(int) Stat::stddev] = (strInfo.num_coeffs_strengthened[(int) Stat::stddev] > 0) ? std::sqrt(strInfo.num_coeffs_strengthened[(int) Stat::stddev]) : 0.;
+  // // Finish stddev calculation = sqrt(E[X^2] - E[X]^2)
+  // strInfo.num_coeffs_strengthened[(int) Stat::stddev] -= strInfo.num_coeffs_strengthened[(int) Stat::avg] * strInfo.num_coeffs_strengthened[(int) Stat::avg];
+  // strInfo.num_coeffs_strengthened[(int) Stat::stddev] = (strInfo.num_coeffs_strengthened[(int) Stat::stddev] > 0) ? std::sqrt(strInfo.num_coeffs_strengthened[(int) Stat::stddev]) : 0.;
   
   timer.end_timer(which_time);
 } /* applyStrengtheningCertificateHelper */
