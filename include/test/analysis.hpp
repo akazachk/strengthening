@@ -12,6 +12,7 @@
 class OsiSolverInterface;
 class OsiCuts;
 
+#include "utility.hpp" // StatVector and isInfinity, stringValue for source file
 #include "CglAdvCut.hpp" // CutType, ObjectiveType
 #include "CutCertificate.hpp"
 namespace StrengtheningParameters {
@@ -28,30 +29,6 @@ struct SummaryDisjunctionInfo; // analysis.hpp
 struct SummaryCutInfo; // analysis.hpp
 struct SummaryStrengtheningInfo; // analysis.hpp
 struct SummaryCertificateInfo; // analysis.hpp
-
-/// @brief Container for types of statistics we want to keep
-enum class Stat { total = 0, avg, stddev, min, max, num_stats };
-
-/// Short name for vector of statistics
-using StatVector = std::vector<double>;
-
-/// @brief Compute statistics in #Stat about given templated vector
-template <typename T>
-StatVector computeStats(const std::vector<T>& v);
-
-/// @brief Initialize a vector of size #Stat::num_stats
-void initializeStats(StatVector& stats);
-
-/// @brief Update and finalize (i.e., stddev + avg are correct) a #Stat vector \p stats with new values \p vals
-template <typename T>
-void updateAndFinalizeStats(StatVector& stats, const std::vector<T>& vals, const int prev_size = 0);
-
-/// @brief Update a #Stat vector \p stats with new value \p val but do not finalize (stddev holds sum of squares)
-template <typename T>
-void updateStatsBeforeFinalize(StatVector& stats, const T& val, const int size = -1);
-
-/// @brief Finalize a #Stat vector \p stats (i.e., compute standard deviation, and also average if \p size > 0)
-void finalizeStats(StatVector& stats, const int size = -1);
 
 /// @brief Information about objective value at various points in the solution process
 /// @details Gives objective for the LP and IP, and after adding GMICs, L&PCs, VPCs, and combinations of these cuts
@@ -130,7 +107,10 @@ struct SummaryStrengtheningInfo {
   void update(const int& num_coeffs, const int total_num_cuts = -1);
 
   /// @brief Finalize the number of coefficients strengthened
-  void finalize(const int total_num_cuts);
+  void finalize(const int total_num_cuts = -1);
+
+  /// @brief Unfinalize vector based on changing size of num cuts considered
+  void unfinalize(const int prev_num_cuts = -1);
 }; /* SummaryStrengtheningInfo */
 
 /// @brief Summary statistics for counting regularity / irregularity of cuts and certificates

@@ -1990,7 +1990,6 @@ void strengtheningHelper(
     }
     return;
   }
-
   printf("\n## Strengthening disjunctive cuts: (# cuts = %d). ##\n", num_cuts);
 
   // Retrieve the certificate
@@ -2006,11 +2005,7 @@ void strengtheningHelper(
   // Print the results
   fprintf(stdout, "\nFinished strengthening (%d / %d cuts affected).\n", diff_num_str_affected_cuts, num_cuts);
   fprintf(stdout, "Number coeffs changed:\n");
-  fprintf(stdout, "\ttotal: %g\n", strInfo.num_coeffs_strengthened[(int) Stat::total]);
-  fprintf(stdout, "\tavg: %g\n", strInfo.num_coeffs_strengthened[(int) Stat::avg]);
-  fprintf(stdout, "\tstddev: %g\n", strInfo.num_coeffs_strengthened[(int) Stat::stddev]);
-  fprintf(stdout, "\tmin: %g\n", strInfo.num_coeffs_strengthened[(int) Stat::min]);
-  fprintf(stdout, "\tmax: %g\n", strInfo.num_coeffs_strengthened[(int) Stat::max]);
+  printStats(strInfo.num_coeffs_strengthened);
   fprintf(stdout, "--------------------------------------------------\n");
 #if 0
   fprintf(stdout, "\n## Printing strengthened custom cuts ##\n");
@@ -2084,6 +2079,7 @@ void applyStrengtheningCertificateHelper(
   const int end_ind = start_ind + num_cuts;
   str_cut_ind.reserve(num_cuts + str_cut_ind.size());
 
+  strInfo.unfinalize();
   for (int cut_ind = start_ind; cut_ind < end_ind; cut_ind++) {
     OsiRowCut* disjCut = currCuts.rowCutPtr(cut_ind);
     const CoinPackedVector lhs = disjCut->row();
@@ -2110,7 +2106,7 @@ void applyStrengtheningCertificateHelper(
       str_cut_ind.push_back(cut_ind);
     }
   } // loop over cuts
-  strInfo.finalize(total_num_cuts);
+  strInfo.finalize();
   
   timer.end_timer(which_time);
 } /* applyStrengtheningCertificateHelper */
