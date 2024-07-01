@@ -692,7 +692,10 @@ int main(int argc, char** argv) {
         // Get the certificates for the last batch of cuts
         // Apply the strengthening certificates to get new cuts
         if (batch_num_cuts > 0) {
-          Disjunction* disj = disjSet->disjunctions[disj_id]; // disjunction for this batch of cuts
+          fprintf(stdout, "## Strengthening cuts for disjunction (id %d, total # disj %d) for %d / %d cuts. ##\n",
+              disj_id, disjSet->size(),
+              batch_num_cuts, mycuts_by_round[round_ind].sizeCuts());
+          const Disjunction* const disj = disjSet->getDisjunction(disj_id); // disjunction for this batch of cuts
           std::vector<int>& str_cut_ind = str_cut_ind_vec[disj_id]; // append to indices of cuts that were strengthened for this disjunction
           strengtheningHelper(mycuts_by_round[round_ind], v, str_cut_ind, strInfo, boundInfoVec[round_ind], disj, solver, ip_solution, false, start_ind, batch_num_cuts);
           boundInfo.num_str_affected_cuts += str_cut_ind.size();
@@ -707,7 +710,10 @@ int main(int argc, char** argv) {
 
       // Process last batch
       if (batch_num_cuts > 0) {
-        Disjunction* disj = disjSet->disjunctions[disj_id]; // disjunction for this batch of cuts
+        fprintf(stdout, "## Strengthening cuts for disjunction (id %d, total # disj %d) for %d / %d cuts. ##\n",
+            disj_id, disjSet->size(),
+            batch_num_cuts, mycuts_by_round[round_ind].sizeCuts());
+        const Disjunction* const disj = disjSet->getDisjunction(disj_id); // disjunction for this batch of cuts
         std::vector<int>& str_cut_ind = str_cut_ind_vec[disj_id]; // append to indices of cuts that were strengthened for this disjunction
         strengtheningHelper(mycuts_by_round[round_ind], v, str_cut_ind, strInfo, boundInfoVec[round_ind], disj, solver, ip_solution, false, start_ind, batch_num_cuts);
         boundInfo.num_str_affected_cuts += str_cut_ind.size();
@@ -715,8 +721,8 @@ int main(int argc, char** argv) {
       }
 
       // Set certificate info
-      for (int disj_id = 0; disj_id < (int) disjSet->disjunctions.size(); disj_id++) {
-        setCertificateInfo(origCertInfoVec[round_ind], disjSet->disjunctions[disj_id], v, solver->getNumRows(), solver->getNumCols(), str_cut_ind_vec[disj_id], total_num_str_cuts, CURR_EPS);
+      for (int disj_id = 0; disj_id < disjSet->size(); disj_id++) {
+        setCertificateInfo(origCertInfoVec[round_ind], disjSet->getDisjunction(disj_id), v, solver->getNumRows(), solver->getNumCols(), str_cut_ind_vec[disj_id], total_num_str_cuts, CURR_EPS);
       }
     } // check that disjSet != NULL
 
@@ -843,7 +849,7 @@ int main(int argc, char** argv) {
         int curr_submx_rank = -1;
         int curr_num_nnz_mult = -1;
         const int disj_id = disjIDPerCut[cut_ind];
-        const Disjunction* const disj = disjSet->disjunctions[disj_id];
+        const Disjunction* const disj = disjSet->getDisjunction(disj_id);
         const CoinPackedMatrix& Atilde = AtildeVec[disj_id];
         // const std::vector<double>& btilde = btildeVec[disj_id];
         const int Atilderank = AtilderankVec[disj_id];
@@ -986,7 +992,10 @@ int main(int argc, char** argv) {
           // Get the certificates for the last batch of cuts
           // Apply the strengthening certificates to get new cuts
           if (batch_num_cuts > 0) {
-            Disjunction* disj = disjSet->disjunctions[disj_id]; // disjunction for this batch of cuts
+            fprintf(stdout, "## Strengthening RCVMIP cuts for disjunction (id %d, total # disj %d) for %d / %d cuts. ##\n",
+              disj_id, (int) disjSet->size(),
+              batch_num_cuts, rcvmipCurrCuts.sizeCuts());
+            const Disjunction* const disj = disjSet->getDisjunction(disj_id); // disjunction for this batch of cuts
             std::vector<int>& rcvmip_str_cut_ind = rcvmip_str_cut_ind_vec[disj_id]; // append to indices of cuts that were strengthened for this disjunction
             strengtheningHelper(rcvmipCurrCuts, rcvmip_v, rcvmip_str_cut_ind, rcvmipStrInfo, boundInfoVec[round_ind], disj, solver, ip_solution, false, start_ind, batch_num_cuts);
             boundInfo.num_rcvmip_str_affected_cuts += rcvmip_str_cut_ind.size();
@@ -1001,7 +1010,10 @@ int main(int argc, char** argv) {
 
         // Process last batch
         if (batch_num_cuts > 0) {
-          Disjunction* disj = disjSet->disjunctions[disj_id]; // disjunction for this batch of cuts
+          fprintf(stdout, "## Strengthening RCVMIP cuts for disjunction (id %d, total # disj %d) for %d / %d cuts. ##\n",
+            disj_id, (int) disjSet->size(),
+            batch_num_cuts, rcvmipCurrCuts.sizeCuts());
+          const Disjunction* const disj = disjSet->getDisjunction(disj_id); // disjunction for this batch of cuts
           std::vector<int>& rcvmip_str_cut_ind = rcvmip_str_cut_ind_vec[disj_id]; // append to indices of cuts that were strengthened for this disjunction
           strengtheningHelper(rcvmipCurrCuts, rcvmip_v, rcvmip_str_cut_ind, rcvmipStrInfo, boundInfoVec[round_ind], disj, solver, ip_solution, false, start_ind, batch_num_cuts);
           boundInfo.num_rcvmip_str_affected_cuts += rcvmip_str_cut_ind.size();
@@ -1009,8 +1021,8 @@ int main(int argc, char** argv) {
         }
 
         // Set certificate info
-        for (int disj_id = 0; disj_id < (int) disjSet->disjunctions.size(); disj_id++) {
-          setCertificateInfo(rcvmipCertInfoVec[round_ind], disjSet->disjunctions[disj_id], rcvmip_v, solver->getNumRows(), solver->getNumCols(), rcvmip_str_cut_ind_vec[disj_id], total_num_str_cuts, CURR_EPS);
+        for (int disj_id = 0; disj_id < disjSet->size(); disj_id++) {
+          setCertificateInfo(rcvmipCertInfoVec[round_ind], disjSet->getDisjunction(disj_id), rcvmip_v, solver->getNumRows(), solver->getNumCols(), rcvmip_str_cut_ind_vec[disj_id], total_num_str_cuts, CURR_EPS);
         }
       } // apply the new strengthening certificates to get new cuts in batches that all correspond to the same disjunction
       
@@ -1976,7 +1988,7 @@ void strengtheningHelper(
 
   if (!do_strengthening) {
     if (params.get(intParam::STRENGTHEN) >= 1) {
-      fprintf(stdout, "\n## Strengthening requested but aborted. ##\n");
+      fprintf(stdout, "Disjunction %d: Strengthening requested but aborted.", disj->id);
       if (!disj) {
         fprintf(stdout, "No disjunction found.\n");
       } else if (disj->terms.size() == 0) {
@@ -1990,7 +2002,7 @@ void strengtheningHelper(
     }
     return;
   }
-  printf("\n## Strengthening disjunctive cuts: (# cuts = %d). ##\n", num_cuts);
+  // printf("\n## Strengthening disjunctive cuts: (# cuts = %d). ##\n", num_cuts);
 
   // Retrieve the certificate
   if (!is_rcvmip) {
