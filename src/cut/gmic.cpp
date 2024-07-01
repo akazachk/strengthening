@@ -41,6 +41,8 @@ void generateGomoryCuts(
     /// [in] tolerance for reconstructing disjunctive term solution
     const double DIFFEPS,
     FILE* logfile) {
+  fprintf(stdout, "\n## Starting GMIC generation with mode %d and strengthen option %d. ##\n", option, strengthen_option);
+
   StatVector num_coeff_str_stats;
   int num_cuts_strengthened = 0;
   initializeStats(num_coeff_str_stats);
@@ -335,9 +337,14 @@ void generateGomoryCuts(
     finalizeStats(num_coeff_str_stats, currGMICs.sizeCuts());
   } // Generate GMICs via createMIG and apply closed-form strengthening
 
-  fprintf(stdout, "\nFinished strengthening GMICs (%d / %d cuts affected).\n", num_cuts_strengthened, currGMICs.sizeCuts());
-  fprintf(stdout, "Number coeffs changed:\n");
-  printStats(num_coeff_str_stats, true, '\n', stdout);
+  fprintf(stdout, "Finished generating %d GMICs with mode %d and strengthen option %d", currGMICs.sizeCuts(), option, strengthen_option);
+  if (strengthen_option != 0) { fprintf(stdout, " (%d / %d cuts strengthened)", num_cuts_strengthened, currGMICs.sizeCuts()); }
+  fprintf(stdout, ".\n");
+
+  if (strengthen_option != 0) {
+    fprintf(stdout, "Number coeffs changed:\n");
+    printStats(num_coeff_str_stats, true, '\n', stdout);
+  }
   fprintf(stdout, "--------------------------------------------------\n");
 #if 0
   fprintf(stdout, "\n## Printing GMICs ##\n");
