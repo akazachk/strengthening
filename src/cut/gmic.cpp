@@ -341,7 +341,7 @@ void generateGomoryCuts(
   if (strengthen_option != 0) { fprintf(stdout, " (%d / %d cuts strengthened)", num_cuts_strengthened, currGMICs.sizeCuts()); }
   fprintf(stdout, ".\n");
 
-  if (strengthen_option != 0) {
+  if ((strengthen_option != 0) && (num_cuts_strengthened > 0)) {
     fprintf(stdout, "Number coeffs changed:\n");
     printStats(num_coeff_str_stats, true, '\n', stdout);
   }
