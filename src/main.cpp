@@ -692,7 +692,7 @@ int main(int argc, char** argv) {
         // Get the certificates for the last batch of cuts
         // Apply the strengthening certificates to get new cuts
         if (batch_num_cuts > 0) {
-          fprintf(stdout, "## Strengthening cuts for disjunction (id %d, total # disj %d) for %d / %d cuts. ##\n",
+          fprintf(stdout, "\n## Strengthening cuts for disjunction (id %d, total # disj %d) for %d / %d cuts. ##\n",
               disj_id, disjSet->size(),
               batch_num_cuts, mycuts_by_round[round_ind].sizeCuts());
           const Disjunction* const disj = disjSet->getDisjunction(disj_id); // disjunction for this batch of cuts
@@ -710,7 +710,7 @@ int main(int argc, char** argv) {
 
       // Process last batch
       if (batch_num_cuts > 0) {
-        fprintf(stdout, "## Strengthening cuts for disjunction (id %d, total # disj %d) for %d / %d cuts. ##\n",
+        fprintf(stdout, "\n## Strengthening cuts for disjunction (id %d, total # disj %d) for %d / %d cuts. ##\n",
             disj_id, disjSet->size(),
             batch_num_cuts, mycuts_by_round[round_ind].sizeCuts());
         const Disjunction* const disj = disjSet->getDisjunction(disj_id); // disjunction for this batch of cuts
@@ -992,7 +992,7 @@ int main(int argc, char** argv) {
           // Get the certificates for the last batch of cuts
           // Apply the strengthening certificates to get new cuts
           if (batch_num_cuts > 0) {
-            fprintf(stdout, "## Strengthening RCVMIP cuts for disjunction (id %d, total # disj %d) for %d / %d cuts. ##\n",
+            fprintf(stdout, "\n## Strengthening RCVMIP cuts for disjunction (id %d, total # disj %d) for %d / %d cuts. ##\n",
               disj_id, (int) disjSet->size(),
               batch_num_cuts, rcvmipCurrCuts.sizeCuts());
             const Disjunction* const disj = disjSet->getDisjunction(disj_id); // disjunction for this batch of cuts
@@ -1010,7 +1010,7 @@ int main(int argc, char** argv) {
 
         // Process last batch
         if (batch_num_cuts > 0) {
-          fprintf(stdout, "## Strengthening RCVMIP cuts for disjunction (id %d, total # disj %d) for %d / %d cuts. ##\n",
+          fprintf(stdout, "\n## Strengthening RCVMIP cuts for disjunction (id %d, total # disj %d) for %d / %d cuts. ##\n",
             disj_id, (int) disjSet->size(),
             batch_num_cuts, rcvmipCurrCuts.sizeCuts());
           const Disjunction* const disj = disjSet->getDisjunction(disj_id); // disjunction for this batch of cuts
