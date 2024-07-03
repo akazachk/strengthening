@@ -263,15 +263,6 @@ int main(int argc, char** argv) {
   if (status) { return status; }
 
   //====================================================================================================//
-  // Information from each round of cuts will be saved and optionally printed
-  int num_rounds = params.get(ROUNDS); // not const in case we do not exhaust the limit
-  std::vector<OsiCuts> mycuts_by_round(num_rounds);
-  cutInfoVec.resize(num_rounds);
-  boundInfoVec.resize(num_rounds);
-  origCertInfoVec.resize(num_rounds);
-  rcvmipCertInfoVec.resize(num_rounds);
-
-  //====================================================================================================//
   // Set up solver and get initial solution
   initializeSolver(solver, params.get(stringParam::FILENAME), params.get(StrengtheningParameters::intParam::VERBOSITY), params.get(StrengtheningParameters::doubleParam::TIMELIMIT), params.logfile);
   timer.start_timer(OverallTimeStats::INIT_SOLVE_TIME);
@@ -309,6 +300,15 @@ int main(int argc, char** argv) {
     strCutSolver = solver->clone();
     allCutSolver = solver->clone();
   }
+
+  //====================================================================================================//
+  // Information from each round of cuts will be saved and optionally printed
+  int num_rounds = params.get(ROUNDS); // not const in case we do not exhaust the limit
+  std::vector<OsiCuts> mycuts_by_round(num_rounds);
+  cutInfoVec.resize(num_rounds);
+  boundInfoVec.resize(num_rounds);
+  origCertInfoVec.resize(num_rounds);
+  rcvmipCertInfoVec.resize(num_rounds);
 
   //====================================================================================================//
   { // Check whether the initial solution is integer-feasible
