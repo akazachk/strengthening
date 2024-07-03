@@ -675,10 +675,9 @@ bool strengthenCutCoefficient(
     }
   } // if mono solver not given
   else if (mono) {
-    CbcModel model(*mono);
+    CbcModel model(*mono); // clones mono
     setIPSolverParameters(&model, mono->messageHandler()->logLevel());
     model.setMaximumSeconds(5);
-    model.setModelOwnsSolver(false);
     model.branchAndBound();
     if (model.status() != 0) {
       // Might time out
