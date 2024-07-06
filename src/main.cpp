@@ -457,7 +457,7 @@ int main(int argc, char** argv) {
     if (GOMORY_OPTION != 0) {
       // Generate GMICs
       timer.start_timer(OverallTimeStats::GOMORY_GEN_TIME);
-      generateGomoryCuts(currGMICs, solver, GOMORY_OPTION, params.get(intParam::STRENGTHEN), params.get(intConst::MIN_SUPPORT_THRESHOLD), params.get(doubleParam::MAX_SUPPORT_REL), params.get(doubleParam::AWAY), params.get(doubleConst::DIFFEPS), params.logfile);
+      generateGomoryCuts(currGMICs, GMICSolver, GOMORY_OPTION, params.get(intParam::STRENGTHEN), params.get(intConst::MIN_SUPPORT_THRESHOLD), params.get(doubleParam::MAX_SUPPORT_REL), params.get(doubleParam::AWAY), params.get(doubleConst::DIFFEPS), params.logfile);
       timer.end_timer(OverallTimeStats::GOMORY_GEN_TIME);
 
       // Apply GMICs to solvers
@@ -482,7 +482,7 @@ int main(int argc, char** argv) {
         boundInfoVec[round_ind].unstr_gmic_obj = boundInfo.gmic_obj;
       } else {
         // Generate unstrengthened GMICs
-        generateGomoryCuts(currUnstrGMICs, solver,
+        generateGomoryCuts(currUnstrGMICs, unstrGMICSolver,
             // Cannot avoid strengthening with CglGMI so avoid that option
             (std::abs(GOMORY_OPTION) != static_cast<int>(GomoryType::CglGMI)) ? GOMORY_OPTION : static_cast<int>(GomoryType::CreateMIG_CustomStrengthen),
             // do not strengthen
