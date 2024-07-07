@@ -22,7 +22,7 @@ enum class GomoryType {
 /// @brief Generate Gomory cuts based on \p option (0: CglGMI, 1: ) 
 void generateGomoryCuts(
     OsiCuts& currGMICs,
-    OsiSolverInterface* const solver,
+    const OsiSolverInterface* const si,
     const int option,
     const int strengthen_option,
     const int MIN_SUPPORT_THRESHOLD,

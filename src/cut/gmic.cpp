@@ -27,7 +27,7 @@ void generateGomoryCuts(
     // [out] Gomory cuts that we generate
     OsiCuts& currGMICs,
     /// [in/out] solver from which we generate cuts; assumed optimal; non-const because we need to enable factorization
-    OsiSolverInterface* const solver,
+    const OsiSolverInterface* const si,
     /// [in] which GMIC generation method to use (see #GomoryType)
     const int option,
     /// [in] how to strengthen the cut
@@ -42,6 +42,9 @@ void generateGomoryCuts(
     const double DIFFEPS,
     FILE* logfile) {
   fprintf(stdout, "\n## Starting GMIC generation with mode %d and strengthen option %d. ##\n", option, strengthen_option);
+
+  OsiSolverInterface* solver = si->clone();
+  solver->resolve();
 
   StatVector num_coeff_str_stats;
   int num_cuts_strengthened = 0;
@@ -93,6 +96,7 @@ void generateGomoryCuts(
       if (splitVarRowIndex == -1) {
         error_msg(errorstring, "Unable to find fractional variable %d in basis.\n", var);
         writeErrorToLog(errorstring, logfile);
+        if (solver) { delete solver; }
         exit(1);
       }
 
@@ -212,6 +216,7 @@ void generateGomoryCuts(
       if (splitVarRowIndex == -1) {
         error_msg(errorstring, "Unable to find fractional variable %d in basis.\n", var);
         writeErrorToLog(errorstring, logfile);
+        if (solver) { delete solver; }
         exit(1);
       }
 
@@ -335,6 +340,8 @@ void generateGomoryCuts(
     } // iterate over cols, generating GMICs
 
     finalizeStats(num_coeff_str_stats, currGMICs.sizeCuts());
+
+    if (solver) { delete solver; }
   } // Generate GMICs via createMIG and apply closed-form strengthening
 
   fprintf(stdout, "Finished generating %d GMICs with mode %d and strengthen option %d", currGMICs.sizeCuts(), option, strengthen_option);
