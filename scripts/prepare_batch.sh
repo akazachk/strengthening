@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Usage example:
-#   prepare_batch.sh /path/to/instance/list.instances /path/to/results/dir [(mode) test / str / gmic / disjset / splits ] [(depth) -dX] 
+#   prepare_batch.sh /path/to/instance/list.instances /path/to/results/dir [(mode) test / str / gmic / disjset / splits / 6splits ] [(depth) -dX] 
 
 if [ -z "$PROJ_DIR" ]
 then
@@ -182,6 +182,16 @@ elif [ $MODE == "disjset" ] ; then
   PARAMS="$PARAMS --cutlimit=-1"
 elif [ $MODE == "splits" ] ; then
   depthList=(100000)
+  PARAMS="$PARAMS --strengthen=1"
+  PARAMS="$PARAMS --analyze_regularity=1"
+  PARAMS="$PARAMS --gomory=-1"
+  PARAMS="$PARAMS --bb_runs=0"
+  PARAMS="$PARAMS --bb_mode=10"
+  PARAMS="$PARAMS --bb_strategy=536"
+  PARAMS="$PARAMS --mode=1"
+  PARAMS="$PARAMS --cutlimit=-1"
+elif [ $MODE == "6splits" ] ; then
+  depthList=(6)
   PARAMS="$PARAMS --strengthen=1"
   PARAMS="$PARAMS --analyze_regularity=1"
   PARAMS="$PARAMS --gomory=-1"
