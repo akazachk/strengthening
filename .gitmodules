@@ -1,3 +1,4 @@
 [submodule "vpc"]
 	path = vpc
 	url = https://github.com/akazachk/vpc.git
+	branch = main
