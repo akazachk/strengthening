@@ -8,7 +8,7 @@ Clone the `Eigen` library to your machine and properly link to it in the `Makefi
 ### Instructions for `VPC` submodule
 Note: The submodule for the `VPC` generator is not necessary if you have the `VPC` repository elsewhere on your machine and you properly set the `VPC_DIR` variable in the `Makefile`.
 
-Whenever the repository is cloned on a new machine, there are several steps to get the required dependencies (from `COIN-OR` and the `VPC` cut generator). The `VPC` generator is added as a submodule, which is kept on record in the `.gitmodules` file. After cloning the main repository, the user must run `git submodule init`, then `git submodule update`. Alternatively, when calling `git clone` initially, one can call `git clone --recurse-submodules`.
+Whenever the repository is cloned on a new machine, there are several steps to get the required dependencies (from `COIN-OR` and the `VPC` cut generator). The `VPC` generator is added as a submodule, which is kept on record in the `.gitmodules` file. After cloning the main repository, the user must run `git submodule init`, then `git submodule update --remote`. Alternatively, when calling `git clone` initially, one can call `git clone --recurse-submodules`.
 
 Afterwards, `cd` to the `vpc` directory, call `export PROJ_DIR=$PWD` from that directory, and call `./setup/install_coin.sh` to install `COIN-OR` files into `vpc/lib`.
 
