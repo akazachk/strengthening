@@ -1,0 +1,13 @@
+\Problem name: 
+
+Minimize
+OBJROW: -0.010000000 X1 - X3
+Subject To
+GE1:  X1 + X3 <= 1
+GE2:  X3 + 0.500000000 X2 <= 0.500000000
+GE3:  X1 + X2 >= 0.500000000
+R0000003:  -0.666666667 X1 -2.666666667 X3 >= -0.666666667
+Bounds
+Integers
+X1 X2 
+End
