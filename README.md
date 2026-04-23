@@ -1,5 +1,6 @@
 # Strengthening disjunctive cuts
-# Aleksandr M. Kazachkov
+#### [Aleksandr M. Kazachkov](https://akazachk.github.io)
+#### Based on joint work with Egon Balas
 
 [![DOI](https://zenodo.org/badge/224919504.svg)](https://doi.org/10.5281/zenodo.14961495)
 
