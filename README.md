@@ -23,19 +23,18 @@ To cite the contents of this repository, please cite both the paper and this rep
 Below is a BibTex entry for citing the paper.
 
 ```
-@article{KazBal25+_strengthening-mpb,
+@article{KazBal25_strengthening-mpb,
     author    = {Kazachkov, Aleksandr M. and Balas, Egon},
     title     = {Monoidal Strengthening of Simple {$\mathcal{V}$}-Polyhedral Disjunctive Cuts},
     journal   = {Math. Program.},
     fjournal  = {Mathematical Programming},
-    volume    = {},
-    number    = {},
-    pages     = {},
-    month     = {},
+    volume    = {210},
+    number    = {1-2},
+    pages     = {567--590},
+    month     = 3,
     year      = {2025},
     doi       = {10.1007/s10107-024-02185-x},
     url       = {https://doi.org/10.1007/s10107-024-02185-x},
-    note      = {Accepted and to appear},
 }
 ```
 
