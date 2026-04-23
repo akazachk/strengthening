@@ -41,7 +41,7 @@ Below is a BibTex entry for citing the paper.
 Below is a BibTex entry for citing the latest release of the code.
 
 ```
-@misc{KazBal25+_strengthening-github,
+@misc{KazBal25_strengthening-github,
   author    = {Kazachkov, Aleksandr M. and Balas, Egon},
   title     = {Code for ``Monoidal Strengthening of Simple {$\mathcal{V}$}-Polyhedral Disjunctive Cuts''},
   year      = {2025},
@@ -49,4 +49,3 @@ Below is a BibTex entry for citing the latest release of the code.
   url       = {https://github.com/akazachk/strengthening},
 }
 ```
-
